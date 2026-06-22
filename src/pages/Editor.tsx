@@ -1,33 +1,84 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
+import { useProjectStore } from '@/stores/projectStore';
 import Canvas from '@/components/canvas/Canvas';
 import NodePanel from '@/components/panels/NodePanel';
 import PropertyPanel from '@/components/panels/PropertyPanel';
 import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
-import { ChevronDown, ChevronUp } from 'lucide-react';
-import { useState } from 'react';
+import { loadMockData } from '@/utils/mockData';
+import { ChevronDown, ChevronUp, Database, RotateCcw, RotateCw } from 'lucide-react';
 import type { NodeSubtype, CanvasNodeData } from '@/types/canvas';
 
+// ===== 性能监控：重渲染检测 =====
+const PERF_LOG = '[Perf:Editor]';
+
 export default function Editor() {
-  const addNode = useCanvasStore((s) => s.addNode);
+  // ===== Store hooks =====
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
+  const addNode = useCanvasStore((s) => s.addNode);
   const updateNodeData = useCanvasStore((s) => s.updateNodeData);
   const removeNode = useCanvasStore((s) => s.removeNode);
-  const { pushAddNode, pushUpdateNodeData, pushRemoveNode } = useHistoryStore();
+  const setNodes = useCanvasStore((s) => s.setNodes);
+  const setEdges = useCanvasStore((s) => s.setEdges);
+
+  const canUndo = useHistoryStore((s) => s.canUndo);
+  const canRedo = useHistoryStore((s) => s.canRedo);
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
+  const pushAddNode = useHistoryStore((s) => s.pushAddNode);
+  const pushUpdateNodeData = useHistoryStore((s) => s.pushUpdateNodeData);
+  const pushRemoveNode = useHistoryStore((s) => s.pushRemoveNode);
+  const pushMoveNode = useHistoryStore((s) => s.pushMoveNode);
+  const tree = useHistoryStore((s) => s.tree);
+
   const markDirty = useAutoSaveStore((s) => s.markDirty);
+  const lastSavedAt = useAutoSaveStore((s) => s.lastSavedAt);
+  const isDirty = useAutoSaveStore((s) => s.isDirty);
+
+  const currentProject = useProjectStore((s) => s.currentProject);
+
+  // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);
   const [showPreview, setShowPreview] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
-  // 监听画布状态变化，标记脏状态
-  useEffect(() => {
-    markDirty();
-  }, [nodes, edges, markDirty]);
+  // ===== 性能日志：记录每次渲染 =====
+  const renderInfo = useRef({ count: 0, lastTime: performance.now() });
+  renderInfo.current.count++;
+  const currentRender = renderInfo.current.count;
 
+  useEffect(() => {
+    const elapsed = performance.now() - renderInfo.current.lastTime;
+    renderInfo.current.lastTime = performance.now();
+
+    if (currentRender <= 3 || currentRender % 50 === 0) {
+      console.log(
+        `${PERF_LOG} 渲染 #${currentRender} | ` +
+        `耗时: ${elapsed.toFixed(1)}ms | ` +
+        `nodes: ${nodes.length} | edges: ${edges.length} | ` +
+        `canUndo: ${canUndo} | canRedo: ${canRedo} | ` +
+        `isDirty: ${isDirty}`
+      );
+    }
+  }, [currentRender, nodes.length, edges.length, canUndo, canRedo, isDirty]);
+
+  // ===== Mock 数据加载 =====
+  useEffect(() => {
+    // 如果画布为空且有当前项目，加载 Mock 数据
+    if (nodes.length === 0 && currentProject) {
+      loadMockData();
+    }
+  }, []); // 仅初始化时加载一次
+
+  // ===== 自动保存：不在 useEffect 中监听 nodes/edges =====
+  // markDirty 由各操作方法内部调用，避免无限循环
+
+  // ===== 拖拽放置节点 =====
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
@@ -42,25 +93,24 @@ export default function Editor() {
       const x = 100 + Math.random() * 400;
       const y = 100 + Math.random() * 300;
 
-      // 先通过 canvasStore 添加节点
       addNode(subtype, { x, y });
 
-      // 再记录到 historyStore
+      // 记录到 historyStore
       const newNode = useCanvasStore.getState().nodes[useCanvasStore.getState().nodes.length - 1];
       if (newNode) {
         pushAddNode({ node: newNode });
       }
+      markDirty();
     },
     [addNode, pushAddNode]
   );
 
-  // 包装属性面板的更新操作，同时记录历史
+  // ===== 节点操作（带历史记录） =====
   const handleNodeDataUpdate = useCallback(
     (id: string, updates: Partial<CanvasNodeData>) => {
       const node = nodes.find((n) => n.id === id);
       if (!node) return;
 
-      // 记录旧值
       const from: Partial<CanvasNodeData> = {};
       for (const key of Object.keys(updates)) {
         (from as Record<string, unknown>)[key] = node.data[key as keyof CanvasNodeData];
@@ -68,11 +118,11 @@ export default function Editor() {
 
       pushUpdateNodeData({ nodeId: id, from, to: updates });
       updateNodeData(id, updates);
+      markDirty();
     },
     [nodes, pushUpdateNodeData, updateNodeData]
   );
 
-  // 包装删除操作
   const handleNodeRemove = useCallback(
     (id: string) => {
       const node = nodes.find((n) => n.id === id);
@@ -81,12 +131,26 @@ export default function Editor() {
       const affectedEdges = edges.filter((e) => e.source === id || e.target === id);
       pushRemoveNode({ node, affectedEdges });
       removeNode(id);
+      markDirty();
     },
     [nodes, edges, pushRemoveNode, removeNode]
   );
 
+  // ===== 调试面板：撤销/重做操作历史 =====
+  const activeBranch = tree.branches.find((b) => b.id === tree.activeBranchId);
+  const actionList = activeBranch?.actions || [];
+
+  // ===== 自动保存状态格式化 =====
+  const formatLastSaved = () => {
+    if (!lastSavedAt) return '未保存';
+    const diff = Date.now() - lastSavedAt;
+    if (diff < 5000) return '刚刚保存';
+    if (diff < 60000) return `${Math.floor(diff / 1000)}秒前`;
+    return `${Math.floor(diff / 60000)}分钟前`;
+  };
+
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="h-full flex overflow-hidden relative">
       {/* 左侧节点面板 */}
       <NodePanel />
 
@@ -124,16 +188,126 @@ export default function Editor() {
         </div>
       </div>
 
-      {/* 右侧属性面板 - 传入带历史记录的更新方法 */}
+      {/* 右侧属性面板 */}
       <PropertyPanelWithHistory
         onUpdateData={handleNodeDataUpdate}
         onRemoveNode={handleNodeRemove}
       />
 
-      {/* 预览切换按钮（底部右侧浮动） */}
+      {/* 底部状态栏 */}
+      <div className="absolute bottom-0 left-60 right-72 h-7 bg-canvas-panel border-t border-canvas-border flex items-center px-3 gap-4 text-[10px] text-slate-500 z-10">
+        <span>节点: {nodes.length}</span>
+        <span>连线: {edges.length}</span>
+        <span className="flex items-center gap-1">
+          <div className={`w-1.5 h-1.5 rounded-full ${isDirty ? 'bg-status-warning' : 'bg-status-success'}`} />
+          {isDirty ? '未保存' : '已保存'}
+        </span>
+        <span>{formatLastSaved()}</span>
+        <span>操作历史: {actionList.length} 步</span>
+        <div className="flex-1" />
+        <button
+          onClick={() => setShowDebugPanel(!showDebugPanel)}
+          className="flex items-center gap-1 hover:text-slate-300 transition-colors"
+        >
+          <Database className="w-3 h-3" />
+          调试面板
+        </button>
+      </div>
+
+      {/* 调试面板 - 撤销/重做操作历史 */}
+      {showDebugPanel && (
+        <div className="absolute top-0 right-72 w-80 h-full bg-canvas-panel border-l border-canvas-border z-20 flex flex-col shadow-xl">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-canvas-border">
+            <h3 className="text-sm font-medium text-slate-200 font-display">操作历史调试</h3>
+            <button
+              onClick={() => setShowDebugPanel(false)}
+              className="text-xs text-slate-500 hover:text-slate-300"
+            >
+              关闭
+            </button>
+          </div>
+
+          {/* 撤销/重做状态 */}
+          <div className="px-3 py-2 border-b border-canvas-border flex items-center gap-2">
+            <button
+              onClick={undo}
+              disabled={!canUndo}
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${canUndo ? 'bg-canvas-hover text-slate-300' : 'text-slate-700 cursor-not-allowed'}`}
+            >
+              <RotateCcw className="w-3 h-3" />
+              撤销
+            </button>
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${canRedo ? 'bg-canvas-hover text-slate-300' : 'text-slate-700 cursor-not-allowed'}`}
+            >
+              <RotateCw className="w-3 h-3" />
+              重做
+            </button>
+            <span className="text-[10px] text-slate-500 ml-auto">
+              pointer: {tree.pointer} / {actionList.length - 1}
+            </span>
+          </div>
+
+          {/* 操作列表 */}
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {actionList.length === 0 ? (
+              <p className="text-xs text-slate-600 text-center py-4">暂无操作记录</p>
+            ) : (
+              actionList.map((action, index) => (
+                <div
+                  key={action.id}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs ${
+                    index === tree.pointer
+                      ? 'bg-neon-purple/20 border border-neon-purple/30'
+                      : index < tree.pointer
+                      ? 'bg-canvas-hover/50'
+                      : 'bg-canvas-bg opacity-50'
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                    index === tree.pointer ? 'bg-neon-purple' :
+                    index < tree.pointer ? 'bg-status-success' : 'bg-slate-600'
+                  }`} />
+                  <span className={`truncate flex-1 ${index === tree.pointer ? 'text-slate-200' : 'text-slate-400'}`}>
+                    {action.label}
+                  </span>
+                  <span className="text-[10px] text-slate-600 flex-shrink-0">
+                    {new Date(action.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* 快捷操作 */}
+          <div className="p-2 border-t border-canvas-border space-y-1">
+            <button
+              onClick={() => {
+                loadMockData();
+              }}
+              className="w-full px-2 py-1 text-xs text-neon-purple hover:bg-neon-purple/10 rounded transition-colors"
+            >
+              重新加载 Mock 数据
+            </button>
+            <button
+              onClick={() => {
+                useCanvasStore.getState().clearCanvas();
+                useHistoryStore.getState().clearHistory();
+              }}
+              className="w-full px-2 py-1 text-xs text-status-error hover:bg-status-error/10 rounded transition-colors"
+            >
+              清空画布和历史
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 预览切换按钮 */}
       <button
         onClick={() => setShowPreview(!showPreview)}
-        className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 bg-canvas-panel border border-canvas-border rounded-lg hover:text-slate-200 hover:border-canvas-hover transition-colors shadow-lg"
+        className="absolute bottom-10 right-72 z-20 flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 bg-canvas-panel border border-canvas-border rounded-lg hover:text-slate-200 hover:border-canvas-hover transition-colors shadow-lg"
       >
         {showPreview ? '隐藏预览' : '显示预览'}
       </button>
@@ -141,7 +315,7 @@ export default function Editor() {
   );
 }
 
-/** 带历史记录的属性面板包装组件 */
+/** 带历史记录的属性面板 */
 function PropertyPanelWithHistory({
   onUpdateData,
   onRemoveNode,
@@ -149,10 +323,10 @@ function PropertyPanelWithHistory({
   onUpdateData: (id: string, updates: Partial<CanvasNodeData>) => void;
   onRemoveNode: (id: string) => void;
 }) {
-  const { nodes, selectedNodeId, updateNodeData, removeNode, setNodeStatus } = useCanvasStore();
-  const { pushUpdateNodeData, pushRemoveNode } = useHistoryStore();
-
+  const nodes = useCanvasStore((s) => s.nodes);
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
+
   if (!selectedNode) {
     return (
       <div className="w-72 h-full bg-canvas-panel border-l border-canvas-border flex items-center justify-center">
@@ -164,22 +338,21 @@ function PropertyPanelWithHistory({
   const data = selectedNode.data;
 
   const handleParamChange = (key: string, value: unknown) => {
-    const from = { params: data.params };
-    const to = { params: { ...data.params, [key]: value } };
-    pushUpdateNodeData({ nodeId: selectedNode.id, from: { params: { [key]: data.params[key] } }, to: { params: { [key]: value } } });
+    useHistoryStore.getState().pushUpdateNodeData({
+      nodeId: selectedNode.id,
+      from: { params: { [key]: data.params[key] } },
+      to: { params: { [key]: value } },
+    });
     onUpdateData(selectedNode.id, { params: { ...data.params, [key]: value } });
   };
 
   return (
     <div className="w-72 h-full bg-canvas-panel border-l border-canvas-border flex flex-col">
-      {/* 头部 */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-canvas-border">
-        <h3 className="text-sm font-medium text-slate-200 font-display">
-          {data.label}
-        </h3>
+        <h3 className="text-sm font-medium text-slate-200 font-display">{data.label}</h3>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-canvas-hover text-slate-500">{data.subtype}</span>
       </div>
 
-      {/* 属性内容 */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         <div className="space-y-1.5">
           <label className="text-xs text-slate-500 uppercase tracking-wider">标签</label>
@@ -232,7 +405,6 @@ function PropertyPanelWithHistory({
         </div>
       </div>
 
-      {/* 底部操作 */}
       <div className="p-3 border-t border-canvas-border">
         <button
           onClick={() => onRemoveNode(selectedNode.id)}

@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useHistoryStore } from '@/stores/historyStore';
+import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { NODE_TEMPLATES, NODE_CATEGORIES, type NodeSubtype } from '@/types/canvas';
 import { Search, ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
 import type { NodeType } from '@/types/canvas';
@@ -10,6 +12,18 @@ export default function NodePanel() {
     Object.fromEntries(Object.keys(NODE_CATEGORIES).map((k) => [k, true]))
   );
   const addNode = useCanvasStore((s) => s.addNode);
+  const pushAddNode = useHistoryStore((s) => s.pushAddNode);
+  const markDirty = useAutoSaveStore((s) => s.markDirty);
+
+  const handleAddNode = (subtype: NodeSubtype, position: { x: number; y: number }) => {
+    addNode(subtype, position);
+    // 记录到 historyStore
+    const newNode = useCanvasStore.getState().nodes[useCanvasStore.getState().nodes.length - 1];
+    if (newNode) {
+      pushAddNode({ node: newNode });
+    }
+    markDirty();
+  };
 
   const filtered = NODE_TEMPLATES.filter((t) =>
     t.label.toLowerCase().includes(search.toLowerCase())
@@ -74,7 +88,7 @@ export default function NodePanel() {
                     key={template.subtype}
                     draggable
                     onDragStart={(e) => handleDragStart(e, template.subtype)}
-                    onClick={() => addNode(template.subtype, { x: 250, y: 250 })}
+                    onClick={() => handleAddNode(template.subtype, { x: 250, y: 250 })}
                     className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab hover:bg-canvas-hover transition-colors group"
                   >
                     <GripVertical className="w-3 h-3 text-slate-600 group-hover:text-slate-400" />
