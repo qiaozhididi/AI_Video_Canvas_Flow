@@ -1,6 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Film, FolderOpen, Monitor, Store, Settings,
+  LayoutDashboard, FolderOpen, Monitor, Store, Settings,
   Sparkles,
 } from 'lucide-react';
 
@@ -14,11 +14,6 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const location = useLocation();
-
-  // 编辑器页面使用独立布局
-  if (location.pathname.startsWith('/editor/')) {
-    return <Outlet />;
-  }
 
   return (
     <div className="h-screen flex bg-canvas-bg">
