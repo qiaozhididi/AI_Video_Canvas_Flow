@@ -2,6 +2,16 @@
 
 可视化 AI 视频创作工作流平台 — 通过拖拽节点编排 AI 推理流程，结合时间轴编辑器完成视频创作。
 
+## 项目结构
+
+```
+AI_Canvas_Flow/
+├── frontend/          # 前端项目 (React + Vite + TypeScript)
+├── backend/           # 后端项目 (FastAPI + LangGraph + Celery)
+├── docs/              # 项目文档
+└── README.md
+```
+
 ## 功能特性
 
 - **工作流编辑器**：基于 React Flow 的无限画布，5 类 16 种节点类型，拖拽/点击添加，连线编排
@@ -15,6 +25,8 @@
 - **协作功能**（规划中）：多用户实时协同编辑、OT/CRDT 冲突解决
 
 ## 技术栈
+
+### 前端
 
 | 类别 | 技术 |
 |------|------|
@@ -30,126 +42,84 @@
 | 实时通信 | Socket.IO Client |
 | 图标 | Lucide React |
 
+### 后端
+
+| 类别 | 技术 |
+|------|------|
+| Web 框架 | FastAPI (Python 3.12+) |
+| AI 编排 | LangChain + LangGraph |
+| 任务队列 | Celery + RabbitMQ |
+| 缓存 | Redis |
+| 数据库 | PostgreSQL + SQLAlchemy 2.0 (async) |
+| 对象存储 | MinIO |
+| 实时通信 | python-socketio |
+| 数据库迁移 | Alembic |
+| 容器化 | Docker + Docker Compose |
+
 ## 快速开始
 
-### 环境要求
-
-- Node.js >= 18
-- pnpm >= 8
-
-### 安装与运行
+### 前端
 
 ```bash
+cd frontend
+
 # 安装依赖
 pnpm install
 
 # 启动开发服务器
 pnpm dev
 
-# 构建生产版本
+# 构建
 pnpm build
 
 # 类型检查
 pnpm check
-
-# 代码检查
-pnpm lint
 ```
 
-开发服务器默认运行在 http://localhost:5173
+开发服务器运行在 http://localhost:5173
 
-## 项目结构
+### 后端
 
-```
-src/
-├── App.tsx                    # 根组件 + 路由配置
-├── main.tsx                   # 入口文件
-├── components/                # UI 组件
-│   ├── Layout.tsx             # 主布局（侧边导航）
-│   ├── EditorLayout.tsx       # 编辑器布局（工具栏+自动保存+快捷键）
-│   ├── canvas/                # 画布（React Flow + 自定义节点）
-│   ├── panels/                # 面板（节点面板 + 属性面板）
-│   ├── preview/               # 视频预览
-│   └── timeline/              # 时间轴编辑器
-├── pages/                     # 页面（6 个）
-├── stores/                    # Zustand 状态管理（6 个 Store）
-├── types/                     # TypeScript 类型定义
-├── hooks/                     # 自定义 Hooks
-├── utils/                     # 工具函数 + Mock 数据
-└── lib/                       # 通用工具库
-```
+```bash
+cd backend
 
-## 核心架构
+# 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # macOS/Linux
 
-### 路由
+# 安装依赖
+pip install -r requirements.txt
 
-| 路径 | 布局 | 页面 |
-|------|------|------|
-| `/` | Layout | 工作台首页 |
-| `/media` | Layout | 媒体库 |
-| `/render` | Layout | 渲染中心 |
-| `/templates` | Layout | 模板市场 |
-| `/settings` | Layout | 用户设置 |
-| `/editor/:projectId` | EditorLayout | 工作流编辑器 |
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入实际配置
 
-### 状态管理
+# 启动开发服务器
+uvicorn app.main:app --reload --port 8000
 
-| Store | 职责 |
-|-------|------|
-| `canvasStore` | 画布节点、边、选中状态 |
-| `timelineStore` | 轨道、片段、播放控制 |
-| `projectStore` | 项目列表、当前项目 |
-| `historyStore` | 撤销/重做（分支式操作历史树） |
-| `autoSaveStore` | 自动保存、崩溃恢复 |
-| `authStore` | 用户认证 |
+# 启动 Celery Worker
+celery -A app.tasks.celery_app worker -l info
 
-### 节点类型
-
-```
-输入：文本输入 / 图片输入 / 音频输入
-AI推理：文生图 / 图生视频 / 文生语音
-处理：高清放大 / 风格化 / 抠图 / 扩图
-控制：条件分支 / 循环 / 合并
-输出：视频输出 / 图片输出 / 音频输出
+# 数据库迁移
+alembic upgrade head
 ```
 
-## 快捷键
+API 服务运行在 http://localhost:8000，文档地址 http://localhost:8000/docs
 
-| 快捷键 | 操作 |
-|--------|------|
-| `Ctrl+Z` | 撤销 |
-| `Ctrl+Shift+Z` | 重做 |
-| `Ctrl+S` | 保存项目 |
-| `Ctrl+Shift+H` | 操作历史面板 |
-| `Delete` | 删除选中节点 |
-| `Space` | 播放/暂停 |
+### Docker Compose（一键启动全部服务）
 
-## 设计系统
-
-深色科技风主题：
-
-- **主背景**：`#0F0F14`
-- **面板背景**：`#1A1A2E`
-- **主强调色**：`#7C3AED`（霓虹紫）
-- **辅助强调色**：`#3B82F6`（霓虹蓝）
-- **字体**：Space Grotesk（标题）+ DM Sans（正文）
+```bash
+# 在项目根目录
+docker compose up -d
+```
 
 ## 文档
 
-- [前端开发技术文档](docs/frontend-technical-guide.md)
-- [AI 视频工作流方案](docs/AI_Video_Workflow方案.md)
-
-## 后端规划
-
-| 组件 | 技术 |
+| 文档 | 说明 |
 |------|------|
-| Web 框架 | FastAPI |
-| AI 编排 | LangChain + LangGraph |
-| 任务队列 | Celery + RabbitMQ |
-| 缓存 | Redis |
-| 数据库 | PostgreSQL |
-| 对象存储 | MinIO |
-| 实时通信 | Socket.IO |
+| [前端开发技术文档](docs/frontend-technical-guide.md) | 前端架构、状态管理、组件体系、开发规范 |
+| [后端开发技术文档](docs/backend-technical-guide.md) | 后端架构、API 设计、数据模型、部署方案 |
+| [AI 视频工作流方案](docs/AI_Video_Workflow方案.md) | 系统架构全景与核心功能设计 |
 
 ## License
 

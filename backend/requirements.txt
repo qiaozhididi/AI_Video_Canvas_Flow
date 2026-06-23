@@ -1,0 +1,40 @@
+# AI Canvas Flow 后端依赖
+
+# Web 框架
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# 数据库
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+alembic==1.14.1
+
+# Pydantic
+pydantic[email]==2.10.4
+pydantic-settings==2.7.1
+
+# 认证
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# Redis
+redis==5.2.1
+
+# MinIO 对象存储
+minio==7.2.12
+
+# Celery 任务队列
+celery[rabbitmq]==5.4.0
+
+# Socket.IO 协作
+python-socketio==5.12.1
+
+# LangGraph 工作流引擎
+langgraph==0.2.60
+
+# HTTP 客户端（调用 AI 服务）
+httpx==0.28.1
+
+# 工具
+python-dotenv==1.0.1
