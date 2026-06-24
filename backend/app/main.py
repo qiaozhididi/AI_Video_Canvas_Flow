@@ -22,7 +22,7 @@ logger = logging.getLogger("app")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期：启动时初始化资源，关闭时释放资源"""
-    logger.info("🚀 AI Canvas Flow 后端服务启动中...")
+    logger.info("AI Canvas Flow 后端服务启动中...")
     logger.info(f"   项目: {settings.PROJECT_NAME} v{settings.VERSION}")
     logger.info(f"   数据库: {settings.DATABASE_URL.split('@')[-1]}")
     logger.info(f"   Redis: {settings.REDIS_URL}")
@@ -33,9 +33,10 @@ async def lifespan(app: FastAPI):
     yield
 
     elapsed = time.time() - start_time
-    logger.info(f"👋 AI Canvas Flow 后端服务关闭，运行时长: {elapsed:.1f}s")
+    logger.info(f"AI Canvas Flow 后端服务关闭，运行时长: {elapsed:.1f}s")
 
 
+# 创建 FastAPI 应用
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
@@ -59,20 +60,26 @@ async def log_requests(request: Request, call_next):
     start = time.time()
     response = await call_next(request)
     elapsed = (time.time() - start) * 1000
-    logger.debug(f"{request.method} {request.url.path} → {response.status_code} ({elapsed:.1f}ms)")
+    logger.debug(f"{request.method} {request.url.path} -> {response.status_code} ({elapsed:.1f}ms)")
     return response
 
 
 # 挂载 API 路由
 app.include_router(api_router)
 
-# 挂载 Socket.IO 协作服务
-from app.ws.collaboration import setup_collaboration
-setup_collaboration(app)
-logger.info("   Socket.IO 协作服务已挂载到 /ws")
 
-
+# 健康检查端点
 @app.get("/health", tags=["健康检查"])
 async def health_check():
     """健康检查端点"""
     return {"status": "ok", "version": settings.VERSION}
+
+
+# 挂载 Socket.IO 协作服务
+# 使用 other_asgi_app 将 FastAPI 和 Socket.IO 共存于同一端口
+# Socket.IO 请求走 /socket.io/ 路径，其余走 FastAPI
+import socketio as _socketio
+from app.ws.collaboration import sio
+
+app = _socketio.ASGIApp(sio, other_asgi_app=app)
+logger.info("   Socket.IO 协作服务已挂载（/socket.io/）")

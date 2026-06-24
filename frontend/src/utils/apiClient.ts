@@ -5,8 +5,8 @@
  * 基于 fetch + Socket.IO Client
  */
 
-const API_BASE = 'http://localhost:8000/api/v1';
-const WS_BASE = 'http://localhost:8000/ws';
+const API_BASE = '/api/v1';
+const WS_BASE = '';  // Socket.IO 通过 Vite 代理，路径为 /socket.io/
 
 // ═══════════════════════════════════════════════════
 // 1. 认证模块
