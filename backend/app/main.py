@@ -28,6 +28,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"   Redis: {settings.REDIS_URL}")
     logger.info(f"   MinIO: {settings.MINIO_ENDPOINT}")
     logger.info(f"   CORS: {settings.CORS_ORIGINS}")
+
+    # 自动创建数据库表（开发模式）
+    from app.database import Base, engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("   数据库表已创建/验证")
+
     start_time = time.time()
 
     yield

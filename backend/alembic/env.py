@@ -1,9 +1,12 @@
-"""Alembic 迁移环境配置"""
+"""Alembic 迁移环境配置（支持 asyncpg）"""
 
+import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
+from sqlalchemy.engine import Connection
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.config import settings
 from app.database import Base
@@ -35,20 +38,27 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """在线模式：连接数据库并执行迁移"""
-    connectable = engine_from_config(
+def do_run_migrations(connection: Connection) -> None:
+    context.configure(connection=connection, target_metadata=target_metadata)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_async_migrations() -> None:
+    """在线模式（异步）：连接数据库并执行迁移"""
+    connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-        )
-        with context.begin_transaction():
-            context.run_migrations()
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migrations)
+    await connectable.dispose()
+
+
+def run_migrations_online() -> None:
+    """在线模式入口"""
+    asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():
