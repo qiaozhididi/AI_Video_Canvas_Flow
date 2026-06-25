@@ -226,7 +226,7 @@ def test_rabbitmq():
         params = pika.ConnectionParameters(
             host="192.168.10.76",
             port=5672,
-            credentials=pika.PlainCredentials("guest", "guest"),
+            credentials=pika.PlainCredentials("qzfrato", "QWE123asd.."),
             connection_attempts=3,
             socket_timeout=5,
         )
@@ -238,13 +238,13 @@ def test_rabbitmq():
         test_rabbitmq_http()
         return
 
-    # 3.2 声明队列
+    # 3.2 声明队列（durable=True 兼容 RabbitMQ 4.x）
     try:
         test_queue = "test_canvas_flow_queue"
-        channel.queue_declare(queue=test_queue, durable=False, auto_delete=True)
-        log("RabbitMQ", "声明队列", "ok", f"queue={test_queue}")
+        channel.queue_declare(queue=test_queue, durable=True)
+        log("RabbitMQ", "声明队列", "ok", f"queue={test_queue} durable=True")
     except Exception as e:
-        log("RabbitMQ", "声明队列", "fail", str(e))
+        log("RabbitMQ", "声明队列", "fail", str(e)[:200])
 
     # 3.3 发布消息
     try:
@@ -252,11 +252,11 @@ def test_rabbitmq():
             exchange="",
             routing_key=test_queue,
             body="AI Canvas Flow - RabbitMQ test message",
-            properties=pika.BasicProperties(delivery_mode=1),
+            properties=pika.BasicProperties(delivery_mode=2),
         )
         log("RabbitMQ", "发布消息", "ok", f"queue={test_queue}")
     except Exception as e:
-        log("RabbitMQ", "发布消息", "fail", str(e))
+        log("RabbitMQ", "发布消息", "fail", str(e)[:200])
 
     # 3.4 消费消息
     try:
@@ -266,26 +266,29 @@ def test_rabbitmq():
         else:
             log("RabbitMQ", "消费消息", "fail", "队列为空")
     except Exception as e:
-        log("RabbitMQ", "消费消息", "fail", str(e))
+        log("RabbitMQ", "消费消息", "fail", str(e)[:200])
 
     # 3.5 删除测试队列
     try:
         channel.queue_delete(queue=test_queue)
         log("RabbitMQ", "删除队列", "ok", f"queue={test_queue}")
     except Exception as e:
-        log("RabbitMQ", "删除队列", "fail", str(e))
+        log("RabbitMQ", "删除队列", "fail", str(e)[:200])
 
     # 3.6 Exchange 声明
     try:
         test_exchange = "test_canvas_flow_exchange"
-        channel.exchange_declare(exchange=test_exchange, exchange_type="direct", durable=False, auto_delete=True)
+        channel.exchange_declare(exchange=test_exchange, exchange_type="direct", durable=True)
         log("RabbitMQ", "声明 Exchange", "ok", f"exchange={test_exchange} type=direct")
         channel.exchange_delete(exchange=test_exchange)
         log("RabbitMQ", "删除 Exchange", "ok", f"exchange={test_exchange}")
     except Exception as e:
-        log("RabbitMQ", "Exchange 操作", "fail", str(e))
+        log("RabbitMQ", "Exchange 操作", "fail", str(e)[:200])
 
-    connection.close()
+    try:
+        connection.close()
+    except Exception:
+        pass
 
     # 3.7 HTTP Management API
     test_rabbitmq_http()
@@ -299,7 +302,7 @@ def test_rabbitmq_http():
         import json
 
         url = "http://192.168.10.76:15672/api/overview"
-        credentials = base64.b64encode(b"guest:guest").decode()
+        credentials = base64.b64encode(b"qzfrato:QWE123asd..").decode()
         req = urllib.request.Request(url, headers={"Authorization": f"Basic {credentials}"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
