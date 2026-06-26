@@ -1,27 +1,110 @@
-import { useState } from 'react';
-import { Upload, Search, Grid3X3, List, Image, Film, Music, Trash2, Download } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Upload, Search, Grid3X3, List, Image, Film, Music, Trash2, Download, Loader2 } from 'lucide-react';
+import { mediaApi } from '@/utils/apiClient';
+import type { MediaAssetResponse } from '@/utils/apiClient';
+import { toast } from 'sonner';
 
 type AssetType = 'all' | 'image' | 'video' | 'audio';
 type ViewMode = 'grid' | 'list';
 
-// 模拟数据
-const MOCK_ASSETS = [
-  { id: '1', name: 'scene_01.png', type: 'image' as const, size: '2.4 MB', date: '2024-01-15' },
-  { id: '2', name: 'character_ref.jpg', type: 'image' as const, size: '1.8 MB', date: '2024-01-14' },
-  { id: '3', name: 'clip_01.mp4', type: 'video' as const, size: '45.2 MB', date: '2024-01-13' },
-  { id: '4', name: 'narration.mp3', type: 'audio' as const, size: '3.1 MB', date: '2024-01-12' },
-  { id: '5', name: 'bgm_ambient.wav', type: 'audio' as const, size: '8.7 MB', date: '2024-01-11' },
-  { id: '6', name: 'output_final.mp4', type: 'video' as const, size: '128.5 MB', date: '2024-01-10' },
-];
+/** 从 MIME 类型提取资源分类 */
+function toAssetCategory(fileType: string): 'image' | 'video' | 'audio' {
+  if (fileType.startsWith('image/')) return 'image';
+  if (fileType.startsWith('video/')) return 'video';
+  return 'audio';
+}
+
+/** 格式化文件大小 */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+/** 格式化日期 */
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('zh-CN');
+}
 
 export default function MediaLibrary() {
+  const [assets, setAssets] = useState<MediaAssetResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<AssetType>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filtered = MOCK_ASSETS.filter((a) => {
-    const matchSearch = a.name.toLowerCase().includes(search.toLowerCase());
-    const matchType = filter === 'all' || a.type === filter;
+  const loadAssets = async () => {
+    try {
+      setLoading(true);
+      const data = await mediaApi.list();
+      setAssets(data);
+    } catch {
+      toast.error('加载素材列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAssets();
+  }, []);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setUploading(true);
+      await mediaApi.upload(file);
+      toast.success('上传成功');
+      await loadAssets();
+    } catch {
+      toast.error('上传失败');
+    } finally {
+      setUploading(false);
+      // 重置 input 以便再次选择同一文件
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDelete = async (id: string, fileName: string) => {
+    if (!window.confirm(`确定要删除「${fileName}」吗？此操作不可恢复。`)) return;
+    try {
+      await mediaApi.delete(id);
+      toast.success('删除成功');
+      await loadAssets();
+    } catch (err) {
+      if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
+        // 资源已不存在，直接刷新列表
+        toast.info('素材已不存在，列表已刷新');
+        await loadAssets();
+      } else {
+        toast.error('删除失败');
+      }
+    }
+  };
+
+  const handleDownload = async (id: string, fileName: string) => {
+    try {
+      const { url } = await mediaApi.getPresignedUrl(id);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      toast.error('获取下载链接失败');
+    }
+  };
+
+  const filtered = assets.filter((a) => {
+    const category = toAssetCategory(a.file_type);
+    const matchSearch = a.file_name.toLowerCase().includes(search.toLowerCase());
+    const matchType = filter === 'all' || category === filter;
     return matchSearch && matchType;
   });
 
@@ -84,39 +167,71 @@ export default function MediaLibrary() {
             </button>
           </div>
 
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity">
-            <Upload className="w-3.5 h-3.5" />
-            上传素材
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,video/*,audio/*"
+            onChange={handleUpload}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {uploading ? '上传中...' : '上传素材'}
           </button>
         </div>
 
-        {/* 素材列表 */}
-        {viewMode === 'grid' ? (
+        {/* 加载状态 */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 text-slate-500 animate-spin" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-20">
+            <div className="w-16 h-16 mx-auto rounded-full bg-canvas-panel flex items-center justify-center mb-4">
+              <Image className="w-8 h-8 text-slate-600" />
+            </div>
+            <p className="text-slate-400 mb-2">{assets.length === 0 ? '暂无素材' : '没有匹配的素材'}</p>
+            <p className="text-sm text-slate-600">点击"上传素材"添加文件</p>
+          </div>
+        ) : viewMode === 'grid' ? (
+          /* 网格视图 */
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {filtered.map((asset) => {
-              const Icon = TYPE_ICONS[asset.type];
+              const category = toAssetCategory(asset.file_type);
+              const Icon = TYPE_ICONS[category];
               return (
                 <div key={asset.id} className="group rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden hover:border-canvas-hover transition-all">
                   <div className="aspect-square bg-canvas-hover flex items-center justify-center relative">
-                    <Icon className={`w-10 h-10 ${TYPE_COLORS[asset.type]}`} />
+                    <Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                      <button className="p-1.5 rounded-full bg-white/20 hover:bg-white/30">
+                      <button
+                        onClick={() => handleDownload(asset.id, asset.file_name)}
+                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30"
+                      >
                         <Download className="w-4 h-4 text-white" />
                       </button>
-                      <button className="p-1.5 rounded-full bg-white/20 hover:bg-white/30">
+                      <button
+                        onClick={() => handleDelete(asset.id, asset.file_name)}
+                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30"
+                      >
                         <Trash2 className="w-4 h-4 text-white" />
                       </button>
                     </div>
                   </div>
                   <div className="p-2">
-                    <p className="text-xs text-slate-300 truncate">{asset.name}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{asset.size}</p>
+                    <p className="text-xs text-slate-300 truncate">{asset.file_name}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{formatSize(asset.file_size)}</p>
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
+          /* 列表视图 */
           <div className="border border-canvas-border rounded-xl overflow-hidden">
             <table className="w-full">
               <thead>
@@ -130,24 +245,31 @@ export default function MediaLibrary() {
               </thead>
               <tbody>
                 {filtered.map((asset) => {
-                  const Icon = TYPE_ICONS[asset.type];
+                  const category = toAssetCategory(asset.file_type);
+                  const Icon = TYPE_ICONS[category];
                   return (
                     <tr key={asset.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
-                          <Icon className={`w-4 h-4 ${TYPE_COLORS[asset.type]}`} />
-                          <span className="text-sm text-slate-300">{asset.name}</span>
+                          <Icon className={`w-4 h-4 ${TYPE_COLORS[category]}`} />
+                          <span className="text-sm text-slate-300">{asset.file_name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-2 text-xs text-slate-400 capitalize">{asset.type}</td>
-                      <td className="px-4 py-2 text-xs text-slate-400">{asset.size}</td>
-                      <td className="px-4 py-2 text-xs text-slate-400">{asset.date}</td>
+                      <td className="px-4 py-2 text-xs text-slate-400 capitalize">{category}</td>
+                      <td className="px-4 py-2 text-xs text-slate-400">{formatSize(asset.file_size)}</td>
+                      <td className="px-4 py-2 text-xs text-slate-400">{formatDate(asset.created_at)}</td>
                       <td className="px-4 py-2 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <button className="p-1 rounded hover:bg-canvas-hover">
+                          <button
+                            onClick={() => handleDownload(asset.id, asset.file_name)}
+                            className="p-1 rounded hover:bg-canvas-hover"
+                          >
                             <Download className="w-3.5 h-3.5 text-slate-400" />
                           </button>
-                          <button className="p-1 rounded hover:bg-canvas-hover">
+                          <button
+                            onClick={() => handleDelete(asset.id, asset.file_name)}
+                            className="p-1 rounded hover:bg-canvas-hover"
+                          >
                             <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-status-error" />
                           </button>
                         </div>
