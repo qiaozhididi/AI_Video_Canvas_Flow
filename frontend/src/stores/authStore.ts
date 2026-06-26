@@ -9,7 +9,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
 
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   checkAuth: () => Promise<void>;
@@ -23,10 +23,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: false,
   error: null,
 
-  login: async (email, password) => {
+  login: async (username, password) => {
     set({ isLoading: true, error: null });
     try {
-      const { access_token } = await authApi.login(email, password);
+      const { access_token } = await authApi.login(username, password);
       localStorage.setItem('access_token', access_token);
       set({ token: access_token, isAuthenticated: true });
 
@@ -44,8 +44,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       await authApi.register(username, email, password);
-      // 注册成功后自动登录
-      await useAuthStore.getState().login(email, password);
+      // 注册成功后自动登录（后端用 username 登录）
+      await useAuthStore.getState().login(username, password);
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : '注册失败';
       set({ error: msg, isLoading: false });

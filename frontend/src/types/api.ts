@@ -7,15 +7,16 @@ export interface User {
   email: string;
 }
 
-// 登录请求（对齐后端 UserLogin）
+// 登录请求（对齐后端 LoginRequest: username + password）
 export interface LoginRequest {
-  email: string;
+  username: string;
   password: string;
 }
 
 // 登录响应（对齐后端 TokenResponse）
 export interface LoginResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
 }
 

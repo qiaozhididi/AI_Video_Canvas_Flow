@@ -77,6 +77,7 @@ export interface UserResponse {
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
 }
 
@@ -191,10 +192,10 @@ export const authApi = {
       body: JSON.stringify({ username, email, password }),
     }),
 
-  login: (email: string, password: string) =>
+  login: (username: string, password: string) =>
     request<TokenResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }),
 
   getMe: () =>
