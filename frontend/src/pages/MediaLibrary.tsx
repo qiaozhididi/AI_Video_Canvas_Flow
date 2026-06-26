@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Upload, Search, Grid3X3, List, Image, Film, Music, Trash2, Download, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Upload, Search, Grid3X3, List, Image, Film, Music, Trash2, Download, Loader2, ImageIcon } from 'lucide-react';
 import { mediaApi } from '@/utils/apiClient';
 import type { MediaAssetResponse } from '@/utils/apiClient';
 import { toast } from 'sonner';
@@ -27,6 +27,73 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('zh-CN');
 }
 
+/** 图片缩略图：懒加载 + presigned URL + 降级占位 */
+function AssetThumbnail({ assetId, alt, className, fallbackIcon }: {
+  assetId: string;
+  alt: string;
+  className?: string;
+  fallbackIcon?: React.ReactNode;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // IntersectionObserver 懒加载
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisible(true); },
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // 可见时才请求 presigned URL
+  useEffect(() => {
+    if (!visible) return;
+    let revoked = false;
+    mediaApi.getPresignedUrl(assetId).then(({ url }) => {
+      if (!revoked) setSrc(url);
+    }).catch(() => setError(true));
+    return () => { revoked = true; };
+  }, [visible, assetId]);
+
+  // 加载失败降级
+  if (error || (visible && !src)) {
+    return (
+      <div ref={ref} className={`flex items-center justify-center bg-canvas-hover ${className ?? ''}`}>
+        {fallbackIcon ?? <ImageIcon className="w-6 h-6 text-slate-600" />}
+      </div>
+    );
+  }
+
+  // 未进入视口：占位
+  if (!visible) {
+    return <div ref={ref} className={`bg-canvas-hover ${className ?? ''}`} />;
+  }
+
+  // 正在加载 presigned URL
+  if (!src) {
+    return (
+      <div ref={ref} className={`flex items-center justify-center bg-canvas-hover ${className ?? ''}`}>
+        <Loader2 className="w-6 h-6 text-slate-600 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className={className}
+      onError={() => setError(true)}
+    />
+  );
+}
+
 export default function MediaLibrary() {
   const [assets, setAssets] = useState<MediaAssetResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +103,7 @@ export default function MediaLibrary() {
   const [filter, setFilter] = useState<AssetType>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
 
-  const loadAssets = async () => {
+  const loadAssets = useCallback(async () => {
     try {
       setLoading(true);
       const data = await mediaApi.list();
@@ -46,11 +113,11 @@ export default function MediaLibrary() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadAssets();
-  }, []);
+  }, [loadAssets]);
 
   const uploadFile = async (file: File) => {
     try {
@@ -249,8 +316,17 @@ export default function MediaLibrary() {
               const Icon = TYPE_ICONS[category];
               return (
                 <div key={asset.id} className="group rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden hover:border-canvas-hover transition-all">
-                  <div className="aspect-square bg-canvas-hover flex items-center justify-center relative">
-                    <Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />
+                  <div className="aspect-square bg-canvas-hover flex items-center justify-center relative overflow-hidden">
+                    {category === 'image' ? (
+                      <AssetThumbnail
+                        assetId={asset.id}
+                        alt={asset.file_name}
+                        className="w-full h-full object-cover"
+                        fallbackIcon={<Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />}
+                      />
+                    ) : (
+                      <Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />
+                    )}
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
                       <button
                         onClick={() => handleDownload(asset.id, asset.file_name)}
@@ -295,7 +371,15 @@ export default function MediaLibrary() {
                     <tr key={asset.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
-                          <Icon className={`w-4 h-4 ${TYPE_COLORS[category]}`} />
+                          {category === 'image' ? (
+                            <AssetThumbnail
+                              assetId={asset.id}
+                              alt={asset.file_name}
+                              className="w-8 h-8 rounded object-cover shrink-0"
+                            />
+                          ) : (
+                            <Icon className={`w-4 h-4 shrink-0 ${TYPE_COLORS[category]}`} />
+                          )}
                           <span className="text-sm text-slate-300">{asset.file_name}</span>
                         </div>
                       </td>
