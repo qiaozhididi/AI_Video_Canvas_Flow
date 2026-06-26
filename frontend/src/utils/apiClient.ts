@@ -118,6 +118,7 @@ export interface NodeResponse {
 }
 
 export interface NodeCreateRequest {
+  id: string;
   node_type: string;
   label?: string;
   position_x?: number;
@@ -137,10 +138,21 @@ export interface EdgeResponse {
 }
 
 export interface EdgeCreateRequest {
+  id: string;
   source_node_id: string;
   target_node_id: string;
   source_port?: string;
   target_port?: string;
+}
+
+export interface WorkflowSaveRequest {
+  nodes: NodeCreateRequest[];
+  edges: EdgeCreateRequest[];
+}
+
+export interface WorkflowSaveResponse {
+  nodes_count: number;
+  edges_count: number;
 }
 
 // ── 媒体资产 ──
@@ -253,6 +265,22 @@ export const workflowApi = {
 
   deleteEdge: (projectId: string, edgeId: string) =>
     request<void>(`/workflows/${projectId}/edges/${edgeId}`, { method: 'DELETE' }),
+
+  /** 批量保存：替换项目的全部节点和边 */
+  save: (projectId: string, data: WorkflowSaveRequest) =>
+    request<WorkflowSaveResponse>(`/workflows/${projectId}/save`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  /** 加载项目的全部节点和边 */
+  loadWorkflow: async (projectId: string) => {
+    const [nodes, edges] = await Promise.all([
+      request<NodeResponse[]>(`/workflows/${projectId}/nodes`),
+      request<EdgeResponse[]>(`/workflows/${projectId}/edges`),
+    ]);
+    return { nodes, edges };
+  },
 };
 
 // ── 媒体资产 ──

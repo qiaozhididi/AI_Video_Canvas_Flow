@@ -4,22 +4,27 @@ import {
   Plus, Search, Clock, Trash2, Film, Sparkles,
   ArrowRight,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Home() {
-  const { projects, createProject, deleteProject } = useProjectStore();
+  const { projects, createProject, deleteProject, loadProjects } = useProjectStore();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
+  // 首次加载时从后端获取项目列表
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
   const filtered = projects.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const name = newProjectName.trim() || `项目 ${projects.length + 1}`;
-    const project = createProject(name);
+    const project = await createProject(name);
     setShowNewDialog(false);
     setNewProjectName('');
     navigate(`/editor/${project.id}`);
