@@ -4,6 +4,7 @@ import Layout from "@/components/Layout";
 import EditorLayout from "@/components/EditorLayout";
 import Home from "@/pages/Home";
 import Editor from "@/pages/Editor";
+import Login from "@/pages/Login";
 import MediaLibrary from "@/pages/MediaLibrary";
 import RenderCenter from "@/pages/RenderCenter";
 import Templates from "@/pages/Templates";
@@ -24,6 +25,9 @@ export default function App() {
       />
       <Router>
         <Routes>
+          {/* 登录页：独立布局 */}
+          <Route path="/login" element={<Login />} />
+
           {/* 主布局：侧边导航 */}
           <Route element={<Layout />}>
             <Route path="/" element={<Home />} />
