@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 type AssetType = 'all' | 'image' | 'video' | 'audio';
 type ViewMode = 'grid' | 'list';
+const PAGE_SIZE = 40;
 
 /** 从 MIME 类型提取资源分类 */
 function toAssetCategory(fileType: string): 'image' | 'video' | 'audio' {
@@ -94,6 +95,23 @@ function AssetThumbnail({ assetId, alt, className, fallbackIcon }: {
   );
 }
 
+/** 加载更多哨兵：滚到底部时触发 onLoadMore */
+function LoadMoreSentinel({ onLoadMore, hasMore }: { onLoadMore: () => void; hasMore: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !hasMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) onLoadMore(); },
+      { rootMargin: '400px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore]);
+  if (!hasMore) return null;
+  return <div ref={ref} className="h-4" />;
+}
+
 export default function MediaLibrary() {
   const [assets, setAssets] = useState<MediaAssetResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,12 +120,14 @@ export default function MediaLibrary() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<AssetType>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   const loadAssets = useCallback(async () => {
     try {
       setLoading(true);
       const data = await mediaApi.list();
       setAssets(data);
+      setVisibleCount(PAGE_SIZE);
     } catch {
       toast.error('加载素材列表失败');
     } finally {
@@ -118,6 +138,15 @@ export default function MediaLibrary() {
   useEffect(() => {
     loadAssets();
   }, [loadAssets]);
+
+  // 搜索/筛选变化时重置分页
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [search, filter]);
+
+  const loadMore = useCallback(() => {
+    setVisibleCount((prev) => prev + PAGE_SIZE);
+  }, []);
 
   const uploadFile = async (file: File) => {
     try {
@@ -205,6 +234,10 @@ export default function MediaLibrary() {
     const matchType = filter === 'all' || category === filter;
     return matchSearch && matchType;
   });
+
+  // 分页截取
+  const visible = filtered.slice(0, visibleCount);
+  const hasMore = visibleCount < filtered.length;
 
   const TYPE_ICONS = {
     image: Image,
@@ -310,104 +343,130 @@ export default function MediaLibrary() {
           </div>
         ) : viewMode === 'grid' ? (
           /* 网格视图 */
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {filtered.map((asset) => {
-              const category = toAssetCategory(asset.file_type);
-              const Icon = TYPE_ICONS[category];
-              return (
-                <div key={asset.id} className="group rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden hover:border-canvas-hover transition-all">
-                  <div className="aspect-square bg-canvas-hover flex items-center justify-center relative overflow-hidden">
-                    {category === 'image' ? (
-                      <AssetThumbnail
-                        assetId={asset.id}
-                        alt={asset.file_name}
-                        className="w-full h-full object-cover"
-                        fallbackIcon={<Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />}
-                      />
-                    ) : (
-                      <Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                      <button
-                        onClick={() => handleDownload(asset.id, asset.file_name)}
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30"
-                      >
-                        <Download className="w-4 h-4 text-white" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(asset.id, asset.file_name)}
-                        className="p-1.5 rounded-full bg-white/20 hover:bg-white/30"
-                      >
-                        <Trash2 className="w-4 h-4 text-white" />
-                      </button>
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {visible.map((asset) => {
+                const category = toAssetCategory(asset.file_type);
+                const Icon = TYPE_ICONS[category];
+                return (
+                  <div key={asset.id} className="group rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden hover:border-canvas-hover transition-all">
+                    <div className="aspect-square bg-canvas-hover flex items-center justify-center relative overflow-hidden">
+                      {category === 'image' ? (
+                        <AssetThumbnail
+                          assetId={asset.id}
+                          alt={asset.file_name}
+                          className="w-full h-full object-cover"
+                          fallbackIcon={<Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />}
+                        />
+                      ) : (
+                        <Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />
+                      )}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                        <button
+                          onClick={() => handleDownload(asset.id, asset.file_name)}
+                          className="p-1.5 rounded-full bg-white/20 hover:bg-white/30"
+                        >
+                          <Download className="w-4 h-4 text-white" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(asset.id, asset.file_name)}
+                          className="p-1.5 rounded-full bg-white/20 hover:bg-white/30"
+                        >
+                          <Trash2 className="w-4 h-4 text-white" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="p-2">
+                      <p className="text-xs text-slate-300 truncate">{asset.file_name}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">{formatSize(asset.file_size)}</p>
                     </div>
                   </div>
-                  <div className="p-2">
-                    <p className="text-xs text-slate-300 truncate">{asset.file_name}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{formatSize(asset.file_size)}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            <LoadMoreSentinel onLoadMore={loadMore} hasMore={hasMore} />
+            {hasMore && (
+              <div className="text-center py-4">
+                <button
+                  onClick={loadMore}
+                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  加载更多 ({filtered.length - visibleCount} 项未显示)
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           /* 列表视图 */
-          <div className="border border-canvas-border rounded-xl overflow-hidden">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-canvas-panel text-xs text-slate-500">
-                  <th className="text-left px-4 py-2 font-medium">名称</th>
-                  <th className="text-left px-4 py-2 font-medium">类型</th>
-                  <th className="text-left px-4 py-2 font-medium">大小</th>
-                  <th className="text-left px-4 py-2 font-medium">日期</th>
-                  <th className="text-right px-4 py-2 font-medium">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((asset) => {
-                  const category = toAssetCategory(asset.file_type);
-                  const Icon = TYPE_ICONS[category];
-                  return (
-                    <tr key={asset.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
-                      <td className="px-4 py-2">
-                        <div className="flex items-center gap-2">
-                          {category === 'image' ? (
-                            <AssetThumbnail
-                              assetId={asset.id}
-                              alt={asset.file_name}
-                              className="w-8 h-8 rounded object-cover shrink-0"
-                            />
-                          ) : (
-                            <Icon className={`w-4 h-4 shrink-0 ${TYPE_COLORS[category]}`} />
-                          )}
-                          <span className="text-sm text-slate-300">{asset.file_name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-2 text-xs text-slate-400 capitalize">{category}</td>
-                      <td className="px-4 py-2 text-xs text-slate-400">{formatSize(asset.file_size)}</td>
-                      <td className="px-4 py-2 text-xs text-slate-400">{formatDate(asset.created_at)}</td>
-                      <td className="px-4 py-2 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleDownload(asset.id, asset.file_name)}
-                            className="p-1 rounded hover:bg-canvas-hover"
-                          >
-                            <Download className="w-3.5 h-3.5 text-slate-400" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(asset.id, asset.file_name)}
-                            className="p-1 rounded hover:bg-canvas-hover"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-status-error" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="border border-canvas-border rounded-xl overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-canvas-panel text-xs text-slate-500">
+                    <th className="text-left px-4 py-2 font-medium">名称</th>
+                    <th className="text-left px-4 py-2 font-medium">类型</th>
+                    <th className="text-left px-4 py-2 font-medium">大小</th>
+                    <th className="text-left px-4 py-2 font-medium">日期</th>
+                    <th className="text-right px-4 py-2 font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((asset) => {
+                    const category = toAssetCategory(asset.file_type);
+                    const Icon = TYPE_ICONS[category];
+                    return (
+                      <tr key={asset.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            {category === 'image' ? (
+                              <AssetThumbnail
+                                assetId={asset.id}
+                                alt={asset.file_name}
+                                className="w-8 h-8 rounded object-cover shrink-0"
+                              />
+                            ) : (
+                              <Icon className={`w-4 h-4 shrink-0 ${TYPE_COLORS[category]}`} />
+                            )}
+                            <span className="text-sm text-slate-300">{asset.file_name}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-xs text-slate-400 capitalize">{category}</td>
+                        <td className="px-4 py-2 text-xs text-slate-400">{formatSize(asset.file_size)}</td>
+                        <td className="px-4 py-2 text-xs text-slate-400">{formatDate(asset.created_at)}</td>
+                        <td className="px-4 py-2 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleDownload(asset.id, asset.file_name)}
+                              className="p-1 rounded hover:bg-canvas-hover"
+                            >
+                              <Download className="w-3.5 h-3.5 text-slate-400" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(asset.id, asset.file_name)}
+                              className="p-1 rounded hover:bg-canvas-hover"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-slate-400 hover:text-status-error" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <LoadMoreSentinel onLoadMore={loadMore} hasMore={hasMore} />
+            {hasMore && (
+              <div className="text-center py-4">
+                <button
+                  onClick={loadMore}
+                  className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  加载更多 ({filtered.length - visibleCount} 项未显示)
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
