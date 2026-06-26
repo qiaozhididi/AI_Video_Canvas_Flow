@@ -55,6 +55,7 @@ export type CanvasNode = {
   type: string;
   position: { x: number; y: number };
   data: CanvasNodeData;
+  measured?: { width?: number; height?: number };
 };
 
 // React Flow 边类型

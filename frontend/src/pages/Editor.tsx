@@ -10,7 +10,7 @@ import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
 import { loadMockData } from '@/utils/mockData';
 import { ChevronDown, ChevronUp, Database, RotateCcw, RotateCw } from 'lucide-react';
-import type { NodeSubtype, CanvasNodeData } from '@/types/canvas';
+import type { CanvasNodeData } from '@/types/canvas';
 
 // ===== 性能监控：重渲染检测 =====
 const PERF_LOG = '[Perf:Editor]';
@@ -19,7 +19,6 @@ export default function Editor() {
   // ===== Store hooks =====
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
-  const addNode = useCanvasStore((s) => s.addNode);
   const updateNodeData = useCanvasStore((s) => s.updateNodeData);
   const removeNode = useCanvasStore((s) => s.removeNode);
   const setNodes = useCanvasStore((s) => s.setNodes);
@@ -29,7 +28,6 @@ export default function Editor() {
   const canRedo = useHistoryStore((s) => s.canRedo);
   const undo = useHistoryStore((s) => s.undo);
   const redo = useHistoryStore((s) => s.redo);
-  const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const pushUpdateNodeData = useHistoryStore((s) => s.pushUpdateNodeData);
   const pushRemoveNode = useHistoryStore((s) => s.pushRemoveNode);
   const pushMoveNode = useHistoryStore((s) => s.pushMoveNode);
@@ -78,32 +76,7 @@ export default function Editor() {
   // ===== 自动保存：不在 useEffect 中监听 nodes/edges =====
   // markDirty 由各操作方法内部调用，避免无限循环
 
-  // ===== 拖拽放置节点 =====
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      const subtype = e.dataTransfer.getData('application/reactflow-subtype') as NodeSubtype;
-      if (!subtype) return;
-
-      const x = 100 + Math.random() * 400;
-      const y = 100 + Math.random() * 300;
-
-      addNode(subtype, { x, y });
-
-      // 记录到 historyStore
-      const newNode = useCanvasStore.getState().nodes[useCanvasStore.getState().nodes.length - 1];
-      if (newNode) {
-        pushAddNode({ node: newNode });
-      }
-      markDirty();
-    },
-    [addNode, pushAddNode]
-  );
+  // ===== 拖拽放置节点（已移至 Canvas.tsx 的 ReactFlow 组件上处理） =====
 
   // ===== 节点操作（带历史记录） =====
   const handleNodeDataUpdate = useCallback(
@@ -161,8 +134,6 @@ export default function Editor() {
           <div
             ref={reactFlowWrapper}
             className="flex-1"
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
           >
             <Canvas />
           </div>

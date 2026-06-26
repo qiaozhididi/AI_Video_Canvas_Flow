@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -14,23 +14,31 @@ import {
   ConnectionLineType,
   type Node,
   type Edge,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useHistoryStore } from '@/stores/historyStore';
+import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import CanvasNodeComponent from './CanvasNode';
-import type { CanvasNodeData } from '@/types/canvas';
+import type { CanvasNodeData, NodeSubtype } from '@/types/canvas';
 
 const nodeTypes = { canvasNode: CanvasNodeComponent };
 
 export default function Canvas() {
-  const { nodes, edges, setNodes, setEdges, setSelectedNode } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode } = useCanvasStore();
+  const pushAddNode = useHistoryStore((s) => s.pushAddNode);
+  const markDirty = useAutoSaveStore((s) => s.markDirty);
+  const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
 
+  // 将 store 中的 CanvasNode 映射为 ReactFlow Node，保留 ReactFlow 内部状态
   const reactFlowNodes: Node[] = useMemo(
     () => nodes.map((n) => ({
       id: n.id,
-      type: 'canvasNode',
+      type: 'canvasNode' as const,
       position: n.position,
       data: { ...n.data } as Record<string, unknown>,
+      measured: n.measured,
     })),
     [nodes]
   );
@@ -44,6 +52,7 @@ export default function Canvas() {
           type: (n.data as unknown as CanvasNodeData).type,
           position: n.position,
           data: n.data as unknown as CanvasNodeData,
+          measured: n.measured,
         }))
       );
     },
@@ -80,6 +89,35 @@ export default function Canvas() {
     setSelectedNode(null);
   }, [setSelectedNode]);
 
+  // ReactFlow 拖拽放置
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const subtype = e.dataTransfer.getData('application/reactflow-subtype') as NodeSubtype;
+      if (!subtype) return;
+
+      // 使用 reactFlowInstance 将鼠标屏幕坐标转换为画布流坐标
+      const position = reactFlowInstance.current
+        ? reactFlowInstance.current.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+        : { x: 100 + Math.random() * 400, y: 100 + Math.random() * 300 };
+
+      addNode(subtype, position);
+
+      // 记录到 historyStore
+      const newNode = useCanvasStore.getState().nodes[useCanvasStore.getState().nodes.length - 1];
+      if (newNode) {
+        pushAddNode({ node: newNode });
+      }
+      markDirty();
+    },
+    [addNode, pushAddNode, markDirty]
+  );
+
   return (
     <div className="w-full h-full">
       <ReactFlow
@@ -91,6 +129,9 @@ export default function Canvas() {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onInit={(instance) => { reactFlowInstance.current = instance; }}
         connectionLineType={ConnectionLineType.SmoothStep}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
