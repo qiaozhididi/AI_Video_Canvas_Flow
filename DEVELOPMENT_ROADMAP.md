@@ -50,13 +50,18 @@
   - `frontend/src/stores/projectStore.ts`
   - `frontend/src/components/EditorLayout.tsx`
 
-#### 3. 媒体库 — 上传/列表/删除
-- **前端**: `MediaLibrary.tsx` 调用 `mediaApi` 替代 MOCK 数据
-- **后端**: MinIO 上传接入（`media.py` 的 upload 端点）
+#### 3. 媒体库 — 上传/列表/删除/下载
+- **前端**: `MediaLibrary.tsx` 调用 `mediaApi` 替代 MOCK 数据 ✅ 已完成
+- **后端**: MinIO 上传接入 ✅ 已完成
+- **功能**: 图片/视频缩略图懒加载 + 降级占位、分页加载（40/页 + 哨兵自动加载）、拖拽上传、直接下载
+- **Mock 数据**: 已抽取至 `frontend/src/mock/mediaMock.ts`，`npm run dev:mock` 启动
 - **涉及文件**:
   - `frontend/src/pages/MediaLibrary.tsx`
+  - `frontend/src/mock/mediaMock.ts` — 媒体 Mock 数据生成
+  - `frontend/src/mock/canvasMock.ts` — 画布 Mock 数据（从 `utils/mockData.ts` 迁移）
+  - `frontend/src/mock/index.ts` — 统一导出
   - `backend/app/api/media.py`
-  - `backend/app/services/minio_client.py`（需新建）
+  - `backend/app/services/media_service.py`
 
 ---
 

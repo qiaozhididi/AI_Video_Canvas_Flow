@@ -8,7 +8,7 @@ import NodePanel from '@/components/panels/NodePanel';
 import PropertyPanel from '@/components/panels/PropertyPanel';
 import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
-import { loadMockData } from '@/utils/mockData';
+import { loadMockData } from '@/mock';
 import { ChevronDown, ChevronUp, Database, RotateCcw, RotateCw } from 'lucide-react';
 import type { CanvasNodeData } from '@/types/canvas';
 

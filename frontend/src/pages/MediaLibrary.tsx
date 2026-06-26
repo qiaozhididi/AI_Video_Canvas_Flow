@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Upload, Search, Grid3X3, List, Image, Film, Music, Trash2, Download, Loader2, ImageIcon } from 'lucide-react';
 import { mediaApi } from '@/utils/apiClient';
 import type { MediaAssetResponse } from '@/utils/apiClient';
+import { isMockMedia, isMockAsset, generateMockAssets, getMockThumbnailUrl, mockDelay } from '@/mock';
 import { toast } from 'sonner';
 
 type AssetType = 'all' | 'image' | 'video' | 'audio';
@@ -28,9 +29,10 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('zh-CN');
 }
 
-/** 图片缩略图：懒加载 + presigned URL + 降级占位 */
-function AssetThumbnail({ assetId, alt, className, fallbackIcon }: {
+/** 图片/视频缩略图：懒加载 + presigned URL + 降级占位 */
+function AssetThumbnail({ assetId, thumbnailKey, alt, className, fallbackIcon }: {
   assetId: string;
+  thumbnailKey?: string | null;
   alt: string;
   className?: string;
   fallbackIcon?: React.ReactNode;
@@ -56,11 +58,15 @@ function AssetThumbnail({ assetId, alt, className, fallbackIcon }: {
   useEffect(() => {
     if (!visible) return;
     let revoked = false;
+    if (isMockAsset(assetId)) {
+      if (!revoked) setSrc(getMockThumbnailUrl(assetId));
+      return;
+    }
     mediaApi.getPresignedUrl(assetId).then(({ url }) => {
       if (!revoked) setSrc(url);
     }).catch(() => setError(true));
     return () => { revoked = true; };
-  }, [visible, assetId]);
+  }, [visible, assetId, thumbnailKey]);
 
   // 加载失败降级
   if (error || (visible && !src)) {
@@ -125,8 +131,13 @@ export default function MediaLibrary() {
   const loadAssets = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await mediaApi.list();
-      setAssets(data);
+      if (isMockMedia) {
+        await mockDelay();
+        setAssets(generateMockAssets());
+      } else {
+        const data = await mediaApi.list();
+        setAssets(data);
+      }
       setVisibleCount(PAGE_SIZE);
     } catch {
       toast.error('加载素材列表失败');
@@ -351,13 +362,23 @@ export default function MediaLibrary() {
                 return (
                   <div key={asset.id} className="group rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden hover:border-canvas-hover transition-all">
                     <div className="aspect-square bg-canvas-hover flex items-center justify-center relative overflow-hidden">
-                      {category === 'image' ? (
-                        <AssetThumbnail
-                          assetId={asset.id}
-                          alt={asset.file_name}
-                          className="w-full h-full object-cover"
-                          fallbackIcon={<Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />}
-                        />
+                      {category === 'image' || category === 'video' ? (
+                        <div className="relative w-full h-full">
+                          <AssetThumbnail
+                            assetId={asset.id}
+                            thumbnailKey={asset.thumbnail_key}
+                            alt={asset.file_name}
+                            className="w-full h-full object-cover"
+                            fallbackIcon={<Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />}
+                          />
+                          {category === 'video' && (
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+                                <Film className="w-5 h-5 text-white" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <Icon className={`w-10 h-10 ${TYPE_COLORS[category]}`} />
                       )}
@@ -418,12 +439,21 @@ export default function MediaLibrary() {
                       <tr key={asset.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
                         <td className="px-4 py-2">
                           <div className="flex items-center gap-2">
-                            {category === 'image' ? (
-                              <AssetThumbnail
-                                assetId={asset.id}
-                                alt={asset.file_name}
-                                className="w-8 h-8 rounded object-cover shrink-0"
-                              />
+                            {category === 'image' || category === 'video' ? (
+                              <div className="relative shrink-0">
+                                <AssetThumbnail
+                                  assetId={asset.id}
+                                  thumbnailKey={asset.thumbnail_key}
+                                  alt={asset.file_name}
+                                  className="w-8 h-8 rounded object-cover"
+                                  fallbackIcon={<Icon className={`w-4 h-4 ${TYPE_COLORS[category]}`} />}
+                                />
+                                {category === 'video' && (
+                                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                    <Film className="w-3 h-3 text-white drop-shadow" />
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <Icon className={`w-4 h-4 shrink-0 ${TYPE_COLORS[category]}`} />
                             )}
