@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Upload, Search, Grid3X3, List, Image, Film, Music, Trash2, Download, Loader2 } from 'lucide-react';
 import { mediaApi } from '@/utils/apiClient';
 import type { MediaAssetResponse } from '@/utils/apiClient';
@@ -31,10 +31,10 @@ export default function MediaLibrary() {
   const [assets, setAssets] = useState<MediaAssetResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<AssetType>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAssets = async () => {
     try {
@@ -52,22 +52,47 @@ export default function MediaLibrary() {
     loadAssets();
   }, []);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const uploadFile = async (file: File) => {
     try {
       setUploading(true);
       await mediaApi.upload(file);
       toast.success('上传成功');
       await loadAssets();
-    } catch {
+    } catch (err) {
+      console.error('[Media:Upload] 上传失败', err);
       toast.error('上传失败');
     } finally {
       setUploading(false);
-      // 重置 input 以便再次选择同一文件
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await uploadFile(file);
+    e.target.value = '';
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) {
+      toast.error('仅支持图片、视频、音频文件');
+      return;
+    }
+    await uploadFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
   };
 
   const handleDelete = async (id: string, fileName: string) => {
@@ -78,7 +103,6 @@ export default function MediaLibrary() {
       await loadAssets();
     } catch (err) {
       if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
-        // 资源已不存在，直接刷新列表
         toast.info('素材已不存在，列表已刷新');
         await loadAssets();
       } else {
@@ -89,18 +113,22 @@ export default function MediaLibrary() {
 
   const handleDownload = async (id: string, fileName: string) => {
     try {
-      const { url } = await mediaApi.getPresignedUrl(id);
-      // 在新标签页打开下载链接，避免当前页面导航离开
+      const token = localStorage.getItem('access_token');
+      const res = await fetch(`/api/v1/media/${id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = blobUrl;
       a.download = fileName;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
     } catch {
-      toast.error('获取下载链接失败');
+      toast.error('下载失败');
     }
   };
 
@@ -124,7 +152,12 @@ export default function MediaLibrary() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div
+      className="h-full overflow-y-auto"
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
       <div className="max-w-6xl mx-auto px-8 py-10">
         <h1 className="text-2xl font-bold text-white font-display mb-6">媒体库</h1>
 
@@ -170,22 +203,30 @@ export default function MediaLibrary() {
             </button>
           </div>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*,audio/*"
-            onChange={handleUpload}
-            className="hidden"
-          />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            {uploading ? '上传中...' : '上传素材'}
-          </button>
+          <div className="relative group">
+            <input
+              type="file"
+              accept="image/*,video/*,audio/*"
+              onChange={handleFileChange}
+              disabled={uploading}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+            />
+            <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg pointer-events-none transition-all duration-200 group-hover:shadow-[0_0_16px_rgba(124,58,237,0.5)] group-hover:scale-105 group-active:scale-95">
+              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {uploading ? '上传中...' : '上传素材'}
+            </div>
+          </div>
         </div>
+
+        {/* 拖拽上传提示 */}
+        {dragOver && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 pointer-events-none">
+            <div className="flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-neon-purple bg-canvas-panel/90">
+              <Upload className="w-10 h-10 text-neon-purple" />
+              <p className="text-lg font-medium text-white">释放文件以上传</p>
+            </div>
+          </div>
+        )}
 
         {/* 加载状态 */}
         {loading ? (
@@ -198,7 +239,7 @@ export default function MediaLibrary() {
               <Image className="w-8 h-8 text-slate-600" />
             </div>
             <p className="text-slate-400 mb-2">{assets.length === 0 ? '暂无素材' : '没有匹配的素材'}</p>
-            <p className="text-sm text-slate-600">点击"上传素材"添加文件</p>
+            <p className="text-sm text-slate-600">点击"上传素材"或拖拽文件到此处</p>
           </div>
         ) : viewMode === 'grid' ? (
           /* 网格视图 */
