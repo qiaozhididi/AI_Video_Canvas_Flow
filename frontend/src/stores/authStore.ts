@@ -1,34 +1,74 @@
 import { create } from 'zustand';
+import { authApi, ApiError } from '@/utils/apiClient';
 import type { User } from '@/types/api';
 
 interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  isLoading: boolean;
+  error: string | null;
 
-  login: (user: User, token: string) => void;
+  login: (email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
   logout: () => void;
-  updateUser: (updates: Partial<User>) => void;
+  checkAuth: () => Promise<void>;
+  clearError: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: localStorage.getItem('auth-token'),
-  isAuthenticated: !!localStorage.getItem('auth-token'),
+  token: localStorage.getItem('access_token'),
+  isAuthenticated: !!localStorage.getItem('access_token'),
+  isLoading: false,
+  error: null,
 
-  login: (user, token) => {
-    localStorage.setItem('auth-token', token);
-    set({ user, token, isAuthenticated: true });
+  login: async (email, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      const { access_token } = await authApi.login(email, password);
+      localStorage.setItem('access_token', access_token);
+      set({ token: access_token, isAuthenticated: true });
+
+      // 登录成功后获取用户信息
+      const user = await authApi.getMe();
+      set({ user, isLoading: false });
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : '登录失败';
+      set({ error: msg, isLoading: false });
+      throw err;
+    }
+  },
+
+  register: async (username, email, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      await authApi.register(username, email, password);
+      // 注册成功后自动登录
+      await useAuthStore.getState().login(email, password);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : '注册失败';
+      set({ error: msg, isLoading: false });
+      throw err;
+    }
   },
 
   logout: () => {
-    localStorage.removeItem('auth-token');
-    set({ user: null, token: null, isAuthenticated: false });
+    localStorage.removeItem('access_token');
+    set({ user: null, token: null, isAuthenticated: false, error: null });
   },
 
-  updateUser: (updates) => {
-    set((state) => ({
-      user: state.user ? { ...state.user, ...updates } : null,
-    }));
+  checkAuth: async () => {
+    const token = localStorage.getItem('access_token');
+    if (!token) return;
+    try {
+      const user = await authApi.getMe();
+      set({ user, isAuthenticated: true });
+    } catch {
+      localStorage.removeItem('access_token');
+      set({ user: null, token: null, isAuthenticated: false });
+    }
   },
+
+  clearError: () => set({ error: null }),
 }));
