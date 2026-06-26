@@ -2,14 +2,15 @@
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, UploadFile
-from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
 from app.models.media_asset import MediaAsset
+from app.services.media_service import upload_file, get_presigned_url, delete_file
+from app.config import settings
 
 logger = logging.getLogger("app.api.media")
 
@@ -29,13 +30,26 @@ async def list_media(user: CurrentUser, db: DBSession):
 
 @router.post("/upload", summary="上传媒体文件")
 async def upload_media(file: UploadFile, user: CurrentUser, db: DBSession):
-    """上传媒体文件（开发模式：文件内容暂存内存，元数据写入数据库）"""
+    """上传媒体文件到 MinIO，元数据写入数据库"""
     content = await file.read()
     owner_id = uuid.UUID(user)
     asset_id = uuid.uuid4()
     now = datetime.utcnow()
     storage_key = f"media/{user}/{asset_id}/{file.filename}"
 
+    # 上传文件到 MinIO
+    try:
+        await upload_file(
+            bucket=settings.MINIO_BUCKET,
+            object_name=storage_key,
+            file_data=content,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except Exception as e:
+        logger.error(f"[Media:Upload] MinIO 上传失败: {e}")
+        raise HTTPException(status_code=500, detail="文件存储失败")
+
+    # 元数据写入数据库
     asset = MediaAsset(
         id=asset_id,
         owner_id=owner_id,
@@ -64,16 +78,35 @@ async def get_media(asset_id: str, user: CurrentUser, db: DBSession):
 
 
 @router.get("/{asset_id}/presign", summary="获取预签名下载 URL")
-async def get_presigned_url(asset_id: str, user: CurrentUser, db: DBSession):
-    """获取媒体文件的预签名下载 URL（开发模式：返回占位 URL）"""
+async def get_presigned_url_api(asset_id: str, user: CurrentUser, db: DBSession):
+    """获取媒体文件的 MinIO 预签名下载 URL"""
     asset = await _get_asset(asset_id, db)
-    return {"url": f"http://localhost:9000/ai-canvas-flow/{asset.storage_key}", "expires_in": 3600}
+    try:
+        url = await get_presigned_url(
+            bucket=settings.MINIO_BUCKET,
+            object_name=asset.storage_key,
+            expires_hours=1,
+        )
+        return {"url": url, "expires_in": 3600}
+    except Exception as e:
+        logger.error(f"[Media:Presign] 生成预签名 URL 失败: {e}")
+        raise HTTPException(status_code=500, detail="生成下载链接失败")
 
 
 @router.delete("/{asset_id}", status_code=204, summary="删除媒体资产")
 async def delete_media(asset_id: str, user: CurrentUser, db: DBSession):
-    """删除指定媒体资产"""
+    """删除指定媒体资产（同时从 MinIO 删除文件）"""
     asset = await _get_asset(asset_id, db)
+
+    # 从 MinIO 删除文件
+    try:
+        await delete_file(
+            bucket=settings.MINIO_BUCKET,
+            object_name=asset.storage_key,
+        )
+    except Exception as e:
+        logger.warning(f"[Media:Delete] MinIO 删除失败（继续删除数据库记录）: {e}")
+
     await db.delete(asset)
     await db.commit()
     logger.info(f"[Media:Delete] id={asset_id}")
@@ -91,7 +124,7 @@ async def _get_asset(asset_id: str, db: DBSession) -> MediaAsset:
 
 
 def _asset_to_dict(asset: MediaAsset) -> dict:
-    """将 ORM 对象转为与原内存存储一致的字典格式"""
+    """将 ORM 对象转为字典格式"""
     return {
         "id": str(asset.id),
         "owner_id": str(asset.owner_id),

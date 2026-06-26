@@ -90,9 +90,12 @@ export default function MediaLibrary() {
   const handleDownload = async (id: string, fileName: string) => {
     try {
       const { url } = await mediaApi.getPresignedUrl(id);
+      // 在新标签页打开下载链接，避免当前页面导航离开
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
