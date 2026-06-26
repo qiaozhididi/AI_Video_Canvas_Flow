@@ -5,11 +5,12 @@ import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { ArrowLeft, Save, Undo2, Redo2, Play, History, Clock } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
 export default function EditorLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { projects, currentProject, setCurrentProject, saveCurrentProject } = useProjectStore();
+  const { projects, currentProject, setCurrentProject, saveCurrentProject, loadProjectToCanvas } = useProjectStore();
   const { canUndo, canRedo, undo, redo } = useHistoryStore();
   const { startAutoSave, stopAutoSave, checkRecovery, restoreSnapshot, discardRecovery, lastSavedAt, isDirty } = useAutoSaveStore();
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
@@ -21,8 +22,10 @@ export default function EditorLayout() {
     const project = projects.find((p) => p.id === projectId);
     if (project) {
       setCurrentProject(project);
+      // 将项目的画布数据加载到 canvasStore
+      loadProjectToCanvas(projectId);
     }
-  }, [projectId, projects, setCurrentProject]);
+  }, [projectId, projects, setCurrentProject, loadProjectToCanvas]);
 
   // 启动自动保存
   useEffect(() => {
@@ -56,6 +59,7 @@ export default function EditorLayout() {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         saveCurrentProject();
+        toast.success('项目已保存');
       }
     };
 
@@ -141,7 +145,10 @@ export default function EditorLayout() {
         <div className="h-5 w-px bg-canvas-border" />
 
         <button
-          onClick={() => saveCurrentProject()}
+          onClick={() => {
+            saveCurrentProject();
+            toast.success('项目已保存');
+          }}
           className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded transition-colors"
         >
           <Save className="w-3.5 h-3.5" />

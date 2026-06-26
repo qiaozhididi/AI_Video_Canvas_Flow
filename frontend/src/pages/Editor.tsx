@@ -65,13 +65,7 @@ export default function Editor() {
     }
   }, [currentRender, nodes.length, edges.length, canUndo, canRedo, isDirty]);
 
-  // ===== Mock 数据加载 =====
-  useEffect(() => {
-    // 如果画布为空且有当前项目，加载 Mock 数据
-    if (nodes.length === 0 && currentProject) {
-      loadMockData();
-    }
-  }, []); // 仅初始化时加载一次
+  // ===== Mock 数据加载（仅用于开发调试，已移至调试面板手动触发） =====
 
   // ===== 自动保存：不在 useEffect 中监听 nodes/edges =====
   // markDirty 由各操作方法内部调用，避免无限循环

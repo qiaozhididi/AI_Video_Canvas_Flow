@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Project } from '@/types/project';
 import { createEmptyProject } from '@/types/project';
+import { useCanvasStore } from './canvasStore';
+import { useTimelineStore } from './timelineStore';
 
 interface ProjectState {
   projects: Project[];
@@ -14,6 +16,7 @@ interface ProjectState {
   setCurrentProject: (project: Project | null) => void;
   loadProjects: () => void;
   saveCurrentProject: () => void;
+  loadProjectToCanvas: (projectId: string) => boolean;
 }
 
 const STORAGE_KEY = 'ai-canvas-flow-projects';
@@ -84,12 +87,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   saveCurrentProject: () => {
     const { currentProject, projects } = get();
     if (!currentProject) return;
-    const updated = {
+
+    // 从 canvasStore 和 timelineStore 读取当前画布数据
+    const canvasStore = useCanvasStore.getState();
+    const timelineStore = useTimelineStore.getState();
+
+    const updated: Project = {
       ...currentProject,
+      canvasNodes: JSON.parse(JSON.stringify(canvasStore.nodes)),
+      canvasEdges: JSON.parse(JSON.stringify(canvasStore.edges)),
+      timelineData: JSON.parse(JSON.stringify(timelineStore.data)),
       updatedAt: new Date().toISOString(),
     };
+
     const newProjects = projects.map((p) => (p.id === updated.id ? updated : p));
     saveToStorage(newProjects);
     set({ projects: newProjects, currentProject: updated });
+  },
+
+  // 加载项目的画布数据到 canvasStore，返回是否有数据
+  loadProjectToCanvas: (projectId) => {
+    const project = get().projects.find((p) => p.id === projectId);
+    if (!project) return false;
+
+    const hasData = project.canvasNodes.length > 0 || project.canvasEdges.length > 0;
+    if (hasData) {
+      const canvasStore = useCanvasStore.getState();
+      const timelineStore = useTimelineStore.getState();
+
+      canvasStore.setNodes(project.canvasNodes);
+      canvasStore.setEdges(project.canvasEdges);
+      timelineStore.loadTimeline(project.timelineData);
+    }
+
+    return hasData;
   },
 }));
