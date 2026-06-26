@@ -90,20 +90,21 @@ def verify_redis():
 def verify_minio():
     print("\n=== MinIO 持久化数据验证 ===")
     from minio import Minio
+    from app.config import settings
 
     client = None
     try:
-        client = Minio("192.168.10.76:9000", access_key="minioadmin", secret_key="minioadmin", secure=False)
+        client = Minio(settings.MINIO_ENDPOINT, access_key=settings.MINIO_ACCESS_KEY, secret_key=settings.MINIO_SECRET_KEY, secure=settings.MINIO_SECURE)
         # 验证连接
-        if not client.bucket_exists("ai-canvas-flow"):
-            log("MinIO", "桶检查", "fail", "ai-canvas-flow 桶不存在")
+        if not client.bucket_exists(settings.MINIO_BUCKET):
+            log("MinIO", "桶检查", "fail", f"{settings.MINIO_BUCKET} 桶不存在")
             return
         log("MinIO", "连接", "ok")
     except Exception as e:
         log("MinIO", "连接", "fail", str(e)[:200])
         return
 
-    bucket = "ai-canvas-flow"
+    bucket = settings.MINIO_BUCKET
 
     try:
         # 项目文件

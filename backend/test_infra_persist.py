@@ -133,14 +133,15 @@ def test_minio():
 
     from minio import Minio
     from io import BytesIO
+    from app.config import settings
 
     client = Minio(
-        "192.168.10.76:9000",
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        secure=False,
+        settings.MINIO_ENDPOINT,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=settings.MINIO_SECURE,
     )
-    bucket = "ai-canvas-flow"
+    bucket = settings.MINIO_BUCKET
 
     # 2.1 上传项目封面
     try:

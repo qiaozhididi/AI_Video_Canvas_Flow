@@ -3,8 +3,10 @@
 import logging
 import uuid
 from datetime import datetime
+from urllib.request import urlopen
 
 from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
@@ -91,6 +93,38 @@ async def get_presigned_url_api(asset_id: str, user: CurrentUser, db: DBSession)
     except Exception as e:
         logger.error(f"[Media:Presign] 生成预签名 URL 失败: {e}")
         raise HTTPException(status_code=500, detail="生成下载链接失败")
+
+
+@router.get("/{asset_id}/download", summary="直接下载媒体文件")
+async def download_media(asset_id: str, user: CurrentUser, db: DBSession):
+    """通过后端代理下载媒体文件，避免前端跨域问题"""
+    asset = await _get_asset(asset_id, db)
+    try:
+        url = await get_presigned_url(
+            bucket=settings.MINIO_BUCKET,
+            object_name=asset.storage_key,
+            expires_hours=1,
+        )
+    except Exception as e:
+        logger.error(f"[Media:Download] 生成预签名 URL 失败: {e}")
+        raise HTTPException(status_code=500, detail="生成下载链接失败")
+
+    try:
+        resp = urlopen(url)
+    except Exception as e:
+        logger.error(f"[Media:Download] 从 MinIO 获取文件失败: {e}")
+        raise HTTPException(status_code=500, detail="文件获取失败")
+
+    from urllib.parse import quote
+    encoded_filename = quote(asset.file_name)
+
+    return StreamingResponse(
+        resp,
+        media_type=asset.file_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+        },
+    )
 
 
 @router.delete("/{asset_id}", status_code=204, summary="删除媒体资产")

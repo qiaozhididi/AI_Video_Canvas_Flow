@@ -114,21 +114,23 @@ def test_minio():
         log("MinIO", "import minio", "fail", "minio 包未安装")
         return
 
-    # 2.1 连接
+    # 2.1 连接（从配置读取）
+    from app.config import settings
+
     try:
         client = Minio(
-            "192.168.10.76:9000",
-            access_key="minioadmin",
-            secret_key="minioadmin",
-            secure=False,
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
         )
-        log("MinIO", "连接", "ok", "endpoint=192.168.10.76:9000")
+        log("MinIO", "连接", "ok", f"endpoint={settings.MINIO_ENDPOINT}")
     except Exception as e:
         log("MinIO", "连接", "fail", str(e))
         return
 
     # 2.2 检查/创建桶
-    bucket_name = "ai-canvas-flow"
+    bucket_name = settings.MINIO_BUCKET
     try:
         exists = client.bucket_exists(bucket_name)
         if not exists:
