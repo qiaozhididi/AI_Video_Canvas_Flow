@@ -14,7 +14,8 @@
 4. [媒体资产](#4-媒体资产)
 5. [渲染任务](#5-渲染任务)
 6. [AI 配置（Provider/Model）](#6-ai-配置providermodel)
-7. [通用错误码](#7-通用错误码)
+7. [快照](#7-快照)
+8. [通用错误码](#8-通用错误码)
 
 ---
 
@@ -732,13 +733,145 @@ curl http://localhost:8000/api/v1/ai/models/default \
 
 ---
 
-## 7. 通用错误码
+## 7. 快照
+
+> 用于编辑器自动保存与崩溃恢复。快照仅追加到 `project_snapshots` 表，不修改实际 nodes/edges；恢复时通过 `POST /snapshots/{id}/restore` 单事务替换。
+>
+> **5 auto 上限策略**：`source='auto'` 的快照受 5 条上限约束（插入前清理最旧），`source='manual'` 快照不计数。
+
+### POST /projects/{project_id}/snapshots — 创建快照
+
+```bash
+curl -X POST http://localhost:8000/api/v1/projects/<project_id>/snapshots \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source":"auto",
+    "snapshot_data":{
+      "nodes":[{"id":"n1","node_type":"input","label":"文本","position_x":100,"position_y":200,"config":{"type":"input"}}],
+      "edges":[],
+      "timelineData":{"duration":30,"tracks":[],"currentTime":0,"zoom":1}
+    }
+  }'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| source | `"auto"` \| `"manual"` | 是 | 快照来源；`auto` 受 5 条上限约束 |
+| label | string \| null | 否 | 命名快照标签（`manual` 常用） |
+| snapshot_data | object | 是 | `{nodes, edges, timelineData}` 结构，存为 JSONB |
+
+**响应 200：**
+
+```json
+{
+  "id": "snapshot-uuid",
+  "project_id": "project-uuid",
+  "owner_id": "user-uuid",
+  "source": "auto",
+  "label": null,
+  "snapshot_data": { "nodes": [], "edges": [], "timelineData": {} },
+  "created_at": "2026-06-27T12:00:00"
+}
+```
+
+**错误：** 404 项目不存在 / 400 无效的项目 ID 格式
+
+---
+
+### GET /projects/{project_id}/snapshots — 获取快照列表
+
+```bash
+curl "http://localhost:8000/api/v1/projects/<project_id>/snapshots?source=auto" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**查询参数：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| source | `"auto"` \| `"manual"` | 否 | 按 source 筛选；不传则返回全部 |
+
+**响应 200：** `SnapshotResponse[]`，按 `created_at DESC` 排序
+
+---
+
+### GET /projects/{project_id}/snapshots/latest — 获取最新快照
+
+```bash
+curl http://localhost:8000/api/v1/projects/<project_id>/snapshots/latest \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**响应 200：** `SnapshotResponse`（不限 source 的最新一条）
+
+**错误：** 404 无快照 / 404 项目不存在
+
+> 前端 `autoSaveStore.checkRecovery()` 用此端点检测崩溃恢复：对比 `created_at` 与 `project.updatedAt`，若快照更新则提示恢复。
+
+---
+
+### GET /snapshots/{snapshot_id} — 获取快照详情
+
+```bash
+curl http://localhost:8000/api/v1/snapshots/<snapshot_id> \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**响应 200：** `SnapshotResponse`
+
+**错误：** 404 快照不存在 / 400 无效的快照 ID 格式
+
+---
+
+### DELETE /snapshots/{snapshot_id} — 删除快照
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/snapshots/<snapshot_id> \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**响应 204：** 无内容
+
+**错误：** 404 快照不存在
+
+---
+
+### POST /snapshots/{snapshot_id}/restore — 恢复快照
+
+> 单事务恢复：删除项目现有 nodes/edges → 从 `snapshot_data` 插入新 nodes/edges → 刷新 `project.updated_at` → commit。
+>
+> 字段映射兼容性：同时支持前端格式（`source`/`target`/`sourceHandle`/`targetHandle`/`position.x`/`data`）和后端格式（`source_node_id`/`target_node_id`/`source_port`/`target_port`/`position_x`/`config`）。
+
+```bash
+curl -X POST http://localhost:8000/api/v1/snapshots/<snapshot_id>/restore \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**响应 200：**
+
+```json
+{
+  "restored": true,
+  "project_id": "project-uuid",
+  "nodes_count": 3,
+  "edges_count": 2
+}
+```
+
+**错误：** 404 快照不存在 / 400 无效的快照 ID 格式
+
+---
+
+## 8. 通用错误码
 
 | HTTP 状态码 | 错误信息 | 说明 |
 |-------------|----------|------|
 | 400 | 无效的项目 ID 格式 | 路径参数不是合法 UUID |
 | 401 | 未提供认证凭据 / 无效或过期的认证凭据 | Token 缺失或过期，前端应跳转登录页 |
-| 404 | 项目不存在 / 节点不存在 / 边不存在 / 媒体资产不存在 / 渲染任务不存在 / 未找到可用的 AI 模型 | 资源未找到或无权访问 |
+| 404 | 项目不存在 / 节点不存在 / 边不存在 / 媒体资产不存在 / 渲染任务不存在 / 未找到可用的 AI 模型 / 快照不存在 / 无快照 | 资源未找到或无权访问 |
 | 409 | 任务已完成，无法取消 | 渲染任务状态不允许取消 |
 | 500 | Internal Server Error | 服务端异常，查看后端日志 |
 
