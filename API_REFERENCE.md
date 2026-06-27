@@ -13,7 +13,8 @@
 3. [工作流（节点/边）](#3-工作流节点边)
 4. [媒体资产](#4-媒体资产)
 5. [渲染任务](#5-渲染任务)
-6. [通用错误码](#6-通用错误码)
+6. [AI 配置（Provider/Model）](#6-ai-配置providermodel)
+7. [通用错误码](#7-通用错误码)
 
 ---
 
@@ -441,7 +442,7 @@ curl http://localhost:8000/api/v1/workflows/<project_id>/edges \
 
 ## 4. 媒体资产
 
-> 当前状态：后端 API 已实现，前端 MediaLibrary.tsx **仍使用 Mock 数据**，尚未对接
+> 前端 MediaLibrary.tsx 已对接后端 API，支持 MinIO 上传/下载/缩略图懒加载/分页/拖拽上传
 
 ### GET /media/ — 获取媒体资产列表
 
@@ -469,10 +470,10 @@ curl http://localhost:8000/api/v1/media/ \
 ]
 ```
 
-**前端字段映射（待对接）：**
+**前端字段映射：**
 
-| 后端字段 | 当前 Mock 字段 | 转换逻辑 |
-|----------|---------------|----------|
+| 后端字段 | 前端字段 | 转换逻辑 |
+|----------|----------|----------|
 | file_name | name | 直接使用 |
 | file_type | type | `file_type.split('/')[0]` → image/video/audio |
 | file_size | size | `(file_size / 1024 / 1024).toFixed(1) + ' MB'` |
@@ -546,7 +547,14 @@ curl -X DELETE http://localhost:8000/api/v1/media/<asset_id> \
 curl -X POST http://localhost:8000/api/v1/render/ \
   -H 'Authorization: Bearer <token>' \
   -H 'Content-Type: application/json' \
-  -d '{"project_id":"c0e6f694-6ff3-4a85-97c4-9c6c9d8cf6ef","output_format":"mp4"}'
+  -d '{
+    "project_id":"c0e6f694-6ff3-4a85-97c4-9c6c9d8cf6ef",
+    "task_type":"ai_text2img",
+    "node_id":"node-1782476890770-n9ckd6",
+    "model_id":"uuid-of-ai-model",
+    "prompt":"一只在月光下的猫",
+    "input_artifacts":[{"type":"text","url":"asset://upstream-text"}]
+  }'
 ```
 
 **请求体：**
@@ -554,7 +562,17 @@ curl -X POST http://localhost:8000/api/v1/render/ \
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | project_id | string | 是 | 项目 UUID |
+| task_type | string | 否 | 任务类型（默认 `render`）；`ai_*` 前缀走 AI 推理，其他走模拟渲染 |
+| node_id | string | 否 | 关联的画布节点 ID（用于画布节点触发渲染） |
+| model_id | string | 否 | AI Model UUID（AI 推理任务必填） |
+| prompt | string | 否 | 用户提示词（AI 推理任务） |
+| input_artifacts | object[] | 否 | 上游节点输出资产 `[{type, url, text?, filename?}]` |
 | output_format | string | 否 | 输出格式（默认 mp4） |
+
+**task_type 路由：**
+- `ai_text2img` → 调 `call_image_gen`（Images API，文生图）
+- `ai_img2video` / `ai_tts` / 其他 `ai_*` → 调 `call_llm`（Chat Completions API）
+- 非 `ai_` 前缀 → 模拟渲染进度
 
 **响应 200：**
 
@@ -563,16 +581,19 @@ curl -X POST http://localhost:8000/api/v1/render/ \
   "id": "f3d4e5f6-...",
   "project_id": "c0e6f694-...",
   "owner_id": "65e9619c-...",
-  "task_type": "render",
+  "task_type": "ai_text2img",
   "status": "pending",
-  "progress": 0.0,
+  "progress": 0,
   "celery_task_id": null,
   "result_url": null,
   "error_message": null,
+  "node_id": "node-1782476890770-n9ckd6",
   "created_at": "2026-06-26T13:00:00.000000",
   "updated_at": "2026-06-26T13:00:00.000000"
 }
 ```
+
+> `progress` 为 0-100 整数（非 0.0-1.0 小数）
 
 **status 枚举：** `pending` → `running` → `completed` / `failed` / `cancelled`
 
@@ -602,13 +623,122 @@ curl -X POST http://localhost:8000/api/v1/render/<task_id>/cancel \
 
 ---
 
-## 6. 通用错误码
+## 6. AI 配置（Provider/Model）
+
+> AI Provider/Model 可配置系统，支持多平台、多模型、多 Key。首次启动自动创建默认火山引擎 Provider + 豆包模型。
+
+### POST /ai/providers — 创建 AI Provider
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/providers \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"火山引擎","platform":"volcengine","base_url":"https://ark.cn-beijing.volces.com/api/v3","api_key":"ark-xxx","is_active":true}'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| name | string | 是 | 显示名称 |
+| platform | string | 是 | 平台标识（volcengine/openai/custom） |
+| base_url | string | 是 | API 端点 |
+| api_key | string | 是 | API Key |
+| is_active | boolean | 否 | 是否启用（默认 true） |
+
+**响应 200：** Provider 对象（含 id/created_at/updated_at）
+
+---
+
+### GET /ai/providers — 列出所有 Provider
+
+```bash
+curl http://localhost:8000/api/v1/ai/providers \
+  -H 'Authorization: Bearer <token>'
+```
+
+**响应 200：** Provider 对象数组
+
+---
+
+### PUT /ai/providers/{provider_id} — 更新 Provider
+
+**请求体：** 同创建，所有字段可选
+
+---
+
+### DELETE /ai/providers/{provider_id} — 删除 Provider
+
+**响应 204：** 无内容
+
+---
+
+### POST /ai/models — 创建 AI Model
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/models \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"provider_id":"uuid","model_id":"doubao-seed-2-1-turbo-260628","display_name":"豆包 Seed 2.1 Turbo","model_type":"llm","is_active":true}'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| provider_id | string | 是 | 关联的 Provider UUID |
+| model_id | string | 是 | 平台模型标识 |
+| display_name | string | 是 | 前端显示名 |
+| model_type | string | 是 | 模型类型（llm/image_gen/video_gen/tts） |
+| is_active | boolean | 否 | 是否启用（默认 true） |
+
+---
+
+### GET /ai/models — 列出所有 Model
+
+```bash
+curl 'http://localhost:8000/api/v1/ai/models?provider_id=<uuid>' \
+  -H 'Authorization: Bearer <token>'
+```
+
+**查询参数：** `provider_id`（可选，按 Provider 筛选）
+
+---
+
+### GET /ai/models/default — 获取默认 AI 模型
+
+```bash
+curl http://localhost:8000/api/v1/ai/models/default \
+  -H 'Authorization: Bearer <token>'
+```
+
+**逻辑：** 返回当前用户第一个 active 的 AI Model（关联的 Provider 也必须 active）
+
+**响应 200：** Model 对象
+
+**错误：** 404 未找到可用的 AI 模型，请先在设置页配置
+
+---
+
+### PUT /ai/models/{model_id} — 更新 Model
+
+**请求体：** 同创建，所有字段可选
+
+---
+
+### DELETE /ai/models/{model_id} — 删除 Model
+
+**响应 204：** 无内容
+
+---
+
+## 7. 通用错误码
 
 | HTTP 状态码 | 错误信息 | 说明 |
 |-------------|----------|------|
 | 400 | 无效的项目 ID 格式 | 路径参数不是合法 UUID |
 | 401 | 未提供认证凭据 / 无效或过期的认证凭据 | Token 缺失或过期，前端应跳转登录页 |
-| 404 | 项目不存在 / 节点不存在 / 边不存在 / 媒体资产不存在 / 渲染任务不存在 | 资源未找到或无权访问 |
+| 404 | 项目不存在 / 节点不存在 / 边不存在 / 媒体资产不存在 / 渲染任务不存在 / 未找到可用的 AI 模型 | 资源未找到或无权访问 |
 | 409 | 任务已完成，无法取消 | 渲染任务状态不允许取消 |
 | 500 | Internal Server Error | 服务端异常，查看后端日志 |
 
@@ -627,7 +757,7 @@ curl -X POST http://localhost:8000/api/v1/render/<task_id>/cancel \
 所有 API 调用已封装在 `frontend/src/utils/apiClient.ts`：
 
 ```typescript
-import { authApi, projectApi, workflowApi, mediaApi, renderApi } from '@/utils/apiClient';
+import { authApi, projectApi, workflowApi, mediaApi, renderApi, aiApi } from '@/utils/apiClient';
 
 // 认证
 authApi.register(username, email, password);
@@ -658,10 +788,21 @@ mediaApi.getPresignedUrl(assetId);
 mediaApi.delete(assetId);
 
 // 渲染任务
-renderApi.create(projectId, taskType);
+renderApi.create({ project_id, task_type, node_id?, model_id?, prompt?, input_artifacts? });
 renderApi.get(taskId);
 renderApi.cancel(taskId);
 renderApi.poll(taskId, intervalMs?, onProgress?);      // 轮询直到完成
+
+// AI 配置
+aiApi.providers.create(data);
+aiApi.providers.list();
+aiApi.providers.update(id, data);
+aiApi.providers.delete(id);
+aiApi.models.create(data);
+aiApi.models.list(providerId?);
+aiApi.models.update(id, data);
+aiApi.models.delete(id);
+aiApi.getDefaultModel();                               // 获取默认 AI 模型
 ```
 
 > `request()` 函数自动注入 `Authorization` Header、处理 401 跳转登录、解析错误响应。

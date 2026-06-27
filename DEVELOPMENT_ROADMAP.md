@@ -9,11 +9,12 @@
 | 前端 | 画布编辑器 | ✅ 完成 | 节点拖放、连线、属性编辑、撤销重做 |
 | 前端 | 媒体库 | ✅ 完成 | MinIO 上传/下载/缩略图懒加载/分页/拖拽上传 |
 | 前端 | 渲染中心 | ✅ 完成 | 真实 API 对接，任务创建/列表/轮询/取消/下载 |
+| 前端 | 执行工作流 | ✅ 完成 | 单节点执行 + 全工作流拓扑编排（Kahn 算法按层并行） |
 | 前端 | 模板市场 | ❌ Stub | 全量 MOCK 数据，后端无模板 API |
 | 前端 | 设置页 | ⚠️ 部分 | AI 配置面板已实现，其他设置无持久化 |
 | 前端 | 时间轴 | ⚠️ 部分 | 无播放驱动循环 |
 | 前端 | 视频预览 | ⚠️ 部分 | 无视频源传入 |
-| 前端 | 执行工作流 | ❌ Stub | 按钮无逻辑 |
+| 前端 | 自动保存 | ⚠️ 部分 | 双防抖+5 快照已实现，仅存 localStorage 未对接后端 |
 | 后端 | 认证 API | ✅ 完成 | 注册/登录/JWT |
 | 后端 | 项目 CRUD | ✅ 完成 | 级联删除 |
 | 后端 | 工作流 CRUD | ✅ 完成 | 7 端点全对接数据库 |
@@ -31,8 +32,8 @@
 |------|--------|------|
 | 后端 API | **95%** | 全部核心端点已实现，仅 collaboration 为桩代码 |
 | 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model） |
-| 前端 Store 对接 | **33%** | 仅 authStore 和 projectStore 对接后端 |
-| 前端页面对接 | **57%** | Login/Home/RenderCenter/Settings(AI) 已对接；MediaLibrary 有 Mock 降级；其余纯 Mock |
+| 前端 Store 对接 | **50%** | authStore/projectStore/canvasStore(间接) 已对接；autoSaveStore/timelineStore 待对接 |
+| 前端页面对接 | **71%** | Login/Home/RenderCenter/Settings(AI)/Editor(执行工作流) 已对接；MediaLibrary 有 Mock 降级；Templates 纯 Mock |
 
 ---
 
@@ -67,20 +68,45 @@
 - **修复**: 旧 Celery worker 进程缓存 → kill 全部旧进程 + 清除 `__pycache__`
 - **涉及文件**: render.py, render_tasks.py, ai_tasks.py, celery_app.py, ai.py, ai_provider.py, ai_model.py, ai_service.py, config.py, RenderCenter.tsx, Settings.tsx, apiClient.ts
 
+### 5. 画布节点触发渲染任务 + 工作流编排引擎
+- **后端**: render_tasks 表新增 `node_id` 列；`RenderTaskCreate` schema 扩展 `node_id`/`model_id`/`prompt`/`input_artifacts`
+- **后端**: 新增 `GET /ai/models/default` 端点（AI 推理节点自动选模型）
+- **后端**: Celery `run_render_task` 按 `task_type` 前缀路由（`ai_*` 走 AI 推理，其他走模拟渲染）
+- **后端**: 修复 Celery 事件循环不匹配（创建 Celery 专用 async engine + session factory + 复用事件循环）
+- **后端**: 修复 `time.sleep()` 阻塞事件循环 → `await asyncio.sleep()`
+- **后端**: 进度值改为 0-100 整数存储（前端直接展示，避免 0.0-1.0 转换）
+- **后端**: AI 任务路由细化：`ai_text2img` 走 `call_image_gen`（Images API），其他走 `call_llm`（Chat Completions API）
+- **后端**: 工作流保存先 flush 节点再插边，避免 `workflow_edges_target_node_id_fkey` 外键冲突
+- **前端**: 新增 `workflowExecutor.ts` 编排引擎（Kahn 拓扑排序 + 按层并行执行 + 单节点执行）
+- **前端**: Editor.tsx 属性面板替换模拟执行为真实 `executeNode()`，新增 AI 模型下拉选择器
+- **前端**: EditorLayout.tsx "执行工作流"按钮绑定 `executeWorkflow()`，显示编排进度（已完成/总节点数）
+- **前端**: workflowExecutor.ts 收集上游输入节点 `params.text`/`params.url` 为虚拟 artifacts 传给下游
+- **涉及文件**: render.py, render_tasks.py, ai.py, render_task.py, 19c11929fcbb_add_node_id_to_render_tasks.py, workflowExecutor.ts, Editor.tsx, EditorLayout.tsx, apiClient.ts, canvasStore.ts
+
 ---
 
 ## 下一阶段开发计划
 
-### 阶段二：编辑器自动保存优化（P1）
+### 阶段二：编辑器自动保存后端化（P1）
 
-> 编辑器当前依赖手动保存，需要优化为自动保存 + 崩溃恢复
+> 当前 autoSaveStore 双防抖+5 快照已实现，但快照仅存 localStorage，需切换到 PostgreSQL 后端
 
-#### 5.1 自动保存对接后端
-- **前端**: autoSaveStore 从 localStorage 切换到后端 API
-- **前端**: 双防抖策略（2s 操作防抖 + 30s 定时保存）+ 5 快照上限
+#### 5.1 自动保存快照后端化
+- **后端**: 新增 `project_snapshots` 表（JSONB 存 nodes/edges/timelineData）+ Alembic 迁移
+- **后端**: 新增快照 CRUD API（POST/GET/GET latest/DELETE）+ `POST /snapshots/{id}/restore` 单事务恢复端点
+- **后端**: 5 auto 快照上限策略（插入前清理最旧 auto 快照，manual 快照不计数）
+- **前端**: autoSaveStore 移除 localStorage 逻辑，`saveNow()` 改 async 调 `snapshotApi.create()`
+- **前端**: `checkRecovery()` 改 async 调 `snapshotApi.getLatest()`，对比 `created_at` vs `project.updatedAt`
+- **前端**: `restoreSnapshot()` 调 `snapshotApi.restore()` 后刷新本地 stores
+- **前端**: projectStore.loadProjectToCanvas() 加载快照列表填充 autoSaveStore
+- **设计文档**: `docs/superpowers/specs/2026-06-27-autosave-backend-migration-design.md`
 - **涉及文件**:
+  - `backend/app/models/project_snapshot.py`（新建）
+  - `backend/app/api/snapshots.py`（新建）
+  - `backend/app/schemas/snapshot.py`（新建）
   - `frontend/src/stores/autoSaveStore.ts`
   - `frontend/src/stores/projectStore.ts`
+  - `frontend/src/utils/apiClient.ts`
 
 ---
 
@@ -102,16 +128,11 @@
 
 ---
 
-### 阶段四：执行工作流 + WebSocket 协作（P2）
+### 阶段四：WebSocket 协作（P2）
 
-#### 8. 执行工作流按钮
-- **前端**: 拓扑排序 + 逐节点提交渲染任务
-- **前端**: 进度实时更新（WebSocket 或轮询）
-- **涉及文件**:
-  - `frontend/src/components/EditorLayout.tsx`
-  - `frontend/src/utils/workflowExecutor.ts`（需新建）
+> 注：执行工作流按钮已在阶段一完成（见已完成任务 #5）
 
-#### 9. WebSocket 实时协作完善
+#### 8. WebSocket 实时协作完善
 - **后端**: Socket.IO 连接验证 JWT
 - **后端**: node_update/edge_update 事件写入数据库
 - **前端**: WebSocket 客户端 + 远端光标渲染
@@ -165,13 +186,14 @@
 | `/api/v1/media/{id}/download` | GET | ✅ | MinIO 代理下载 |
 | `/api/v1/media/{id}` | DELETE | ✅ | MinIO + DB 删除 |
 | `/api/v1/render/` | GET | ✅ | 任务列表 |
-| `/api/v1/render/` | POST | ✅ | 创建 + 触发 Celery |
+| `/api/v1/render/` | POST | ✅ | 创建 + 触发 Celery（支持 node_id/model_id/prompt/input_artifacts） |
 | `/api/v1/render/{id}` | GET | ✅ | 任务状态 |
 | `/api/v1/render/{id}/cancel` | POST | ✅ | AsyncResult.revoke |
 | `/api/v1/ai/providers` | GET/POST | ✅ | AI Provider CRUD |
 | `/api/v1/ai/providers/{id}` | PUT/DELETE | ✅ | AI Provider CRUD |
 | `/api/v1/ai/models` | GET/POST | ✅ | AI Model CRUD |
 | `/api/v1/ai/models/{id}` | PUT/DELETE | ✅ | AI Model CRUD |
+| `/api/v1/ai/models/default` | GET | ✅ | 获取默认 AI 模型（AI 推理节点自动选模型） |
 | `/api/v1/collab/status` | GET | ✅ | 硬编码状态 |
 
 ## 数据库表结构
@@ -183,9 +205,10 @@
 | `workflow_nodes` | WorkflowNode | ✅ 已创建 |
 | `workflow_edges` | WorkflowEdge | ✅ 已创建 |
 | `media_assets` | MediaAsset | ✅ 已创建 |
-| `render_tasks` | RenderTask | ✅ 已创建 |
+| `render_tasks` | RenderTask | ✅ 已创建（含 node_id 列） |
 | `ai_providers` | AiProvider | ✅ 已创建 |
 | `ai_models` | AiModel | ✅ 已创建 |
+| `project_snapshots` | ProjectSnapshot | ⏳ 阶段二待创建 |
 
 ## 前端 Store 数据持久化现状
 
