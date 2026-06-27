@@ -295,6 +295,11 @@ function PropertyPanelWithHistory({
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
 
+  // Hooks 必须在 early return 之前调用（React 规则）
+  const [executing, setExecuting] = useState(false);
+  const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
   if (!selectedNode) {
     return (
       <div className="w-72 h-full bg-canvas-panel border-l border-canvas-border flex items-center justify-center">
@@ -304,10 +309,6 @@ function PropertyPanelWithHistory({
   }
 
   const data = selectedNode.data;
-
-  const [executing, setExecuting] = useState(false);
-  const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
-  const [loadingModels, setLoadingModels] = useState(false);
 
   const handleParamChange = (key: string, value: unknown) => {
     useHistoryStore.getState().pushUpdateNodeData({
