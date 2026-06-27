@@ -4,7 +4,7 @@ import { createEmptyProject } from '@/types/project';
 import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
 import { useAutoSaveStore } from './autoSaveStore';
-import { projectApi, workflowApi } from '@/utils/apiClient';
+import { projectApi, workflowApi, snapshotApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
 
 interface ProjectState {
@@ -201,6 +201,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const canvasStore = useCanvasStore.getState();
         canvasStore.setNodes(canvasNodes);
         canvasStore.setEdges(canvasEdges);
+      }
+
+      // 加载项目快照列表，填充 autoSaveStore
+      try {
+        const snapshots = await snapshotApi.list(projectId);
+        useAutoSaveStore.getState().setSnapshots(snapshots);
+      } catch (err) {
+        console.error('[ProjectStore] 加载快照列表失败:', err);
       }
 
       return hasData;
