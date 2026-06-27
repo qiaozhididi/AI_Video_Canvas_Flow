@@ -1,13 +1,12 @@
 import { create } from 'zustand';
-import type { StateSnapshot } from '@/types/history';
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
 import type { TimelineData } from '@/types/timeline';
 import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
 import { useProjectStore } from './projectStore';
 import { useHistoryStore } from './historyStore';
+import { snapshotApi, type SnapshotResponse } from '@/utils/apiClient';
 
-const AUTOSAVE_KEY = 'ai-canvas-flow-autosave';
 const SNAPSHOT_LIMIT = 5;
 const AUTOSAVE_INTERVAL = 30_000; // 30秒
 const DEBOUNCE_DELAY = 2_000; // 操作后2秒防抖保存
@@ -16,86 +15,54 @@ const DEBOUNCE_DELAY = 2_000; // 操作后2秒防抖保存
 const LOG = '[AutoSave]';
 
 interface AutoSaveState {
-  snapshots: StateSnapshot[];
+  snapshots: SnapshotResponse[];
   isDirty: boolean;
   lastSavedAt: number | null;
   intervalId: ReturnType<typeof setInterval> | null;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   isSaving: boolean;
-  recoverySnapshot: StateSnapshot | null;
+  recoverySnapshot: SnapshotResponse | null;
 }
 
 interface AutoSaveActions {
+  setSnapshots: (snapshots: SnapshotResponse[]) => void;
   markDirty: () => void;
   markClean: () => void;
-  saveNow: (source?: StateSnapshot['source'], label?: string) => void;
-  createNamedSnapshot: (label: string) => void;
+  saveNow: (source?: 'auto' | 'manual', label?: string) => Promise<void>;
+  createNamedSnapshot: (label: string) => Promise<void>;
   startAutoSave: () => void;
   stopAutoSave: () => void;
-  checkRecovery: () => StateSnapshot | null;
-  restoreSnapshot: (snapshot: StateSnapshot) => void;
-  discardRecovery: () => void;
-  clearSnapshots: () => void;
+  checkRecovery: () => Promise<SnapshotResponse | null>;
+  restoreSnapshot: (snapshot: SnapshotResponse) => Promise<void>;
+  discardRecovery: () => Promise<void>;
+  clearSnapshots: () => Promise<void>;
 }
 
 type AutoSaveStore = AutoSaveState & AutoSaveActions;
 
-function loadSnapshotsFromStorage(): StateSnapshot[] {
-  try {
-    const data = localStorage.getItem(AUTOSAVE_KEY);
-    const parsed = data ? JSON.parse(data) : [];
-    console.log(`${LOG} 从 localStorage 加载快照: ${parsed.length} 个`);
-    return parsed;
-  } catch (err) {
-    console.error(`${LOG} 加载快照失败:`, err);
-    return [];
-  }
-}
-
-function saveSnapshotsToStorage(snapshots: StateSnapshot[]) {
-  try {
-    const json = JSON.stringify(snapshots);
-    console.log(`${LOG} 写入 localStorage, 快照数: ${snapshots.length}, 数据大小: ${(json.length / 1024).toFixed(1)} KB`);
-    localStorage.setItem(AUTOSAVE_KEY, json);
-  } catch (err) {
-    console.error(`${LOG} 写入 localStorage 失败（可能超出配额）:`, err);
-  }
-}
-
-function createSnapshot(source: StateSnapshot['source'], label?: string): StateSnapshot {
+function buildSnapshotData() {
   const canvasStore = useCanvasStore.getState();
   const timelineStore = useTimelineStore.getState();
-  const projectStore = useProjectStore.getState();
-
-  const snapshot: StateSnapshot = {
-    id: `snap-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    projectId: projectStore.currentProject?.id || '',
-    nodes: JSON.parse(JSON.stringify(canvasStore.nodes)),
-    edges: JSON.parse(JSON.stringify(canvasStore.edges)),
-    timelineData: JSON.parse(JSON.stringify(timelineStore.data)),
-    timestamp: Date.now(),
-    source,
-    label,
+  return {
+    nodes: JSON.parse(JSON.stringify(canvasStore.nodes)) as CanvasNode[],
+    edges: JSON.parse(JSON.stringify(canvasStore.edges)) as CanvasEdge[],
+    timelineData: JSON.parse(JSON.stringify(timelineStore.data)) as TimelineData,
   };
-
-  console.log(
-    `${LOG} 创建快照 [${source}]: id=${snapshot.id}, ` +
-    `projectId=${snapshot.projectId || '(无)'}, ` +
-    `nodes=${snapshot.nodes.length}, edges=${snapshot.edges.length}, ` +
-    `label=${label || '(无)'}`
-  );
-
-  return snapshot;
 }
 
 export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
-  snapshots: loadSnapshotsFromStorage(),
+  snapshots: [],
   isDirty: false,
   lastSavedAt: null,
   intervalId: null,
   debounceTimer: null,
   isSaving: false,
   recoverySnapshot: null,
+
+  setSnapshots: (snapshots) => {
+    set({ snapshots });
+    console.log(`${LOG} 已加载快照列表: ${snapshots.length} 个`);
+  },
 
   markDirty: () => {
     const prev = get().isDirty;
@@ -111,7 +78,7 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
 
     const timer = setTimeout(() => {
       console.log(`${LOG} 防抖窗口结束，执行保存`);
-      get().saveNow('auto');
+      void get().saveNow('auto');
     }, DEBOUNCE_DELAY);
 
     set({ debounceTimer: timer });
@@ -121,8 +88,15 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
     set({ isDirty: false, lastSavedAt: Date.now() });
   },
 
-  saveNow: (source = 'auto', label) => {
+  saveNow: async (source = 'auto', label) => {
     const state = get();
+    const projectStore = useProjectStore.getState();
+    const projectId = projectStore.currentProject?.id;
+
+    if (!projectId) {
+      console.log(`${LOG} 无当前项目，跳过保存`);
+      return;
+    }
     if (state.isSaving) {
       console.warn(`${LOG} 保存正在进行中，跳过本次保存请求 [${source}]`);
       return;
@@ -132,23 +106,28 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
     set({ isSaving: true });
 
     try {
-      const snapshot = createSnapshot(source, label);
-      const snapshots = [...state.snapshots, snapshot];
+      const snapshotData = buildSnapshotData();
+      const resp = await snapshotApi.create(projectId, {
+        source,
+        label,
+        snapshot_data: snapshotData,
+      });
 
-      // 超出上限，移除最旧的自动快照（保留手动快照）
-      let trimmed = snapshots;
-      if (trimmed.length > SNAPSHOT_LIMIT * 2) {
-        const autoSnapshots = trimmed.filter((s) => s.source === 'auto');
-        const manualSnapshots = trimmed.filter((s) => s.source !== 'auto');
-        const removed = trimmed.length - autoSnapshots.slice(-SNAPSHOT_LIMIT).length - manualSnapshots.length;
-        trimmed = [
-          ...autoSnapshots.slice(-SNAPSHOT_LIMIT),
-          ...manualSnapshots,
-        ];
-        console.log(`${LOG} 快照数超限，清理了 ${removed} 个旧自动快照`);
+      // 后端已处理 5 auto 上限，前端只需把新快照插入列表头部
+      const newSnapshots = [resp, ...state.snapshots];
+      // 仅对 auto 类型在前端做兜底裁剪（后端已清理，保持防御）
+      const autoCount = newSnapshots.filter((s) => s.source === 'auto').length;
+      let trimmed = newSnapshots;
+      if (autoCount > SNAPSHOT_LIMIT) {
+        // 移除最旧的 auto 快照（列表已按 created_at DESC 排序，从尾部找 auto）
+        const lastAutoIdx = newSnapshots
+          .map((s, i) => ({ s, i }))
+          .filter((x) => x.s.source === 'auto')
+          .pop()?.i;
+        if (lastAutoIdx !== undefined) {
+          trimmed = newSnapshots.filter((_, i) => i !== lastAutoIdx);
+        }
       }
-
-      saveSnapshotsToStorage(trimmed);
 
       set({
         snapshots: trimmed,
@@ -157,16 +136,18 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
         isSaving: false,
       });
 
-      console.log(`${LOG} 保存完成 [${source}], 当前快照数: ${trimmed.length}`);
+      console.log(
+        `${LOG} 保存完成 [${source}] id=${resp.id}, 当前快照数: ${trimmed.length}`,
+      );
     } catch (err) {
       console.error(`${LOG} 保存失败:`, err);
       set({ isSaving: false });
     }
   },
 
-  createNamedSnapshot: (label) => {
+  createNamedSnapshot: async (label) => {
     console.log(`${LOG} 创建命名快照: "${label}"`);
-    get().saveNow('manual', label);
+    await get().saveNow('manual', label);
   },
 
   startAutoSave: () => {
@@ -181,7 +162,7 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
       const current = get();
       if (current.isDirty) {
         console.log(`${LOG} 定时器触发: 检测到脏状态，执行保存`);
-        current.saveNow('auto');
+        void current.saveNow('auto');
       }
     }, AUTOSAVE_INTERVAL);
 
@@ -203,12 +184,11 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
     // 停止前保存一次
     if (state.isDirty) {
       console.log(`${LOG} 停止前检测到脏状态，执行最后一次保存`);
-      get().saveNow('auto');
+      void get().saveNow('auto');
     }
   },
 
-  checkRecovery: () => {
-    const state = get();
+  checkRecovery: async () => {
     const projectStore = useProjectStore.getState();
     const currentProjectId = projectStore.currentProject?.id;
 
@@ -219,73 +199,112 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
       return null;
     }
 
-    // 查找当前项目的最新快照
-    const projectSnapshots = state.snapshots
-      .filter((s) => s.projectId === currentProjectId)
-      .sort((a, b) => b.timestamp - a.timestamp);
+    try {
+      const latest = await snapshotApi.getLatest(currentProjectId);
+      const project = projectStore.projects.find(
+        (p) => p.id === currentProjectId,
+      );
 
-    if (projectSnapshots.length === 0) {
-      console.log(`${LOG} 当前项目无快照，无需恢复`);
+      if (project) {
+        const snapshotTime = new Date(latest.created_at).getTime();
+        const projectTime = new Date(project.updatedAt).getTime();
+        if (snapshotTime > projectTime) {
+          const timeDiff = snapshotTime - projectTime;
+          console.log(
+            `${LOG} 发现可恢复快照! 快照时间=${new Date(snapshotTime).toLocaleString('zh-CN')}, ` +
+            `项目保存时间=${new Date(projectTime).toLocaleString('zh-CN')}, ` +
+            `时间差=${(timeDiff / 1000).toFixed(0)}s`,
+          );
+          set({ recoverySnapshot: latest });
+          return latest;
+        }
+      }
+
+      console.log(`${LOG} 快照不晚于项目保存时间，无需恢复`);
+      return null;
+    } catch (err: unknown) {
+      // 404 = 无快照，正常情况
+      const status = (err as { status?: number })?.status;
+      if (status === 404) {
+        console.log(`${LOG} 当前项目无快照，无需恢复`);
+        return null;
+      }
+      console.error(`${LOG} 检查恢复失败:`, err);
       return null;
     }
-
-    const latest = projectSnapshots[0];
-    const project = projectStore.projects.find((p) => p.id === currentProjectId);
-
-    if (project && latest.timestamp > new Date(project.updatedAt).getTime()) {
-      const timeDiff = latest.timestamp - new Date(project.updatedAt).getTime();
-      console.log(
-        `${LOG} 发现可恢复快照! 快照时间=${new Date(latest.timestamp).toLocaleString('zh-CN')}, ` +
-        `项目保存时间=${new Date(project.updatedAt).toLocaleString('zh-CN')}, ` +
-        `时间差=${(timeDiff / 1000).toFixed(0)}s, ` +
-        `nodes=${latest.nodes.length}, edges=${latest.edges.length}`
-      );
-      set({ recoverySnapshot: latest });
-      return latest;
-    }
-
-    console.log(`${LOG} 快照不晚于项目保存时间，无需恢复`);
-    return null;
   },
 
-  restoreSnapshot: (snapshot) => {
-    const canvasStore = useCanvasStore.getState();
-    const timelineStore = useTimelineStore.getState();
+  restoreSnapshot: async (snapshot) => {
+    const projectStore = useProjectStore.getState();
+    const projectId = projectStore.currentProject?.id || snapshot.project_id;
 
     console.log(
-      `${LOG} 恢复快照: id=${snapshot.id}, ` +
-      `nodes=${snapshot.nodes.length}, edges=${snapshot.edges.length}, ` +
-      `timestamp=${new Date(snapshot.timestamp).toLocaleString('zh-CN')}`
+      `${LOG} 恢复快照: id=${snapshot.id}, projectId=${projectId}`,
     );
 
-    // 暂停 historyStore 录制，避免恢复操作被记录
-    const historyStore = useHistoryStore;
-    historyStore.getState().pauseRecording();
+    try {
+      await snapshotApi.restore(snapshot.id);
 
-    canvasStore.setNodes(snapshot.nodes);
-    canvasStore.setEdges(snapshot.edges);
-    timelineStore.loadTimeline(snapshot.timelineData);
+      // 暂停 historyStore 录制，避免恢复操作被记录
+      const historyStore = useHistoryStore;
+      historyStore.getState().pauseRecording();
 
-    historyStore.getState().resumeRecording();
-    historyStore.getState().clearHistory();
+      // 重新加载实际 nodes/edges 到本地 stores
+      await projectStore.loadProjectToCanvas(projectId);
 
-    set({
-      isDirty: false,
-      lastSavedAt: Date.now(),
-      recoverySnapshot: null,
-    });
+      // 还原 timelineData（从快照数据中读取）
+      const timelineStore = useTimelineStore.getState();
+      timelineStore.loadTimeline(snapshot.snapshot_data.timelineData);
 
-    console.log(`${LOG} 快照恢复完成，历史记录已清空`);
+      historyStore.getState().resumeRecording();
+      historyStore.getState().clearHistory();
+
+      set({
+        isDirty: false,
+        lastSavedAt: Date.now(),
+        recoverySnapshot: null,
+      });
+
+      console.log(`${LOG} 快照恢复完成，历史记录已清空`);
+    } catch (err) {
+      console.error(`${LOG} 恢复快照失败:`, err);
+      throw err;
+    }
   },
 
-  discardRecovery: () => {
+  discardRecovery: async () => {
+    const state = get();
     console.log(`${LOG} 丢弃恢复快照`);
+    if (state.recoverySnapshot) {
+      try {
+        await snapshotApi.delete(state.recoverySnapshot.id);
+      } catch (err) {
+        console.error(`${LOG} 删除恢复快照失败（静默）:`, err);
+      }
+    }
     set({ recoverySnapshot: null });
   },
 
-  clearSnapshots: () => {
-    console.log(`${LOG} 清理所有快照`);
-    localStorage.removeItem(AUTOSAVE_KEY);
+  clearSnapshots: async () => {
+    const state = get();
+    const projectStore = useProjectStore.getState();
+    const projectId = projectStore.currentProject?.id;
+    console.log(`${LOG} 清理当前项目所有快照: projectId=${projectId || '(无)'}`);
+
+    if (!projectId) {
+      set({ snapshots: [], isDirty: false, recoverySnapshot: null });
+      return;
+    }
+
+    // 遍历逐个删除（不新增批量端点，保持 API 简洁）
+    for (const s of state.snapshots) {
+      try {
+        await snapshotApi.delete(s.id);
+      } catch (err) {
+        console.error(`${LOG} 删除快照失败 id=${s.id}:`, err);
+      }
+    }
+
     set({ snapshots: [], isDirty: false, recoverySnapshot: null });
   },
 }));
