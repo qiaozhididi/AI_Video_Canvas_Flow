@@ -8,9 +8,9 @@
 |------|------|------|------|
 | 前端 | 画布编辑器 | ✅ 完成 | 节点拖放、连线、属性编辑、撤销重做 |
 | 前端 | 媒体库 | ✅ 完成 | MinIO 上传/下载/缩略图懒加载/分页/拖拽上传 |
-| 前端 | 渲染中心 | ❌ Stub | 全量 MOCK 数据，renderApi 未调用 |
+| 前端 | 渲染中心 | ✅ 完成 | 真实 API 对接，任务创建/列表/轮询/取消/下载 |
 | 前端 | 模板市场 | ❌ Stub | 全量 MOCK 数据，后端无模板 API |
-| 前端 | 设置页 | ❌ Stub | 保存无持久化 |
+| 前端 | 设置页 | ⚠️ 部分 | AI 配置面板已实现，其他设置无持久化 |
 | 前端 | 时间轴 | ⚠️ 部分 | 无播放驱动循环 |
 | 前端 | 视频预览 | ⚠️ 部分 | 无视频源传入 |
 | 前端 | 执行工作流 | ❌ Stub | 按钮无逻辑 |
@@ -18,9 +18,10 @@
 | 后端 | 项目 CRUD | ✅ 完成 | 级联删除 |
 | 后端 | 工作流 CRUD | ✅ 完成 | 7 端点全对接数据库 |
 | 后端 | 媒体资产 | ✅ 完成 | MinIO 上传/presign/下载/删除 |
-| 后端 | 渲染任务 | ⚠️ 部分 | 写库但未触发 Celery 任务 |
+| 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消 |
+| 后端 | AI 可配置系统 | ✅ 完成 | Provider/Model CRUD + 默认配置 + LLM 调用封装 |
+| 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务，RabbitMQ 4.x 兼容 |
 | 后端 | WebSocket | ⚠️ 部分 | 广播可用，缺鉴权/持久化 |
-| 后端 | Celery 任务 | ❌ 骨架 | 仅模拟进度 |
 
 ---
 
@@ -28,14 +29,14 @@
 
 | 层面 | 完成度 | 说明 |
 |------|--------|------|
-| 后端 API | **90%** | 24/25 端点已实现，仅 collaboration 为桩代码；render 模块写库但未触发 Celery |
-| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（23 个） |
+| 后端 API | **95%** | 全部核心端点已实现，仅 collaboration 为桩代码 |
+| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model） |
 | 前端 Store 对接 | **33%** | 仅 authStore 和 projectStore 对接后端 |
-| 前端页面对接 | **43%** | Login/Home 已对接；MediaLibrary 有 Mock 降级；Editor 半对接；其余纯 Mock |
+| 前端页面对接 | **57%** | Login/Home/RenderCenter/Settings(AI) 已对接；MediaLibrary 有 Mock 降级；其余纯 Mock |
 
 ---
 
-## ✅ 已完成任务（P0 全部完成）
+## ✅ 已完成任务
 
 ### 1. 工作流节点/边 CRUD 对接数据库
 - **后端**: 7 个端点全实现（GET/POST/DELETE nodes + GET/POST/DELETE edges + PUT save）
@@ -52,31 +53,23 @@
 - **Mock**: 抽取至 `frontend/src/mock/`，`npm run dev:mock` 启动
 - **涉及文件**: MediaLibrary.tsx, mock/mediaMock.ts, mock/canvasMock.ts, mock/index.ts, media.py, media_service.py
 
+### 4. 渲染中心前后端打通 + Celery 任务 + AI 可配置系统
+- **后端**: render.py 创建任务触发 Celery `run_render_task.delay()`，进度实时写回 DB
+- **后端**: cancel 端点通过 `AsyncResult.revoke()` 撤销 Celery 任务
+- **后端**: Celery worker 兼容 RabbitMQ 4.x（durable 队列 + 禁用 gossip/mingle/pidbox）
+- **后端**: AI Provider/Model 数据库模型 + CRUD API + 默认配置自动初始化
+- **后端**: ai_service.py 封装 LLM 调用（OpenAI 兼容格式），验证豆包 Seed 2.1 Turbo
+- **前端**: RenderCenter.tsx 对接 renderApi，3s 轮询进度，创建/取消/下载
+- **前端**: Settings.tsx 新增 AI 配置标签页（Provider/Model 管理）
+- **前端**: apiClient.ts 扩展 renderApi + aiApi
+- **修复**: Celery autodiscover `[tasks]` 为空 → `__init__.py` 显式导入任务模块
+- **修复**: render_tasks.py 使用 `async_session_factory` 替代不存在的 `async_session`
+- **修复**: 旧 Celery worker 进程缓存 → kill 全部旧进程 + 清除 `__pycache__`
+- **涉及文件**: render.py, render_tasks.py, ai_tasks.py, celery_app.py, ai.py, ai_provider.py, ai_model.py, ai_service.py, config.py, RenderCenter.tsx, Settings.tsx, apiClient.ts
+
 ---
 
 ## 下一阶段开发计划
-
-### 阶段一：渲染中心前后端打通（P1 优先级最高）
-
-> 渲染任务是核心业务流程，当前前端纯 Mock、后端未触发 Celery，需要优先打通
-
-#### 4.1 渲染中心前端对接
-- **前端**: RenderCenter.tsx 替换 MOCK_TASKS 为 renderApi 调用
-- **功能**: 提交渲染任务、查看任务列表、轮询进度、取消任务、下载结果
-- **涉及文件**:
-  - `frontend/src/pages/RenderCenter.tsx`
-  - `frontend/src/utils/apiClient.ts`（renderApi 已定义，需在页面中使用）
-
-#### 4.2 后端渲染任务触发 Celery
-- **后端**: render.py 创建任务时调用 `run_render_task.delay(task_id)`
-- **后端**: render_tasks.py 实现 Celery 任务真实逻辑（调用 AI 推理 API）
-- **后端**: cancel 端点撤销 Celery 任务
-- **涉及文件**:
-  - `backend/app/api/render.py`
-  - `backend/app/tasks/render_tasks.py`
-  - `backend/app/tasks/ai_tasks.py`
-
----
 
 ### 阶段二：编辑器自动保存优化（P1）
 
@@ -171,9 +164,14 @@
 | `/api/v1/media/{id}/presign` | GET | ✅ | MinIO 预签名 URL |
 | `/api/v1/media/{id}/download` | GET | ✅ | MinIO 代理下载 |
 | `/api/v1/media/{id}` | DELETE | ✅ | MinIO + DB 删除 |
-| `/api/v1/render/` | POST | ⚠️ | 写库未触发 Celery |
-| `/api/v1/render/{id}` | GET | ✅ | — |
-| `/api/v1/render/{id}/cancel` | POST | ⚠️ | 未撤销 Celery |
+| `/api/v1/render/` | GET | ✅ | 任务列表 |
+| `/api/v1/render/` | POST | ✅ | 创建 + 触发 Celery |
+| `/api/v1/render/{id}` | GET | ✅ | 任务状态 |
+| `/api/v1/render/{id}/cancel` | POST | ✅ | AsyncResult.revoke |
+| `/api/v1/ai/providers` | GET/POST | ✅ | AI Provider CRUD |
+| `/api/v1/ai/providers/{id}` | PUT/DELETE | ✅ | AI Provider CRUD |
+| `/api/v1/ai/models` | GET/POST | ✅ | AI Model CRUD |
+| `/api/v1/ai/models/{id}` | PUT/DELETE | ✅ | AI Model CRUD |
 | `/api/v1/collab/status` | GET | ✅ | 硬编码状态 |
 
 ## 数据库表结构
@@ -186,6 +184,8 @@
 | `workflow_edges` | WorkflowEdge | ✅ 已创建 |
 | `media_assets` | MediaAsset | ✅ 已创建 |
 | `render_tasks` | RenderTask | ✅ 已创建 |
+| `ai_providers` | AiProvider | ✅ 已创建 |
+| `ai_models` | AiModel | ✅ 已创建 |
 
 ## 前端 Store 数据持久化现状
 
@@ -204,8 +204,21 @@
 frontend/src/mock/
   ├── index.ts          # 统一导出
   ├── mediaMock.ts      # isMockMedia, isMockAsset, generateMockAssets, getMockThumbnailUrl, mockDelay
-  └── canvasMock.ts     # MOCK_NODES, MOCK_EDGES, loadMockData
+  ├── canvasMock.ts     # MOCK_NODES, MOCK_EDGES, loadMockData
+  └── renderMock.ts     # Mock 渲染任务数据
 ```
 
 - `npm run dev:mock` — Mock 模式（`--mode mock`，读取 `.env.mock`）
 - `npm run dev` — 正常模式（走真实后端 API）
+
+## Celery Worker 启动方式
+
+```bash
+cd backend
+.venv/bin/python -m celery -A app.tasks.celery_app worker \
+  --loglevel=info \
+  --pool=solo \
+  --without-mingle --without-gossip --without-heartbeat
+```
+
+> 注意：RabbitMQ 4.x 兼容性需要 `--without-mingle --without-gossip --without-heartbeat` 参数

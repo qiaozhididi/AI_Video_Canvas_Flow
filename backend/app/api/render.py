@@ -1,35 +1,68 @@
 """渲染任务路由"""
 
+import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
 from app.models.render_task import RenderTask
 
-import logging
-
 logger = logging.getLogger("app.api.render")
 
 router = APIRouter()
 
 
-class RenderTaskCreateDev(BaseModel):
-    """创建渲染任务请求（开发模式）"""
+class RenderTaskCreate(BaseModel):
     project_id: str
+    task_type: str = "render"  # render / text2img / img2video / tts / ai_generate
     output_format: str = "mp4"
+    model_id: str | None = None  # AI Model UUID
+    prompt: str | None = None  # 用户提示词
+
+
+def _task_to_dict(task: RenderTask) -> dict:
+    return {
+        "id": str(task.id),
+        "project_id": str(task.project_id),
+        "owner_id": str(task.owner_id),
+        "task_type": task.task_type,
+        "status": task.status,
+        "progress": task.progress,
+        "celery_task_id": task.celery_task_id,
+        "result_url": task.result_url,
+        "error_message": task.error_message,
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
+
+
+@router.get("/", summary="获取渲染任务列表")
+async def list_render_tasks(
+    db: DBSession,
+    user: CurrentUser,
+    status: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    owner_id = uuid.UUID(user)
+    stmt = select(RenderTask).where(RenderTask.owner_id == owner_id)
+    if status:
+        stmt = stmt.where(RenderTask.status == status)
+    stmt = stmt.order_by(RenderTask.created_at.desc()).limit(limit)
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+    return [_task_to_dict(t) for t in tasks]
 
 
 @router.post("/", summary="创建渲染任务")
-async def create_render_task(body: RenderTaskCreateDev, db: DBSession, user: CurrentUser):
-    """创建新的渲染任务"""
+async def create_render_task(body: RenderTaskCreate, db: DBSession, user: CurrentUser):
     task = RenderTask(
         project_id=uuid.UUID(body.project_id),
         owner_id=uuid.UUID(user),
-        task_type="render",
+        task_type=body.task_type,
         status="pending",
         progress=0.0,
     )
@@ -37,47 +70,36 @@ async def create_render_task(body: RenderTaskCreateDev, db: DBSession, user: Cur
     await db.commit()
     await db.refresh(task)
 
-    logger.info(f"[Render:Create] id={task.id} project={body.project_id} user={user}")
-    return {
-        "id": str(task.id),
-        "project_id": str(task.project_id),
-        "owner_id": str(task.owner_id),
-        "task_type": task.task_type,
-        "status": task.status,
-        "progress": task.progress,
-        "celery_task_id": task.celery_task_id,
-        "result_url": task.result_url,
-        "error_message": task.error_message,
-        "created_at": task.created_at.isoformat() if task.created_at else None,
-        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-    }
+    # 触发 Celery 任务
+    from app.tasks.render_tasks import run_render_task
+    celery_result = run_render_task.delay(
+        str(task.id),
+        model_id=body.model_id,
+        prompt=body.prompt,
+    )
+
+    # 回写 celery_task_id
+    task.celery_task_id = celery_result.id
+    task.status = "running"
+    task.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(task)
+
+    logger.info(f"[Render:Create] id={task.id} type={body.task_type} celery={celery_result.id}")
+    return _task_to_dict(task)
 
 
 @router.get("/{task_id}", summary="获取渲染任务状态")
 async def get_render_task(task_id: str, db: DBSession, user: CurrentUser):
-    """获取指定渲染任务的状态和进度"""
     result = await db.execute(select(RenderTask).where(RenderTask.id == uuid.UUID(task_id)))
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="渲染任务不存在")
-    return {
-        "id": str(task.id),
-        "project_id": str(task.project_id),
-        "owner_id": str(task.owner_id),
-        "task_type": task.task_type,
-        "status": task.status,
-        "progress": task.progress,
-        "celery_task_id": task.celery_task_id,
-        "result_url": task.result_url,
-        "error_message": task.error_message,
-        "created_at": task.created_at.isoformat() if task.created_at else None,
-        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-    }
+    return _task_to_dict(task)
 
 
 @router.post("/{task_id}/cancel", summary="取消渲染任务")
 async def cancel_render_task(task_id: str, db: DBSession, user: CurrentUser):
-    """取消正在进行的渲染任务"""
     result = await db.execute(select(RenderTask).where(RenderTask.id == uuid.UUID(task_id)))
     task = result.scalar_one_or_none()
     if not task:
@@ -85,22 +107,17 @@ async def cancel_render_task(task_id: str, db: DBSession, user: CurrentUser):
     if task.status not in ("pending", "running"):
         raise HTTPException(status_code=409, detail="任务已完成，无法取消")
 
+    # 撤销 Celery 任务（通过 AsyncResult 发送 revoke 指令，不依赖远程控制）
+    if task.celery_task_id:
+        from celery.result import AsyncResult
+        from app.tasks.celery_app import celery_app
+        AsyncResult(task.celery_task_id, app=celery_app).revoke(terminate=True)
+        logger.info(f"[Render:Cancel] revoked celery task {task.celery_task_id}")
+
     task.status = "cancelled"
     task.updated_at = datetime.utcnow()
     await db.commit()
     await db.refresh(task)
 
     logger.info(f"[Render:Cancel] id={task_id}")
-    return {
-        "id": str(task.id),
-        "project_id": str(task.project_id),
-        "owner_id": str(task.owner_id),
-        "task_type": task.task_type,
-        "status": task.status,
-        "progress": task.progress,
-        "celery_task_id": task.celery_task_id,
-        "result_url": task.result_url,
-        "error_message": task.error_message,
-        "created_at": task.created_at.isoformat() if task.created_at else None,
-        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-    }
+    return _task_to_dict(task)

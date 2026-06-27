@@ -191,6 +191,64 @@ export interface RenderTaskResponse {
   updated_at: string;
 }
 
+// ── AI Provider ──
+
+export interface AiProviderResponse {
+  id: string;
+  name: string;
+  platform: string;
+  base_url: string;
+  api_key: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiProviderCreateRequest {
+  name: string;
+  platform: string;
+  base_url: string;
+  api_key: string;
+  is_active?: boolean;
+}
+
+export interface AiProviderUpdateRequest {
+  name?: string;
+  platform?: string;
+  base_url?: string;
+  api_key?: string;
+  is_active?: boolean;
+}
+
+// ── AI Model ──
+
+export interface AiModelResponse {
+  id: string;
+  provider_id: string;
+  model_id: string;
+  display_name: string;
+  model_type: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiModelCreateRequest {
+  provider_id: string;
+  model_id: string;
+  display_name: string;
+  model_type: string;
+  is_active?: boolean;
+}
+
+export interface AiModelUpdateRequest {
+  provider_id?: string;
+  model_id?: string;
+  display_name?: string;
+  model_type?: string;
+  is_active?: boolean;
+}
+
 // ═══════════════════════════════════════════════════
 // 2. 业务模块 API
 // ═══════════════════════════════════════════════════
@@ -308,6 +366,14 @@ export const mediaApi = {
 // ── 渲染任务 ──
 
 export const renderApi = {
+  list: (params?: { status?: string; limit?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    const qs = searchParams.toString();
+    return request<RenderTaskResponse[]>(`/render/${qs ? '?' + qs : ''}`);
+  },
+
   create: (projectId: string, taskType: string) =>
     request<RenderTaskResponse>('/render/', {
       method: 'POST',
@@ -346,4 +412,45 @@ export const renderApi = {
       };
       poll();
     }),
+};
+
+// ── AI Provider / Model ──
+
+export const aiApi = {
+  providers: {
+    list: () => request<AiProviderResponse[]>('/ai/providers'),
+    create: (data: AiProviderCreateRequest) =>
+      request<AiProviderResponse>('/ai/providers', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: AiProviderUpdateRequest) =>
+      request<AiProviderResponse>(`/ai/providers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      request<void>(`/ai/providers/${id}`, { method: 'DELETE' }),
+  },
+  models: {
+    list: (params?: { provider_id?: string; model_type?: string }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.provider_id) searchParams.set('provider_id', params.provider_id);
+      if (params?.model_type) searchParams.set('model_type', params.model_type);
+      const qs = searchParams.toString();
+      return request<AiModelResponse[]>(`/ai/models${qs ? '?' + qs : ''}`);
+    },
+    create: (data: AiModelCreateRequest) =>
+      request<AiModelResponse>('/ai/models', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: AiModelUpdateRequest) =>
+      request<AiModelResponse>(`/ai/models/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      request<void>(`/ai/models/${id}`, { method: 'DELETE' }),
+  },
 };

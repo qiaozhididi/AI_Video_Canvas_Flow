@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.collaboration import router as collaboration_router
 from app.api.media import router as media_router
@@ -17,3 +18,4 @@ api_router.include_router(workflows_router, prefix="/workflows", tags=["工作�
 api_router.include_router(media_router, prefix="/media", tags=["媒体资产"])
 api_router.include_router(render_router, prefix="/render", tags=["渲染任务"])
 api_router.include_router(collaboration_router, prefix="/collab", tags=["协作"])
+api_router.include_router(ai_router, prefix="/ai", tags=["ai"])

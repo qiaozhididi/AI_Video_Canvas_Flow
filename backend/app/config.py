@@ -42,5 +42,14 @@ class Settings(BaseSettings):
     # CORS 允许的来源
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    # 默认 AI 配置（首次启动自动创建 Provider/Model）
+    DEFAULT_AI_PROVIDER_NAME: str = "火山引擎"
+    DEFAULT_AI_PLATFORM: str = "volcengine"
+    DEFAULT_AI_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    DEFAULT_AI_API_KEY: str = ""
+    DEFAULT_AI_MODEL_ID: str = "doubao-seed-2-1-turbo-260628"
+    DEFAULT_AI_MODEL_DISPLAY_NAME: str = "豆包 Seed 2.1 Turbo"
+    DEFAULT_AI_MODEL_TYPE: str = "llm"
+
 
 settings = Settings()

@@ -20,6 +20,14 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # RabbitMQ 4.x 要求所有队列 durable=True
+    task_default_queue="celery",
+    task_default_exchange="celery",
+    task_default_routing_key="celery",
+    task_default_durable=True,
+    # RabbitMQ 4.x 兼容：禁用 gossip/mingle/pidbox 的 transient 队列
+    worker_enable_remote_control=False,
+    worker_send_task_events=False,
 )
 
 # 自动发现任务模块

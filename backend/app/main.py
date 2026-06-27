@@ -30,10 +30,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"   CORS: {settings.CORS_ORIGINS}")
 
     # 自动创建数据库表（开发模式）
-    from app.database import Base, engine
+    from app.database import Base, engine, async_session_factory
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("   数据库表已创建/验证")
+
+    # 首次启动时初始化默认 AI 配置
+    from app.api.ai import ensure_default_ai_config
+    async with async_session_factory() as db:
+        await ensure_default_ai_config(db)
 
     start_time = time.time()
 
