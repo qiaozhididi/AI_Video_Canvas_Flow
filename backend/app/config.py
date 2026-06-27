@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "amqp://guest:guest@localhost:5672//"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
-    # CORS 允许的来源
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    # CORS 允许的来源（5173-5183 覆盖 Vite 开发服务器端口范围）
+    CORS_ORIGINS: list[str] = [f"http://localhost:{p}" for p in range(5173, 5184)]
 
     # 默认 AI 配置（首次启动自动创建 Provider/Model）
     DEFAULT_AI_PROVIDER_NAME: str = "火山引擎"
