@@ -241,6 +241,9 @@ async def save_workflow(workflow_id: str, body: WorkflowSaveRequest, user: Curre
         )
         db.add(node)
 
+    # flush 确保节点先写入，避免外键约束冲突
+    await db.flush()
+
     # 再插入边
     for edge_data in body.edges:
         edge = WorkflowEdge(
