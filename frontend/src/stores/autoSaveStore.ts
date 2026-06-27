@@ -252,6 +252,10 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
       // 重新加载实际 nodes/edges 到本地 stores
       await projectStore.loadProjectToCanvas(projectId);
 
+      // 刷新 currentProject.updatedAt，避免 checkRecovery 误判重复弹出恢复对话框
+      // （restore 端点会在后端更新 project.updated_at，需同步到前端）
+      await projectStore.refreshCurrentProject();
+
       // 还原 timelineData（从快照数据中读取）
       const timelineStore = useTimelineStore.getState();
       timelineStore.loadTimeline(snapshot.snapshot_data.timelineData);

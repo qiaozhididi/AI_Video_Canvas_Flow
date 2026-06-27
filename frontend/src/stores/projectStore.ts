@@ -20,6 +20,7 @@ interface ProjectState {
   loadProjects: () => Promise<void>;
   saveCurrentProject: () => Promise<void>;
   loadProjectToCanvas: (projectId: string) => Promise<boolean>;
+  refreshCurrentProject: () => Promise<void>;
 }
 
 // ── 前后端数据转换 ──
@@ -214,6 +215,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return hasData;
     } catch {
       return false;
+    }
+  },
+
+  refreshCurrentProject: async () => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+    try {
+      const resp = await projectApi.get(currentProject.id);
+      // 只更新元数据（updatedAt 等），保留 canvas/timeline 数据
+      set({
+        currentProject: {
+          ...currentProject,
+          name: resp.name,
+          description: resp.description || undefined,
+          updatedAt: resp.updated_at,
+        },
+      });
+    } catch (err) {
+      console.error('[ProjectStore] 刷新当前项目失败:', err);
     }
   },
 }));
