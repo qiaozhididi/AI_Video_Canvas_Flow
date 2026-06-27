@@ -102,6 +102,18 @@ export default function RenderCenter() {
   const handleDownload = async (task: RenderTaskResponse) => {
     if (!task.result_url) return;
     try {
+      // 外部 URL（如火山引擎返回的图片链接）直接打开下载
+      if (task.result_url.startsWith('http://') || task.result_url.startsWith('https://')) {
+        const a = document.createElement('a');
+        a.href = task.result_url;
+        a.target = '_blank';
+        a.download = `render-${task.id}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+      // 内部 media 路径走 API 下载
       const token = localStorage.getItem('access_token');
       const res = await fetch(`/api/v1/media/${task.result_url}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},

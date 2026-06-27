@@ -93,7 +93,9 @@ export default function EditorLayout() {
       // Ctrl+S 保存
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        saveCurrentProject().then(() => toast.success('项目已保存'));
+        saveCurrentProject()
+          .then(() => toast.success('项目已保存'))
+          .catch((err: any) => toast.error(`保存失败: ${err.message || '未知错误'}`));
       }
     };
 
@@ -179,8 +181,13 @@ export default function EditorLayout() {
         <div className="h-5 w-px bg-canvas-border" />
 
         <button
-          onClick={() => {
-            saveCurrentProject().then(() => toast.success('项目已保存'));
+          onClick={async () => {
+            try {
+              await saveCurrentProject();
+              toast.success('项目已保存');
+            } catch (err: any) {
+              toast.error(`保存失败: ${err.message || '未知错误'}`);
+            }
           }}
           className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded transition-colors"
         >

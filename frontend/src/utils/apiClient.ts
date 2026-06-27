@@ -178,7 +178,7 @@ export interface RenderTaskCreateRequest {
   node_id?: string;
   model_id?: string;
   prompt?: string;
-  input_artifacts?: { type: string; url: string; text?: string }[];
+  input_artifacts?: { type: string; url: string; filename?: string; text?: string }[];
 }
 
 export interface RenderTaskResponse {

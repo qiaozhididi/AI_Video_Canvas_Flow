@@ -3,6 +3,7 @@ import type { Project } from '@/types/project';
 import { createEmptyProject } from '@/types/project';
 import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
+import { useAutoSaveStore } from './autoSaveStore';
 import { projectApi, workflowApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
 
@@ -184,6 +185,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     // 刷新项目列表
     await get().loadProjects();
+
+    // 重置 autoSaveStore 的脏状态
+    useAutoSaveStore.getState().markClean();
   },
 
   loadProjectToCanvas: async (projectId) => {

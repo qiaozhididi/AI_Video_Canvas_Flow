@@ -2,12 +2,13 @@
 
 注意：Celery worker 运行在独立进程中，需要创建自己的 async engine 和 session factory，
 不能复用 FastAPI 的 async_session_factory（事件循环不匹配）。
+
+progress 范围：0~100（整数百分比）
 """
 
 import asyncio
 import logging
 import uuid
-import time
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -74,7 +75,7 @@ async def _mark_failed(task_id: str, error_message: str):
     """标记任务失败"""
     sf = _get_celery_session_factory()
     async with sf() as db:
-        await _update_task(db, task_id, status="failed", error_message=error_message, progress=0.0)
+        await _update_task(db, task_id, status="failed", error_message=error_message, progress=0)
 
 
 async def _run_task(task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None):
@@ -131,6 +132,25 @@ def run_render_task(
         return {"task_id": task_id, "status": "failed", "error": str(e)}
 
 
+def _extract_text_from_artifacts(artifacts: list[dict] | None) -> str:
+    """从 input_artifacts 中提取文本内容
+
+    优先提取 text 字段，其次从 filename=text_input 的 artifact 中提取
+    """
+    if not artifacts:
+        return ""
+    texts = []
+    for a in artifacts:
+        text = a.get("text", "")
+        filename = a.get("filename", "")
+        url = a.get("url", "")
+        if text:
+            texts.append(text)
+        elif filename == "text_input" and url and not url.startswith("http"):
+            texts.append(url)
+    return " ".join(texts)
+
+
 async def _execute_ai_task(
     task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None = None
 ) -> dict:
@@ -153,18 +173,14 @@ async def _execute_ai_task(
         )
         task_type = result.scalar_one_or_none() or ""
 
-    # 构建用户内容：优先 prompt，否则从 input_artifacts 提取
+    # 构建用户内容：优先 prompt，否则从 input_artifacts 提取文本
     user_content = prompt or ""
-    if input_artifacts:
-        artifact_texts = [
-            a.get("text", "") or a.get("url", "") for a in input_artifacts
-        ]
-        if not user_content and artifact_texts:
-            user_content = "输入资产: " + ", ".join(artifact_texts)
+    if not user_content:
+        user_content = _extract_text_from_artifacts(input_artifacts)
 
     # 按 task_type 路由
     if task_type == "ai_text2img":
-        return await _do_text2img(task_id, model_id, user_content)
+        return await _do_text2img(task_id, model_id, user_content, input_artifacts)
     elif task_type == "ai_img2video":
         return await _do_img2video(task_id, model_id, user_content, input_artifacts)
     elif task_type == "ai_tts":
@@ -173,46 +189,46 @@ async def _execute_ai_task(
         return await _do_llm(task_id, model_id, user_content)
 
 
-async def _do_text2img(task_id: str, model_id: str | None, prompt: str) -> dict:
+async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None) -> dict:
     """文生图：调用 image_gen API 或模拟"""
     from app.services.ai_service import call_image_gen
 
     sf = _get_celery_session_factory()
     async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=0.1)
+        await _update_task(db, task_id, status="running", progress=10)
 
         if not prompt:
             prompt = "一张美丽的风景图"
 
-        await _update_task(db, task_id, progress=0.3)
+        await _update_task(db, task_id, progress=30)
 
         result_url = ""
         revised_prompt = ""
 
         try:
             if model_id:
-                result = await call_image_gen(db, model_id, prompt, params={"size": "1024x1024"})
+                result = await call_image_gen(db, model_id, prompt, params={"size": "2048x2048"})
                 result_url = result["url"]
                 revised_prompt = result.get("revised_prompt", "")
         except ValueError as e:
             # 模型类型不匹配（如传入了 LLM 模型），回退到模拟生成
             logger.warning(f"[AI:Text2Img] 模型不匹配，回退模拟: {e}")
-            await _update_task(db, task_id, progress=0.5)
+            await _update_task(db, task_id, progress=50)
         except Exception as e:
             logger.error(f"[AI:Text2Img] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0.0)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
             return {"task_id": task_id, "status": "failed", "error": str(e)}
 
         if not result_url:
             # 模拟生成（无模型或模型不匹配时）
-            for p in [0.5, 0.7, 0.9]:
+            for p in [50, 70, 90]:
                 await asyncio.sleep(1)
                 await _update_task(db, task_id, progress=p)
             result_url = f"ai_result/{task_id}/image.png"
             revised_prompt = "模拟生成（未配置文生图模型）"
 
         await _update_task(
-            db, task_id, progress=1.0, status="completed", result_url=result_url,
+            db, task_id, progress=100, status="completed", result_url=result_url,
         )
 
         return {
@@ -225,13 +241,12 @@ async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_a
     """图生视频（待实现，当前走模拟）"""
     sf = _get_celery_session_factory()
     async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=0.1)
-        # TODO: 接入图生视频 API
-        for p in [0.3, 0.6, 0.9]:
+        await _update_task(db, task_id, status="running", progress=10)
+        for p in [30, 60, 90]:
             await asyncio.sleep(2)
             await _update_task(db, task_id, progress=p)
         result_url = f"ai_result/{task_id}/video.mp4"
-        await _update_task(db, task_id, progress=1.0, status="completed", result_url=result_url)
+        await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
     return {"task_id": task_id, "status": "completed", "result_url": result_url}
 
 
@@ -239,13 +254,12 @@ async def _do_tts(task_id: str, model_id: str | None, prompt: str) -> dict:
     """文生语音（待实现，当前走模拟）"""
     sf = _get_celery_session_factory()
     async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=0.1)
-        # TODO: 接入 TTS API
-        for p in [0.3, 0.6, 0.9]:
+        await _update_task(db, task_id, status="running", progress=10)
+        for p in [30, 60, 90]:
             await asyncio.sleep(1)
             await _update_task(db, task_id, progress=p)
         result_url = f"ai_result/{task_id}/audio.mp3"
-        await _update_task(db, task_id, progress=1.0, status="completed", result_url=result_url)
+        await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
     return {"task_id": task_id, "status": "completed", "result_url": result_url}
 
 
@@ -255,26 +269,26 @@ async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict
 
     sf = _get_celery_session_factory()
     async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=0.1)
+        await _update_task(db, task_id, status="running", progress=10)
 
         messages = [
             {"role": "system", "content": "你是一个 AI 视频工作流设计助手。根据用户描述生成工作流内容。"},
             {"role": "user", "content": user_content or "请生成示例内容"},
         ]
 
-        await _update_task(db, task_id, progress=0.3)
+        await _update_task(db, task_id, progress=30)
 
         try:
             response_text = await call_llm(db, model_id, messages) if model_id else "AI 模拟响应（未指定模型）"
         except Exception as e:
             logger.error(f"[AI:LLM] 任务 {task_id} 失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0.0)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
             return {"task_id": task_id, "status": "failed", "error": str(e)}
 
-        await _update_task(db, task_id, progress=0.9)
+        await _update_task(db, task_id, progress=90)
 
         result_url = f"ai_result/{task_id}"
-        await _update_task(db, task_id, progress=1.0, status="completed", result_url=result_url)
+        await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
 
         return {
             "task_id": task_id, "status": "completed",
@@ -289,13 +303,13 @@ async def _execute_render_task(
     sf = _get_celery_session_factory()
 
     async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=0.0)
+        await _update_task(db, task_id, status="running", progress=0)
 
-        for progress in [0.2, 0.4, 0.6, 0.8, 1.0]:
-            await asyncio.sleep(2)  # 使用 async sleep 而非 time.sleep
-            status = "completed" if progress >= 1.0 else "running"
+        for progress in [20, 40, 60, 80, 100]:
+            await asyncio.sleep(2)
+            status = "completed" if progress >= 100 else "running"
             result_url = (
-                f"render_result/{task_id}/output.mp4" if progress >= 1.0 else None
+                f"render_result/{task_id}/output.mp4" if progress >= 100 else None
             )
             await _update_task(
                 db,

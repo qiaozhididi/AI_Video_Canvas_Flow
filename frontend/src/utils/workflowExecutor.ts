@@ -49,8 +49,40 @@ function collectUpstreamArtifacts(nodeId: string, nodes: CanvasNode[], edges: Ca
   for (const edge of edges) {
     if (edge.target !== nodeId) continue;
     const sourceNode = nodes.find((n) => n.id === edge.source);
-    if (sourceNode?.data.outputArtifacts) {
+    if (!sourceNode) continue;
+
+    // 先添加节点已有的 outputArtifacts
+    if (sourceNode.data.outputArtifacts.length > 0) {
       artifacts.push(...sourceNode.data.outputArtifacts);
+      continue;
+    }
+
+    // 输入节点没有 outputArtifacts 时，从 params 构建虚拟 artifact
+    if (sourceNode.data.type === 'input') {
+      if (sourceNode.data.subtype === 'text_input') {
+        const text = (sourceNode.data.params.text as string) || '';
+        if (text) {
+          artifacts.push({
+            id: `virtual-${sourceNode.id}`,
+            type: 'image', // 使用 image 类型以通过 URL 检查
+            url: '',
+            filename: 'text_input',
+            size: 0,
+            metadata: { text, content: text },
+          });
+        }
+      } else if (sourceNode.data.subtype === 'image_input') {
+        const url = (sourceNode.data.params.url as string) || '';
+        if (url) {
+          artifacts.push({
+            id: `virtual-${sourceNode.id}`,
+            type: 'image',
+            url,
+            filename: 'image_input',
+            size: 0,
+          });
+        }
+      }
     }
   }
   return artifacts;
@@ -70,6 +102,9 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
 
   const taskType = getTaskType(node.data.subtype);
 
+  // 先收集上游输出
+  const upstreamArtifacts = collectUpstreamArtifacts(nodeId, nodes, edges);
+
   let modelId: string | undefined;
   let prompt: string | undefined;
 
@@ -83,12 +118,25 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
         throw new Error('请先在设置页配置 AI 模型');
       }
     }
+    // 提取提示词：优先当前节点的 params.prompt/text，否则从上游节点输出提取
     prompt = (node.data.params.prompt as string) || (node.data.params.text as string) || undefined;
+
+    // 如果当前节点没有 prompt，从上游文本输入节点的 outputArtifacts 提取文本
+    if (!prompt && upstreamArtifacts.length > 0) {
+      const textParts: string[] = [];
+      for (const a of upstreamArtifacts) {
+        // 从 artifact 的 metadata 或 url 中提取文本
+        const text = (a.metadata?.text as string) || (a.metadata?.content as string);
+        if (text) textParts.push(text);
+      }
+      if (textParts.length > 0) {
+        prompt = textParts.join(' ');
+      }
+    }
   }
 
-  const inputArtifacts = collectUpstreamArtifacts(nodeId, nodes, edges);
-  const inputPayload = inputArtifacts.length > 0
-    ? inputArtifacts.map((a) => ({ type: a.type, url: a.url, filename: a.filename }))
+  const inputPayload = upstreamArtifacts.length > 0
+    ? upstreamArtifacts.map((a) => ({ type: a.type, url: a.url, filename: a.filename, text: (a.metadata?.text as string) || (a.metadata?.content as string) || undefined }))
     : undefined;
 
   useCanvasStore.getState().setNodeStatus(nodeId, 'pending', 0);
@@ -106,7 +154,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
 
   try {
     const result = await renderApi.poll(task.id, 2000, (progress, status) => {
-      useCanvasStore.getState().setNodeStatus(nodeId, status as any, Math.round(progress * 100));
+      useCanvasStore.getState().setNodeStatus(nodeId, status as any, Math.round(progress));
     });
 
     const artifacts: Artifact[] = result.result_url

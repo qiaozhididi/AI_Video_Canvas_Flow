@@ -27,6 +27,7 @@ interface AutoSaveState {
 
 interface AutoSaveActions {
   markDirty: () => void;
+  markClean: () => void;
   saveNow: (source?: StateSnapshot['source'], label?: string) => void;
   createNamedSnapshot: (label: string) => void;
   startAutoSave: () => void;
@@ -114,6 +115,10 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
     }, DEBOUNCE_DELAY);
 
     set({ debounceTimer: timer });
+  },
+
+  markClean: () => {
+    set({ isDirty: false, lastSavedAt: Date.now() });
   },
 
   saveNow: (source = 'auto', label) => {
