@@ -11,6 +11,9 @@ import VideoPreview from '@/components/preview/VideoPreview';
 import { loadMockData } from '@/mock';
 import { ChevronDown, ChevronUp, Database, RotateCcw, RotateCw } from 'lucide-react';
 import type { CanvasNodeData } from '@/types/canvas';
+import { executeNode, isExecutable } from '@/utils/workflowExecutor';
+import { aiApi } from '@/utils/apiClient';
+import type { AiModelResponse } from '@/utils/apiClient';
 
 // ===== 性能监控：重渲染检测 =====
 const PERF_LOG = '[Perf:Editor]';
@@ -302,6 +305,10 @@ function PropertyPanelWithHistory({
 
   const data = selectedNode.data;
 
+  const [executing, setExecuting] = useState(false);
+  const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
   const handleParamChange = (key: string, value: unknown) => {
     useHistoryStore.getState().pushUpdateNodeData({
       nodeId: selectedNode.id,
@@ -309,6 +316,31 @@ function PropertyPanelWithHistory({
       to: { params: { [key]: value } },
     });
     onUpdateData(selectedNode.id, { params: { ...data.params, [key]: value } });
+  };
+
+  const handleExecute = async () => {
+    if (executing) return;
+    setExecuting(true);
+    try {
+      await executeNode(selectedNode.id);
+    } catch {
+      // 错误已在 workflowExecutor 中处理
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const loadAiModels = async () => {
+    if (aiModels.length > 0) return;
+    setLoadingModels(true);
+    try {
+      const models = await aiApi.models.list();
+      setAiModels(models);
+    } catch {
+      // 静默失败
+    } finally {
+      setLoadingModels(false);
+    }
   };
 
   return (
@@ -368,9 +400,74 @@ function PropertyPanelWithHistory({
             </div>
           ))}
         </div>
+
+        {/* AI 模型选择器 — 仅 AI 推理节点显示 */}
+        {data.type === 'ai_inference' && (
+          <div className="space-y-1.5">
+            <label className="text-xs text-slate-500 uppercase tracking-wider">AI 模型</label>
+            <select
+              value={(data.params.model_id as string) || ''}
+              onFocus={loadAiModels}
+              onChange={(e) => handleParamChange('model_id', e.target.value || undefined)}
+              className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
+            >
+              <option value="">自动选择（默认模型）</option>
+              {loadingModels && <option disabled>加载中...</option>}
+              {aiModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.display_name} ({m.model_id})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 节点状态显示 */}
+        {data.status !== 'idle' && (
+          <div className="space-y-1.5">
+            <label className="text-xs text-slate-500 uppercase tracking-wider">状态</label>
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${
+                data.status === 'running' ? 'bg-blue-400 animate-pulse' :
+                data.status === 'completed' ? 'bg-green-400' :
+                data.status === 'failed' ? 'bg-red-400' :
+                'bg-yellow-400'
+              }`} />
+              <span className="text-sm text-slate-300 capitalize">{data.status}</span>
+              {data.status === 'running' && (
+                <span className="text-xs text-slate-400">{data.progress}%</span>
+              )}
+            </div>
+            {data.status === 'running' && (
+              <div className="w-full bg-canvas-bg rounded-full h-1.5">
+                <div
+                  className="bg-gradient-to-r from-neon-purple to-neon-blue h-1.5 rounded-full transition-all"
+                  style={{ width: `${data.progress}%` }}
+                />
+              </div>
+            )}
+            {data.outputArtifacts.length > 0 && (
+              <div className="mt-1 text-xs text-slate-400">
+                输出: {data.outputArtifacts.length} 个资产
+              </div>
+            )}
+            {data.error && (
+              <div className="text-xs text-red-400 mt-1">{data.error}</div>
+            )}
+          </div>
+        )}
       </div>
 
-      <div className="p-3 border-t border-canvas-border">
+      <div className="p-3 border-t border-canvas-border space-y-2">
+        {isExecutable(data.subtype) && (
+          <button
+            onClick={handleExecute}
+            disabled={executing || data.status === 'running'}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {executing || data.status === 'running' ? '执行中...' : '执行节点'}
+          </button>
+        )}
         <button
           onClick={() => onRemoveNode(selectedNode.id)}
           className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-status-error hover:bg-status-error/10 rounded-md transition-colors"

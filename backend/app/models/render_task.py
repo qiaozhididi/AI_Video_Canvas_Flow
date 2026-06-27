@@ -23,5 +23,6 @@ class RenderTask(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(256))  # Celery 任务 ID
     result_url: Mapped[str | None] = mapped_column(String(512))  # 结果文件 URL
     error_message: Mapped[str | None] = mapped_column(Text)  # 错误信息
+    node_id: Mapped[str | None] = mapped_column(String(36))  # 关联的画布节点 ID
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)

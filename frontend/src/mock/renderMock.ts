@@ -17,6 +17,7 @@ export function generateMockRenderTasks(): RenderTaskResponse[] {
     celery_task_id: `celery-mock-${i}`,
     result_url: statuses[i] === 'completed' ? `mock/render/${i}/output.mp4` : null,
     error_message: statuses[i] === 'failed' ? 'AI 推理服务超时' : null,
+    node_id: null,
     created_at: new Date(Date.now() - i * 3600_000).toISOString(),
     updated_at: new Date(Date.now() - i * 1800_000).toISOString(),
   }));

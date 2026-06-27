@@ -18,10 +18,12 @@ router = APIRouter()
 
 class RenderTaskCreate(BaseModel):
     project_id: str
-    task_type: str = "render"  # render / text2img / img2video / tts / ai_generate
+    task_type: str = "render"  # render / ai_text2img / ai_img2video / ai_tts
     output_format: str = "mp4"
     model_id: str | None = None  # AI Model UUID
     prompt: str | None = None  # 用户提示词
+    node_id: str | None = None  # 关联的画布节点 ID
+    input_artifacts: list[dict] | None = None  # 上游输出资产
 
 
 def _task_to_dict(task: RenderTask) -> dict:
@@ -35,6 +37,7 @@ def _task_to_dict(task: RenderTask) -> dict:
         "celery_task_id": task.celery_task_id,
         "result_url": task.result_url,
         "error_message": task.error_message,
+        "node_id": task.node_id,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
     }
@@ -65,6 +68,7 @@ async def create_render_task(body: RenderTaskCreate, db: DBSession, user: Curren
         task_type=body.task_type,
         status="pending",
         progress=0.0,
+        node_id=body.node_id,
     )
     db.add(task)
     await db.commit()
@@ -76,6 +80,7 @@ async def create_render_task(body: RenderTaskCreate, db: DBSession, user: Curren
         str(task.id),
         model_id=body.model_id,
         prompt=body.prompt,
+        input_artifacts=body.input_artifacts,
     )
 
     # 回写 celery_task_id

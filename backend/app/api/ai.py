@@ -215,6 +215,24 @@ async def delete_model(model_id: str, db: DBSession, user: CurrentUser):
     logger.info(f"[AI:Model:Delete] id={model_id}")
 
 
+@router.get("/models/default", summary="获取默认 AI 模型")
+async def get_default_model(db: DBSession, user: CurrentUser):
+    """返回第一个 active 的 AI Model（关联的 Provider 也必须是 active）"""
+    stmt = (
+        select(AiModel)
+        .where(AiModel.is_active == True)
+        .join(AiProvider, AiModel.provider_id == AiProvider.id)
+        .where(AiProvider.is_active == True)
+        .order_by(AiModel.created_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    model = result.scalar_one_or_none()
+    if not model:
+        raise HTTPException(status_code=404, detail="未找到可用的 AI 模型，请先在设置页配置")
+    return _model_to_dict(model)
+
+
 # ── 默认配置初始化 ──
 
 async def ensure_default_ai_config(db):

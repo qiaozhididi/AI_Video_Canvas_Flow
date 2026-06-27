@@ -25,6 +25,7 @@ interface CanvasState {
   // 节点状态
   setNodeStatus: (id: string, status: NodeStatus, progress?: number) => void;
   setNodeError: (id: string, error: string) => void;
+  setNodeOutput: (id: string, artifacts: import('@/types/canvas').Artifact[]) => void;
 
   // 清空
   clearCanvas: () => void;
@@ -126,6 +127,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       nodes: state.nodes.map((n) =>
         n.id === id
           ? { ...n, data: { ...n.data, status: 'failed' as NodeStatus, error } }
+          : n
+      ),
+    }));
+  },
+
+  setNodeOutput: (id, artifacts) => {
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        n.id === id
+          ? { ...n, data: { ...n.data, outputArtifacts: artifacts } }
           : n
       ),
     }));

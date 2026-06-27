@@ -175,6 +175,10 @@ export interface MediaAssetResponse {
 export interface RenderTaskCreateRequest {
   project_id: string;
   task_type: string;
+  node_id?: string;
+  model_id?: string;
+  prompt?: string;
+  input_artifacts?: { type: string; url: string; text?: string }[];
 }
 
 export interface RenderTaskResponse {
@@ -187,6 +191,7 @@ export interface RenderTaskResponse {
   celery_task_id: string | null;
   result_url: string | null;
   error_message: string | null;
+  node_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -374,10 +379,10 @@ export const renderApi = {
     return request<RenderTaskResponse[]>(`/render/${qs ? '?' + qs : ''}`);
   },
 
-  create: (projectId: string, taskType: string) =>
+  create: (data: RenderTaskCreateRequest) =>
     request<RenderTaskResponse>('/render/', {
       method: 'POST',
-      body: JSON.stringify({ project_id: projectId, task_type: taskType } satisfies RenderTaskCreateRequest),
+      body: JSON.stringify(data),
     }),
 
   get: (taskId: string) =>
@@ -452,5 +457,9 @@ export const aiApi = {
       }),
     delete: (id: string) =>
       request<void>(`/ai/models/${id}`, { method: 'DELETE' }),
+    getDefault: () =>
+      request<AiModelResponse>('/ai/models/default'),
   },
+  /** 获取默认 AI 模型 */
+  getDefaultModel: () => request<AiModelResponse>('/ai/models/default'),
 };

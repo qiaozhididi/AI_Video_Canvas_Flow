@@ -143,7 +143,7 @@ export default function RenderCenter() {
     }
     try {
       setCreating(true);
-      await renderApi.create(selectedProject, selectedTaskType);
+      await renderApi.create({ project_id: selectedProject, task_type: selectedTaskType });
       toast.success('渲染任务已创建');
       setShowCreate(false);
       await loadTasks();

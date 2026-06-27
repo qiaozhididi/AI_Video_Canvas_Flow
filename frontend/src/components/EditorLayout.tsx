@@ -3,9 +3,11 @@ import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useHistoryStore } from '@/stores/historyStore';
-import { ArrowLeft, Save, Undo2, Redo2, Play, History, Clock } from 'lucide-react';
+import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution } from '@/utils/workflowExecutor';
+import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
 
 export default function EditorLayout() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -15,6 +17,31 @@ export default function EditorLayout() {
   const { startAutoSave, stopAutoSave, checkRecovery, restoreSnapshot, discardRecovery, lastSavedAt, isDirty } = useAutoSaveStore();
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [recoveryInfo, setRecoveryInfo] = useState<{ timestamp: number; actionCount: number } | null>(null);
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowExecutionStatus>({
+    state: 'idle', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null
+  });
+
+  const handleExecuteWorkflow = async () => {
+    if (workflowStatus.state === 'running') return;
+    setWorkflowStatus({ ...getExecutionStatus(), state: 'running' });
+    try {
+      const result = await executeWorkflow();
+      setWorkflowStatus(result);
+      if (result.state === 'completed') {
+        toast.success('工作流执行完成');
+      } else if (result.state === 'failed') {
+        toast.error(`工作流执行失败: ${result.error}`);
+      }
+    } catch (err: any) {
+      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: err.message });
+      toast.error('工作流执行出错');
+    }
+  };
+
+  const handleCancelWorkflow = () => {
+    cancelWorkflowExecution();
+    setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: '用户取消' });
+  };
 
   // 加载项目
   useEffect(() => {
@@ -163,10 +190,23 @@ export default function EditorLayout() {
 
         <div className="h-5 w-px bg-canvas-border" />
 
-        <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity">
-          <Play className="w-3.5 h-3.5" />
-          执行工作流
-        </button>
+        {workflowStatus.state === 'running' ? (
+          <button
+            onClick={handleCancelWorkflow}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors"
+          >
+            <Square className="w-3.5 h-3.5" />
+            停止 {workflowStatus.completedNodes}/{workflowStatus.totalNodes}
+          </button>
+        ) : (
+          <button
+            onClick={handleExecuteWorkflow}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
+          >
+            <Play className="w-3.5 h-3.5" />
+            执行工作流
+          </button>
+        )}
       </div>
 
       {/* 主内容区 - 由子路由渲染 */}
