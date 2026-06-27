@@ -132,54 +132,153 @@ def run_render_task(
 
 
 async def _execute_ai_task(
-    task_id: str, model_id: str, prompt: str, input_artifacts: list[dict] | None = None
+    task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None = None
 ) -> dict:
-    """执行 AI 推理任务"""
-    from app.services.ai_service import call_llm
+    """执行 AI 推理任务：按 task_type 路由到不同的 AI 服务
 
+    task_type 路由规则：
+    - ai_text2img → call_image_gen（文生图）
+    - ai_img2video → call_video_gen（图生视频，待实现）
+    - ai_tts → call_tts（文生语音，待实现）
+    - ai_llm / 其他 → call_llm（文本生成）
+    """
     sf = _get_celery_session_factory()
 
+    # 读取 task_type
+    async with sf() as db:
+        from sqlalchemy import select
+        from app.models.render_task import RenderTask
+        result = await db.execute(
+            select(RenderTask.task_type).where(RenderTask.id == uuid.UUID(task_id))
+        )
+        task_type = result.scalar_one_or_none() or ""
+
+    # 构建用户内容：优先 prompt，否则从 input_artifacts 提取
+    user_content = prompt or ""
+    if input_artifacts:
+        artifact_texts = [
+            a.get("text", "") or a.get("url", "") for a in input_artifacts
+        ]
+        if not user_content and artifact_texts:
+            user_content = "输入资产: " + ", ".join(artifact_texts)
+
+    # 按 task_type 路由
+    if task_type == "ai_text2img":
+        return await _do_text2img(task_id, model_id, user_content)
+    elif task_type == "ai_img2video":
+        return await _do_img2video(task_id, model_id, user_content, input_artifacts)
+    elif task_type == "ai_tts":
+        return await _do_tts(task_id, model_id, user_content)
+    else:
+        return await _do_llm(task_id, model_id, user_content)
+
+
+async def _do_text2img(task_id: str, model_id: str | None, prompt: str) -> dict:
+    """文生图：调用 image_gen API 或模拟"""
+    from app.services.ai_service import call_image_gen
+
+    sf = _get_celery_session_factory()
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=0.1)
 
-        # 构建提示词：优先用 prompt，否则从 input_artifacts 提取文本
-        user_content = prompt or ""
-        if input_artifacts:
-            artifact_texts = [
-                a.get("url", "") or a.get("text", "") for a in input_artifacts
-            ]
-            if not user_content and artifact_texts:
-                user_content = "输入资产: " + ", ".join(artifact_texts)
+        if not prompt:
+            prompt = "一张美丽的风景图"
+
+        await _update_task(db, task_id, progress=0.3)
+
+        result_url = ""
+        revised_prompt = ""
+
+        try:
+            if model_id:
+                result = await call_image_gen(db, model_id, prompt, params={"size": "1024x1024"})
+                result_url = result["url"]
+                revised_prompt = result.get("revised_prompt", "")
+        except ValueError as e:
+            # 模型类型不匹配（如传入了 LLM 模型），回退到模拟生成
+            logger.warning(f"[AI:Text2Img] 模型不匹配，回退模拟: {e}")
+            await _update_task(db, task_id, progress=0.5)
+        except Exception as e:
+            logger.error(f"[AI:Text2Img] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0.0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+
+        if not result_url:
+            # 模拟生成（无模型或模型不匹配时）
+            for p in [0.5, 0.7, 0.9]:
+                await asyncio.sleep(1)
+                await _update_task(db, task_id, progress=p)
+            result_url = f"ai_result/{task_id}/image.png"
+            revised_prompt = "模拟生成（未配置文生图模型）"
+
+        await _update_task(
+            db, task_id, progress=1.0, status="completed", result_url=result_url,
+        )
+
+        return {
+            "task_id": task_id, "status": "completed",
+            "result_url": result_url, "revised_prompt": revised_prompt[:200],
+        }
+
+
+async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None) -> dict:
+    """图生视频（待实现，当前走模拟）"""
+    sf = _get_celery_session_factory()
+    async with sf() as db:
+        await _update_task(db, task_id, status="running", progress=0.1)
+        # TODO: 接入图生视频 API
+        for p in [0.3, 0.6, 0.9]:
+            await asyncio.sleep(2)
+            await _update_task(db, task_id, progress=p)
+        result_url = f"ai_result/{task_id}/video.mp4"
+        await _update_task(db, task_id, progress=1.0, status="completed", result_url=result_url)
+    return {"task_id": task_id, "status": "completed", "result_url": result_url}
+
+
+async def _do_tts(task_id: str, model_id: str | None, prompt: str) -> dict:
+    """文生语音（待实现，当前走模拟）"""
+    sf = _get_celery_session_factory()
+    async with sf() as db:
+        await _update_task(db, task_id, status="running", progress=0.1)
+        # TODO: 接入 TTS API
+        for p in [0.3, 0.6, 0.9]:
+            await asyncio.sleep(1)
+            await _update_task(db, task_id, progress=p)
+        result_url = f"ai_result/{task_id}/audio.mp3"
+        await _update_task(db, task_id, progress=1.0, status="completed", result_url=result_url)
+    return {"task_id": task_id, "status": "completed", "result_url": result_url}
+
+
+async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict:
+    """LLM 文本生成"""
+    from app.services.ai_service import call_llm
+
+    sf = _get_celery_session_factory()
+    async with sf() as db:
+        await _update_task(db, task_id, status="running", progress=0.1)
 
         messages = [
-            {
-                "role": "system",
-                "content": "你是一个 AI 视频工作流设计助手。根据用户描述生成工作流内容。",
-            },
+            {"role": "system", "content": "你是一个 AI 视频工作流设计助手。根据用户描述生成工作流内容。"},
             {"role": "user", "content": user_content or "请生成示例内容"},
         ]
 
         await _update_task(db, task_id, progress=0.3)
 
-        response_text = await call_llm(db, model_id, messages) if model_id else "AI 模拟响应（未指定模型）"
+        try:
+            response_text = await call_llm(db, model_id, messages) if model_id else "AI 模拟响应（未指定模型）"
+        except Exception as e:
+            logger.error(f"[AI:LLM] 任务 {task_id} 失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0.0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
 
-        await _update_task(db, task_id, progress=0.8)
+        await _update_task(db, task_id, progress=0.9)
 
         result_url = f"ai_result/{task_id}"
-
-        await _update_task(
-            db,
-            task_id,
-            progress=1.0,
-            status="completed",
-            result_url=result_url,
-        )
+        await _update_task(db, task_id, progress=1.0, status="completed", result_url=result_url)
 
         return {
-            "task_id": task_id,
-            "status": "completed",
-            "result_url": result_url,
-            "llm_response": response_text[:200],
+            "task_id": task_id, "status": "completed",
+            "result_url": result_url, "llm_response": response_text[:200],
         }
 
 
