@@ -162,22 +162,26 @@ async def join_project(sid, data):
 async def leave_project(sid, data):
     """离开项目协作房间"""
     project_id = data.get("project_id")
-    session = await _get_session_info(sid)
-    user_id = session.get("user_id", "unknown")
-    username = session.get("username", "unknown")
 
     if not project_id:
         return
 
     room = f"project:{project_id}"
-    _remove_member_from_room(sid, room)
-    await sio.leave_room(sid, room)
-    logger.info(f"[WS:LeaveProject] sid={sid} user={user_id} project={project_id}")
+    removed = _remove_member_from_room(sid, room)
+    if not removed:
+        return
+    try:
+        await sio.leave_room(sid, room)
+    except Exception:
+        pass
+    logger.info(
+        f"[WS:LeaveProject] sid={sid} user={removed['user_id']} project={project_id}"
+    )
 
     # 通知房间内其他成员
     await sio.emit(
         "user_left",
-        {"user_id": user_id, "username": username, "sid": sid[:8]},
+        {"user_id": removed["user_id"], "username": removed["username"], "sid": sid[:8]},
         room=room,
     )
 
