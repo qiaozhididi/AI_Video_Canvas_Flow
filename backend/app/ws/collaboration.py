@@ -112,7 +112,7 @@ async def disconnect(sid):
             logger.debug(f"[WS:LeaveRoom] sid={sid} room={room} (auto on disconnect)")
             await sio.emit(
                 "user_left",
-                {"user_id": removed["user_id"], "username": removed["username"], "sid": sid[:8]},
+                {"user_id": removed["user_id"], "username": removed["username"], "sid": sid},
                 room=room,
             )
 
@@ -149,7 +149,7 @@ async def join_project(sid, data):
     # 通知房间内其他成员
     await sio.emit(
         "user_joined",
-        {"user_id": user_id, "username": username, "sid": sid[:8]},
+        {"user_id": user_id, "username": username, "sid": sid},
         room=room,
         skip_sid=sid,
     )
@@ -181,7 +181,7 @@ async def leave_project(sid, data):
     # 通知房间内其他成员
     await sio.emit(
         "user_left",
-        {"user_id": removed["user_id"], "username": removed["username"], "sid": sid[:8]},
+        {"user_id": removed["user_id"], "username": removed["username"], "sid": sid},
         room=room,
     )
 
@@ -247,9 +247,14 @@ async def cursor_move(sid, data):
 
     session = await _get_session_info(sid)
     user_id = session.get("user_id", "unknown")
+    username = session.get("username", "unknown")
 
     room = f"project:{project_id}"
-    data["sid"] = sid[:8]
+    # 用完整 sid（与 join_project ack 一致），并附 user_id/username 使 cursor 自包含，
+    # 前端不再依赖 onlineUsers 按 sid 关联（避免 sid 不一致导致光标"匿名"）
+    data["sid"] = sid
+    data["user_id"] = user_id
+    data["username"] = username
     await sio.emit("cursor_move", data, room=room, skip_sid=sid)
     logger.debug(f"[WS:CursorMove] sid={sid} user={user_id} project={project_id}")
 

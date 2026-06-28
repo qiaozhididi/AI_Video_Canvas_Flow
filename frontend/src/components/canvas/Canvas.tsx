@@ -9,7 +9,6 @@ import {
   type OnConnect,
   applyNodeChanges,
   applyEdgeChanges,
-  addEdge,
   BackgroundVariant,
   ConnectionLineType,
   type Node,
@@ -57,6 +56,37 @@ export default function Canvas() {
           measured: n.measured,
         }))
       );
+
+      // 协作广播：拖动结束广播节点 update；删除广播节点 delete。
+      // 拖动中（dragging=true）不广播，避免高频。applyRemote 走 store set() 直接改 state，
+      // 不经过此回调（仅 React Flow 内部交互触发），故无回环。
+      const projectId = useCollabStore.getState().currentProjectId;
+      if (!projectId) return;
+      for (const change of changes) {
+        if (change.type === 'position' && change.dragging === false) {
+          const node = updated.find((n) => n.id === change.id);
+          if (node) {
+            useCollabStore.getState().emitNodeUpdate({
+              project_id: projectId,
+              node_id: node.id,
+              action: 'update',
+              node: {
+                id: node.id,
+                type: (node.data as unknown as CanvasNodeData).type,
+                position: node.position,
+                data: node.data as unknown as CanvasNodeData,
+                measured: node.measured,
+              },
+            });
+          }
+        } else if (change.type === 'remove') {
+          useCollabStore.getState().emitNodeUpdate({
+            project_id: projectId,
+            node_id: change.id,
+            action: 'delete',
+          });
+        }
+      }
     },
     [reactFlowNodes, setNodes]
   );
@@ -65,20 +95,35 @@ export default function Canvas() {
     (changes) => {
       const updated = applyEdgeChanges(changes, edges as Edge[]);
       setEdges(updated);
+
+      // 协作广播：删除广播 edge delete
+      const projectId = useCollabStore.getState().currentProjectId;
+      if (!projectId) return;
+      for (const change of changes) {
+        if (change.type === 'remove') {
+          useCollabStore.getState().emitEdgeUpdate({
+            project_id: projectId,
+            edge_id: change.id,
+            action: 'delete',
+          });
+        }
+      }
     },
     [edges, setEdges]
   );
 
-  const onConnect: OnConnect = useCallback(
-    (connection) => {
-      const newEdges = addEdge(
-        { ...connection, type: 'smoothstep', animated: true },
-        edges as Edge[]
-      );
-      setEdges(newEdges);
-    },
-    [edges, setEdges]
-  );
+  const onConnect: OnConnect = useCallback((connection) => {
+    // 用 canvasStore.addEdge（已实现广播），而非 xyflow addEdge + setEdges（不广播）
+    useCanvasStore.getState().addEdge({
+      id: `edge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      source: connection.source,
+      target: connection.target,
+      sourceHandle: connection.sourceHandle ?? undefined,
+      targetHandle: connection.targetHandle ?? undefined,
+      type: 'smoothstep',
+      animated: true,
+    });
+  }, []);
 
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: { id: string }) => {

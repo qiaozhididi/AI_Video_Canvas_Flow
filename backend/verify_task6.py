@@ -204,9 +204,18 @@ def test_full_collab_flow(token_a: str, token_b: str, token_c: str) -> None:
     else:
         record("B join_project 返回用户列表（2 人）", False, f"ack={ack_b}")
 
+    # C1：user_joined 广播的 sid 应与 ack 返回的完整 sid 一致（不再 sid[:8] 截断）
+    ack_b_sids = (
+        [u.get("sid") for u in ack_b.get("users", [])]
+        if isinstance(ack_b, dict) else []
+    )
+    user_joined_ok = (
+        len(a_user_joined) == 1
+        and a_user_joined[0].get("sid") in ack_b_sids
+    )
     record(
         "A 收到 user_joined 事件（B 加入）",
-        len(a_user_joined) == 1,
+        user_joined_ok,
         f"received={a_user_joined}",
     )
 
@@ -257,12 +266,17 @@ def test_full_collab_flow(token_a: str, token_b: str, token_c: str) -> None:
     client_a.emit("cursor_move", cursor_payload)
     ev_cursor_move.wait(timeout=2.0)
 
+    # C1：cursor_move payload 自包含 user_id/username（cursor 不再依赖 onlineUsers 关联）
     cursor_ok = (
         len(b_cursor_move) == 1
         and b_cursor_move[0].get("x") == 123.45
         and b_cursor_move[0].get("y") == 67.89
         and isinstance(b_cursor_move[0].get("sid"), str)
         and len(b_cursor_move[0].get("sid", "")) > 0
+        and isinstance(b_cursor_move[0].get("user_id"), str)
+        and len(b_cursor_move[0].get("user_id", "")) > 0
+        and isinstance(b_cursor_move[0].get("username"), str)
+        and len(b_cursor_move[0].get("username", "")) > 0
     )
     record(
         "A emit cursor_move，B 收到 cursor_move 事件（含 sid）",

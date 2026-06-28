@@ -42,12 +42,14 @@ export interface UserPresencePayload {
   sid: string;
 }
 
-// 远端光标移动事件负载（服务端广播时附加 sid）
+// 远端光标移动事件负载（服务端广播时附加完整 sid + user_id + username，cursor 自包含）
 export interface CursorMovePayload {
   project_id: string;
   x: number;
   y: number;
   sid: string;
+  user_id: string;
+  username: string;
 }
 
 // join_project ack 返回结构
@@ -58,6 +60,7 @@ interface JoinProjectAck {
 interface CollabState {
   socket: Socket | null;
   isConnected: boolean;
+  connectionError: string | null;
   currentProjectId: string | null;
   onlineUsers: OnlineUser[];
   remoteCursors: RemoteCursor[];
@@ -82,6 +85,7 @@ const CURSOR_THROTTLE_MS = 50;
 export const useCollabStore = create<CollabState>((set, get) => ({
   socket: null,
   isConnected: false,
+  connectionError: null,
   currentProjectId: null,
   onlineUsers: [],
   remoteCursors: [],
@@ -103,13 +107,19 @@ export const useCollabStore = create<CollabState>((set, get) => ({
 
     // 连接成功 → 更新状态 + 自动加入项目房间
     socket.on('connect', () => {
-      set({ isConnected: true });
+      set({ isConnected: true, connectionError: null });
       get().joinProject();
     });
 
     // 断开 → 清空在线用户与远端光标
     socket.on('disconnect', () => {
       set({ isConnected: false, onlineUsers: [], remoteCursors: [] });
+    });
+
+    // 连接错误（如 token 失效、网络故障）→ 记录错误信息供 UI 提示，不记录 token
+    socket.on('connect_error', (err: Error) => {
+      set({ isConnected: false, connectionError: err.message });
+      console.warn('[Collab] socket connect_error:', err.message);
     });
 
     // 内部监听：用户加入 → 添加到 onlineUsers（按 sid 去重）
@@ -140,18 +150,17 @@ export const useCollabStore = create<CollabState>((set, get) => ({
     });
 
     // 内部监听：远端光标移动 → 更新 remoteCursors（按 sid 去重）
+    // payload 自包含 user_id/username（后端 cursor_move 已附加），不再依赖 onlineUsers 关联
     socket.on('cursor_move', (payload: CursorMovePayload) => {
       set((state) => {
         const others = state.remoteCursors.filter((c) => c.sid !== payload.sid);
-        // 从 onlineUsers 查找用户信息（服务端广播仅附加 sid）
-        const user = state.onlineUsers.find((u) => u.sid === payload.sid);
         return {
           remoteCursors: [
             ...others,
             {
               sid: payload.sid,
-              user_id: user?.user_id ?? '',
-              username: user?.username ?? '',
+              user_id: payload.user_id,
+              username: payload.username,
               x: payload.x,
               y: payload.y,
             },
@@ -160,7 +169,7 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       });
     });
 
-    set({ socket, currentProjectId: projectId });
+    set({ socket, currentProjectId: projectId, connectionError: null });
   },
 
   disconnect: () => {
@@ -170,7 +179,7 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       socket.disconnect();
     }
     lastCursorEmitAt = 0;
-    set({ socket: null, isConnected: false, currentProjectId: null, onlineUsers: [], remoteCursors: [] });
+    set({ socket: null, isConnected: false, connectionError: null, currentProjectId: null, onlineUsers: [], remoteCursors: [] });
   },
 
   joinProject: () => {

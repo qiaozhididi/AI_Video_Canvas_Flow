@@ -65,6 +65,8 @@ export interface CanvasEdge {
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
+  type?: string;
+  animated?: boolean;
 }
 
 // 节点模板（用于节点面板拖拽创建）
