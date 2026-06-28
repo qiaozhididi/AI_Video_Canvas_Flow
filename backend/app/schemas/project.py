@@ -23,3 +23,16 @@ class ProjectResponse(BaseModel):
     owner_id: str
     created_at: datetime
     updated_at: datetime
+
+
+class TemplateResponse(ProjectResponse):
+    """模板响应（继承 ProjectResponse + 模板字段）"""
+    is_template: bool
+    template_category: str | None
+    template_tags: list | None
+
+
+class TemplatePublishRequest(BaseModel):
+    """发布为模板的请求体"""
+    category: str
+    tags: list[str] = []
