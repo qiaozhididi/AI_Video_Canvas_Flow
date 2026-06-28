@@ -1,13 +1,42 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useHistoryStore } from '@/stores/historyStore';
+import { useCollabStore } from '@/stores/collabStore';
+import { useCanvasStore } from '@/stores/canvasStore';
+import { useAuthStore } from '@/stores/authStore';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock } from 'lucide-react';
-import { useState } from 'react';
 import { toast } from 'sonner';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
+
+// 在线用户头像配色（按 user_id hash 选取）
+const AVATAR_COLORS = [
+  'bg-purple-500',
+  'bg-blue-500',
+  'bg-emerald-500',
+  'bg-orange-500',
+  'bg-pink-500',
+  'bg-teal-500',
+  'bg-indigo-500',
+  'bg-rose-500',
+];
+
+function getAvatarColor(userId: string): string {
+  let hash = 0;
+  for (let i = 0; i < userId.length; i++) {
+    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function getAvatarText(username: string): string {
+  if (!username) return '?';
+  // CJK 字符取 1 个，ASCII 取前 2 个
+  const isCJK = /[\u4e00-\u9fff]/.test(username[0]);
+  return isCJK ? username.slice(0, 1) : username.slice(0, 2).toUpperCase();
+}
 
 export default function EditorLayout() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -15,6 +44,8 @@ export default function EditorLayout() {
   const { projects, currentProject, setCurrentProject, saveCurrentProject, loadProjectToCanvas, loadProjects } = useProjectStore();
   const { canUndo, canRedo, undo, redo } = useHistoryStore();
   const { startAutoSave, stopAutoSave, checkRecovery, restoreSnapshot, discardRecovery, lastSavedAt, isDirty } = useAutoSaveStore();
+  const onlineUsers = useCollabStore((s) => s.onlineUsers);
+  const currentUser = useAuthStore((s) => s.user);
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [recoveryInfo, setRecoveryInfo] = useState<{ timestamp: number; actionCount: number } | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowExecutionStatus>({
@@ -61,6 +92,25 @@ export default function EditorLayout() {
     };
     load();
   }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 协作：连接 collabStore + 订阅远端变更应用到 canvasStore
+  useEffect(() => {
+    if (!projectId) return;
+
+    const { connect, onNodeUpdate, onEdgeUpdate } = useCollabStore.getState();
+    const { applyRemoteNodeUpdate, applyRemoteEdgeUpdate } = useCanvasStore.getState();
+
+    connect(projectId);
+    // 签名直接匹配：onNodeUpdate callback 接收 NodeUpdatePayload，applyRemoteNodeUpdate 同签名
+    const unsubNode = onNodeUpdate(applyRemoteNodeUpdate);
+    const unsubEdge = onEdgeUpdate(applyRemoteEdgeUpdate);
+
+    return () => {
+      unsubNode();
+      unsubEdge();
+      useCollabStore.getState().disconnect();
+    };
+  }, [projectId]);
 
   // 启动自动保存
   useEffect(() => {
@@ -156,6 +206,29 @@ export default function EditorLayout() {
         </div>
 
         <div className="flex-1" />
+
+        {/* 在线用户列表 */}
+        {onlineUsers.length > 0 && (
+          <div className="flex items-center mr-2">
+            {onlineUsers.slice(0, 5).map((u, idx) => {
+              const isSelf = currentUser?.id === u.user_id;
+              return (
+                <div
+                  key={u.sid}
+                  title={`${u.username}${isSelf ? ' (你)' : ''}`}
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium text-white border-2 ${getAvatarColor(u.user_id)} ${idx > 0 ? '-ml-1.5' : ''} ${isSelf ? 'border-neon-blue' : 'border-canvas-panel'}`}
+                >
+                  {getAvatarText(u.username)}
+                </div>
+              );
+            })}
+            {onlineUsers.length > 5 && (
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium text-slate-300 bg-canvas-hover border-2 border-canvas-panel -ml-1.5">
+                +{onlineUsers.length - 5}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 撤销/重做 */}
         <div className="flex items-center gap-0.5">
