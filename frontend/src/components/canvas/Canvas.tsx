@@ -20,7 +20,9 @@ import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
+import { useCollabStore } from '@/stores/collabStore';
 import CanvasNodeComponent from './CanvasNode';
+import RemoteCursors from './RemoteCursors';
 import type { CanvasNodeData, NodeSubtype } from '@/types/canvas';
 
 const nodeTypes = { canvasNode: CanvasNodeComponent };
@@ -89,6 +91,16 @@ export default function Canvas() {
     setSelectedNode(null);
   }, [setSelectedNode]);
 
+  // 鼠标移动 → 转换为画布坐标 → 广播本地光标（50ms 节流已在 collabStore.emitCursorMove 内实现）
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!reactFlowInstance.current) return;
+    const position = reactFlowInstance.current.screenToFlowPosition({
+      x: e.clientX,
+      y: e.clientY,
+    });
+    useCollabStore.getState().emitCursorMove(position.x, position.y);
+  }, []);
+
   // ReactFlow 拖拽放置
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -128,6 +140,7 @@ export default function Canvas() {
         onConnect={onConnect}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
+        onMouseMove={onMouseMove}
         nodeTypes={nodeTypes}
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -138,6 +151,7 @@ export default function Canvas() {
         className="bg-canvas-bg"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2A2A3E" />
+        <RemoteCursors />
         <Controls
           position="bottom-right"
           showInteractive={false}
