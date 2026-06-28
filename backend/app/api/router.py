@@ -8,6 +8,7 @@ from app.api.collaboration import router as collaboration_router
 from app.api.media import router as media_router
 from app.api.projects import router as projects_router
 from app.api.render import router as render_router
+from app.api.snapshots import router as snapshots_router
 from app.api.workflows import router as workflows_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -19,3 +20,5 @@ api_router.include_router(media_router, prefix="/media", tags=["媒体资产"])
 api_router.include_router(render_router, prefix="/render", tags=["渲染任务"])
 api_router.include_router(collaboration_router, prefix="/collab", tags=["协作"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
+# snapshots_router 含完整路径前缀（/projects/{id}/snapshots + /snapshots/{id}），不加 prefix
+api_router.include_router(snapshots_router, tags=["快照"])

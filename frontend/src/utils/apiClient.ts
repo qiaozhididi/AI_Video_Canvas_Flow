@@ -7,6 +7,9 @@
  * - 各业务模块 API 方法
  */
 
+import type { CanvasNode, CanvasEdge } from '@/types/canvas';
+import type { TimelineData } from '@/types/timeline';
+
 // ═══════════════════════════════════════════════════
 // 0. 基础设施
 // ═══════════════════════════════════════════════════
@@ -254,6 +257,39 @@ export interface AiModelUpdateRequest {
   is_active?: boolean;
 }
 
+// ── 快照 ──
+
+export interface SnapshotCreateRequest {
+  source: 'auto' | 'manual';
+  label?: string;
+  snapshot_data: {
+    nodes: CanvasNode[];
+    edges: CanvasEdge[];
+    timelineData: TimelineData;
+  };
+}
+
+export interface SnapshotResponse {
+  id: string;
+  project_id: string;
+  owner_id: string;
+  source: 'auto' | 'manual';
+  label: string | null;
+  snapshot_data: {
+    nodes: CanvasNode[];
+    edges: CanvasEdge[];
+    timelineData: TimelineData;
+  };
+  created_at: string;
+}
+
+export interface SnapshotRestoreResponse {
+  restored: boolean;
+  project_id: string;
+  nodes_count: number;
+  edges_count: number;
+}
+
 // ═══════════════════════════════════════════════════
 // 2. 业务模块 API
 // ═══════════════════════════════════════════════════
@@ -462,4 +498,39 @@ export const aiApi = {
   },
   /** 获取默认 AI 模型 */
   getDefaultModel: () => request<AiModelResponse>('/ai/models/default'),
+};
+
+// ── 快照 ──
+
+export const snapshotApi = {
+  /** 创建快照 */
+  create: (projectId: string, data: SnapshotCreateRequest) =>
+    request<SnapshotResponse>(`/projects/${projectId}/snapshots`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /** 获取快照列表（可选 source 筛选） */
+  list: (projectId: string, source?: 'auto' | 'manual') =>
+    request<SnapshotResponse[]>(
+      `/projects/${projectId}/snapshots${source ? `?source=${source}` : ''}`,
+    ),
+
+  /** 获取最新快照（崩溃恢复检测用） */
+  getLatest: (projectId: string) =>
+    request<SnapshotResponse>(`/projects/${projectId}/snapshots/latest`),
+
+  /** 获取快照详情 */
+  get: (snapshotId: string) =>
+    request<SnapshotResponse>(`/snapshots/${snapshotId}`),
+
+  /** 删除快照 */
+  delete: (snapshotId: string) =>
+    request<void>(`/snapshots/${snapshotId}`, { method: 'DELETE' }),
+
+  /** 恢复快照到实际 nodes/edges */
+  restore: (snapshotId: string) =>
+    request<SnapshotRestoreResponse>(`/snapshots/${snapshotId}/restore`, {
+      method: 'POST',
+    }),
 };

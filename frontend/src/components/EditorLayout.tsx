@@ -70,11 +70,16 @@ export default function EditorLayout() {
 
   // 崩溃恢复检测
   useEffect(() => {
-    const snapshot = checkRecovery();
-    if (snapshot) {
-      setRecoveryInfo({ timestamp: snapshot.timestamp, actionCount: 0 });
-      setShowRecoveryDialog(true);
-    }
+    void (async () => {
+      const snapshot = await checkRecovery();
+      if (snapshot) {
+        setRecoveryInfo({
+          timestamp: new Date(snapshot.created_at).getTime(),
+          actionCount: 0,
+        });
+        setShowRecoveryDialog(true);
+      }
+    })();
   }, [checkRecovery]);
 
   // 快捷键绑定
@@ -242,7 +247,7 @@ export default function EditorLayout() {
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => {
-                  discardRecovery();
+                  void discardRecovery();
                   setShowRecoveryDialog(false);
                 }}
                 className="px-4 py-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors"
@@ -250,9 +255,9 @@ export default function EditorLayout() {
                 丢弃
               </button>
               <button
-                onClick={() => {
-                  const snapshot = checkRecovery();
-                  if (snapshot) restoreSnapshot(snapshot);
+                onClick={async () => {
+                  const snapshot = await checkRecovery();
+                  if (snapshot) await restoreSnapshot(snapshot);
                   setShowRecoveryDialog(false);
                 }}
                 className="px-4 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity"

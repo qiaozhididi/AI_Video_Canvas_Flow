@@ -10,6 +10,8 @@ from app.deps import DBSession, CurrentUser
 from app.models.project import Project
 from app.models.render_task import RenderTask
 from app.models.media_asset import MediaAsset
+from app.models.workflow import WorkflowNode, WorkflowEdge
+from app.models.project_snapshot import ProjectSnapshot
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 
 logger = logging.getLogger("app.api.projects")
@@ -135,6 +137,27 @@ async def delete_project(project_id: str, db: DBSession, current_user: CurrentUs
     )
     for asset in media_result.scalars().all():
         await db.delete(asset)
+
+    # 级联删除关联的工作流边（先于节点，因 edges 引用 nodes）
+    edge_result = await db.execute(
+        select(WorkflowEdge).where(WorkflowEdge.project_id == uuid.UUID(project_id))
+    )
+    for edge in edge_result.scalars().all():
+        await db.delete(edge)
+
+    # 级联删除关联的工作流节点
+    node_result = await db.execute(
+        select(WorkflowNode).where(WorkflowNode.project_id == uuid.UUID(project_id))
+    )
+    for node in node_result.scalars().all():
+        await db.delete(node)
+
+    # 级联删除关联的项目快照（auto + manual）
+    snapshot_result = await db.execute(
+        select(ProjectSnapshot).where(ProjectSnapshot.project_id == uuid.UUID(project_id))
+    )
+    for snapshot in snapshot_result.scalars().all():
+        await db.delete(snapshot)
 
     await db.delete(project)
     await db.commit()
