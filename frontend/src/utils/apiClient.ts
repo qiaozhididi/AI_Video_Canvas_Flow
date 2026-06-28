@@ -76,12 +76,19 @@ export interface UserResponse {
   id: string;
   username: string;
   email: string;
+  avatar_url: string | null;
 }
 
 export interface TokenResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+}
+
+export interface UserUpdateRequest {
+  username?: string;
+  email?: string;
+  avatar_url?: string;
 }
 
 // ── 项目 ──
@@ -311,6 +318,12 @@ export const authApi = {
 
   getMe: () =>
     request<UserResponse>('/auth/me'),
+
+  update: (data: UserUpdateRequest) =>
+    request<UserResponse>('/auth/me', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 };
 
 // ── 项目 ──
