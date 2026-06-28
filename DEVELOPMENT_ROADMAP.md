@@ -218,7 +218,7 @@
 | projectStore | 后端 API | 后端 projectApi | ✅ 已完成 |
 | canvasStore | 内存（通过 projectStore 间接保存） | 后端 workflowApi | ⚠️ 间接对接 |
 | timelineStore | 内存 | 后端 workflowApi | ❌ 未对接 |
-| autoSaveStore | localStorage | 后端 API | ❌ 未对接 |
+| autoSaveStore | 后端 API | 后端 API | ✅ 已完成（Task 6：async 调 snapshotApi，localStorage 已移除） |
 | historyStore | 内存（刷新丢失） | 可保持内存 | ✅ 无需后端 |
 
 ## Mock 数据目录结构
