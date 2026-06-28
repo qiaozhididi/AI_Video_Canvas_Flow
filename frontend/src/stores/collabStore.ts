@@ -58,6 +58,7 @@ interface JoinProjectAck {
 interface CollabState {
   socket: Socket | null;
   isConnected: boolean;
+  currentProjectId: string | null;
   onlineUsers: OnlineUser[];
   remoteCursors: RemoteCursor[];
 
@@ -74,8 +75,6 @@ interface CollabState {
   onUserLeft: (callback: (payload: UserPresencePayload) => void) => () => void;
 }
 
-// 模块级变量：当前项目 ID（供 joinProject/leaveProject/emitCursorMove 使用）
-let currentProjectId: string | null = null;
 // 光标节流：上次发送时间戳（50ms 节流）
 let lastCursorEmitAt = 0;
 const CURSOR_THROTTLE_MS = 50;
@@ -83,6 +82,7 @@ const CURSOR_THROTTLE_MS = 50;
 export const useCollabStore = create<CollabState>((set, get) => ({
   socket: null,
   isConnected: false,
+  currentProjectId: null,
   onlineUsers: [],
   remoteCursors: [],
 
@@ -93,7 +93,6 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       existing.removeAllListeners();
       existing.disconnect();
     }
-    currentProjectId = projectId;
 
     const token = localStorage.getItem('access_token');
     const socket = io('/', {
@@ -161,7 +160,7 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       });
     });
 
-    set({ socket });
+    set({ socket, currentProjectId: projectId });
   },
 
   disconnect: () => {
@@ -170,14 +169,13 @@ export const useCollabStore = create<CollabState>((set, get) => ({
       socket.removeAllListeners();
       socket.disconnect();
     }
-    currentProjectId = null;
     lastCursorEmitAt = 0;
-    set({ socket: null, isConnected: false, onlineUsers: [], remoteCursors: [] });
+    set({ socket: null, isConnected: false, currentProjectId: null, onlineUsers: [], remoteCursors: [] });
   },
 
   joinProject: () => {
     const socket = get().socket;
-    const projectId = currentProjectId;
+    const projectId = get().currentProjectId;
     if (!socket || !projectId) return;
     socket.emit('join_project', { project_id: projectId }, (ack: JoinProjectAck) => {
       if (ack?.users) {
@@ -188,7 +186,7 @@ export const useCollabStore = create<CollabState>((set, get) => ({
 
   leaveProject: () => {
     const socket = get().socket;
-    const projectId = currentProjectId;
+    const projectId = get().currentProjectId;
     if (!socket || !projectId) return;
     socket.emit('leave_project', { project_id: projectId });
   },
@@ -207,7 +205,7 @@ export const useCollabStore = create<CollabState>((set, get) => ({
 
   emitCursorMove: (x, y) => {
     const socket = get().socket;
-    const projectId = currentProjectId;
+    const projectId = get().currentProjectId;
     if (!socket || !projectId) return;
     // 50ms 节流：距离上次发送不足 50ms 则跳过
     const now = Date.now();
