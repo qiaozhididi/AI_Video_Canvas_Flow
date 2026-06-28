@@ -39,6 +39,14 @@ class UserResponse(BaseModel):
     id: str
     username: str
     email: str
+    avatar_url: str | None
+
+
+class UserUpdateRequest(BaseModel):
+    """用户信息更新请求"""
+    username: str | None = None
+    email: str | None = None
+    avatar_url: str | None = None
 
 
 def _create_token(user_id: str, expires_minutes: int) -> str:
@@ -76,7 +84,7 @@ async def register(body: RegisterRequest, db: DBSession):
 
     user_id = str(user.id)
     logger.info(f"[Auth:Register] user={body.username} id={user_id}")
-    return UserResponse(id=user_id, username=user.username, email=user.email)
+    return UserResponse(id=user_id, username=user.username, email=user.email, avatar_url=user.avatar_url)
 
 
 @router.post("/login", response_model=TokenResponse, summary="用户登录")
@@ -108,4 +116,46 @@ async def get_me(db: DBSession, current_user_id: CurrentUser):
     if not user:
         raise HTTPException(status_code=401, detail="用户不存在")
 
-    return UserResponse(id=str(user.id), username=user.username, email=user.email)
+    return UserResponse(id=str(user.id), username=user.username, email=user.email, avatar_url=user.avatar_url)
+
+
+@router.put("/me", response_model=UserResponse, summary="更新当前用户信息")
+async def update_me(body: UserUpdateRequest, db: DBSession, current_user_id: CurrentUser):
+    """更新当前用户信息（用户名/邮箱/头像 URL）"""
+    import uuid
+    stmt = select(User).where(User.id == uuid.UUID(current_user_id))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+
+    # 如修改 username，校验唯一性（排除当前用户）
+    if body.username is not None and body.username != user.username:
+        stmt = select(User).where(User.username == body.username, User.id != user.id)
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=400, detail="用户名已存在")
+        user.username = body.username
+
+    # 如修改 email，校验唯一性（排除当前用户）
+    if body.email is not None and body.email != user.email:
+        stmt = select(User).where(User.email == body.email, User.id != user.id)
+        result = await db.execute(stmt)
+        if result.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=400, detail="邮箱已被注册")
+        user.email = body.email
+
+    # 如修改 avatar_url
+    if body.avatar_url is not None:
+        user.avatar_url = body.avatar_url
+
+    await db.commit()
+    await db.refresh(user)
+
+    logger.info(f"[Auth:UpdateMe] user_id={current_user_id}")
+    return UserResponse(
+        id=str(user.id),
+        username=user.username,
+        email=user.email,
+        avatar_url=user.avatar_url,
+    )

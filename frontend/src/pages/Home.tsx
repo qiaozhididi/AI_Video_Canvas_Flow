@@ -2,9 +2,11 @@ import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 import {
   Plus, Search, Clock, Trash2, Film, Sparkles,
-  ArrowRight,
+  ArrowRight, Share2, X,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
+import { templateApi } from '../utils/apiClient';
 
 export default function Home() {
   const { projects, createProject, deleteProject, loadProjects } = useProjectStore();
@@ -12,6 +14,10 @@ export default function Home() {
   const [search, setSearch] = useState('');
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [publishModal, setPublishModal] = useState<{ open: boolean; projectId: string; projectName: string }>({ open: false, projectId: '', projectName: '' });
+  const [publishCategory, setPublishCategory] = useState('社区');
+  const [publishTags, setPublishTags] = useState('');
+  const [publishing, setPublishing] = useState(false);
 
   // 首次加载时从后端获取项目列表
   useEffect(() => {
@@ -28,6 +34,26 @@ export default function Home() {
     setShowNewDialog(false);
     setNewProjectName('');
     navigate(`/editor/${project.id}`);
+  };
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    try {
+      const tags = publishTags
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      await templateApi.publish(publishModal.projectId, { category: publishCategory, tags });
+      toast.success(`项目「${publishModal.projectName}」已发布为模板`);
+      setPublishModal({ open: false, projectId: '', projectName: '' });
+      setPublishTags('');
+      setPublishCategory('社区');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '发布失败';
+      toast.error(msg);
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
@@ -148,15 +174,27 @@ export default function Home() {
                       <span className="text-xs text-slate-600">
                         {project.canvasNodes.length} 个节点
                       </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteProject(project.id);
-                        }}
-                        className="p-1 rounded hover:bg-canvas-hover transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-slate-600 hover:text-status-error" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPublishModal({ open: true, projectId: project.id, projectName: project.name });
+                          }}
+                          className="p-1 rounded hover:bg-canvas-hover transition-colors"
+                          title="发布为模板"
+                        >
+                          <Share2 className="w-3.5 h-3.5 text-slate-600 hover:text-neon-purple" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteProject(project.id);
+                          }}
+                          className="p-1 rounded hover:bg-canvas-hover transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-slate-600 hover:text-status-error" />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -192,6 +230,66 @@ export default function Home() {
                 className="px-4 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity"
               >
                 创建
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 发布为模板对话框 */}
+      {publishModal.open && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => !publishing && setPublishModal({ open: false, projectId: '', projectName: '' })}>
+          <div
+            className="bg-canvas-panel border border-canvas-border rounded-xl p-6 w-96 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-white font-display">发布为模板</h3>
+              <button
+                onClick={() => !publishing && setPublishModal({ open: false, projectId: '', projectName: '' })}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-400 mb-4">将「{publishModal.projectName}」发布到模板市场</p>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wider">分类</label>
+                <select
+                  value={publishCategory}
+                  onChange={(e) => setPublishCategory(e.target.value)}
+                  className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
+                >
+                  <option value="社区">社区</option>
+                  <option value="官方">官方</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 uppercase tracking-wider">标签（逗号分隔）</label>
+                <input
+                  type="text"
+                  value={publishTags}
+                  onChange={(e) => setPublishTags(e.target.value)}
+                  placeholder="文生图, 图生视频"
+                  className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 placeholder-slate-500 focus:outline-none focus:border-neon-purple"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPublishModal({ open: false, projectId: '', projectName: '' })}
+                disabled={publishing}
+                className="px-4 py-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handlePublish}
+                disabled={publishing}
+                className="px-4 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {publishing ? '发布中...' : '发布'}
               </button>
             </div>
           </div>

@@ -30,10 +30,10 @@
 
 | 层面 | 完成度 | 说明 |
 |------|--------|------|
-| 后端 API | **95%** | 全部核心端点已实现，仅 collaboration 为桩代码 |
-| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model） |
+| 后端 API | **98%** | 全部核心端点已实现（含 templates），仅 collaboration 为桩代码 |
+| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates） |
 | 前端 Store 对接 | **50%** | authStore/projectStore/canvasStore(间接) 已对接；autoSaveStore/timelineStore 待对接 |
-| 前端页面对接 | **71%** | Login/Home/RenderCenter/Settings(AI)/Editor(执行工作流) 已对接；MediaLibrary 有 Mock 降级；Templates 纯 Mock |
+| 前端页面对接 | **90%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流) 已对接；MediaLibrary 有 Mock 降级 |
 
 ---
 
@@ -83,6 +83,28 @@
 - **前端**: workflowExecutor.ts 收集上游输入节点 `params.text`/`params.url` 为虚拟 artifacts 传给下游
 - **涉及文件**: render.py, render_tasks.py, ai.py, render_task.py, 19c11929fcbb_add_node_id_to_render_tasks.py, workflowExecutor.ts, Editor.tsx, EditorLayout.tsx, apiClient.ts, canvasStore.ts
 
+### 6. 编辑器自动保存后端化
+- **后端**: project_snapshots 表 + Alembic 迁移（JSONB 存 nodes/edges/timelineData，含 project_id+source+created_at 索引）
+- **后端**: snapshots.py 快照 CRUD API（POST/GET/GET latest/DELETE）+ POST /snapshots/{id}/restore 单事务恢复端点
+- **后端**: 5 auto 快照上限策略（插入前清理最旧 auto 快照，manual 不计数）
+- **后端**: 修复 delete_project 级联删除遗漏（workflow_nodes/edges/snapshots 手动级联）
+- **前端**: autoSaveStore 移除 localStorage，saveNow() 改 async 调 snapshotApi.create()
+- **前端**: checkRecovery() 改 async 调 snapshotApi.getLatest()，对比 created_at vs project.updatedAt
+- **前端**: restoreSnapshot() 调 snapshotApi.restore() 后刷新本地 stores + refreshCurrentProject 更新 updatedAt
+- **前端**: projectStore 新增 refreshCurrentProject 方法避免恢复对话框误重弹
+- **涉及文件**: project_snapshot.py, snapshots.py, snapshot.py, projects.py, autoSaveStore.ts, projectStore.ts, apiClient.ts, EditorLayout.tsx
+
+### 7. 设置页持久化 + 模板市场
+- **后端**: auth.py 新增 PUT /me 端点（UserUpdateRequest + 唯一性校验 + avatar_url）
+- **后端**: Project 模型新增 is_template/template_category/template_tags 字段 + Alembic 迁移 + seed 3 官方模板
+- **后端**: templates.py 新增 4 端点（GET /templates/ 列表搜索 + POST /templates/{id}/clone 克隆 + POST /projects/{id}/publish 发布 + DELETE /templates/{id} 取消发布）
+- **后端**: clone 复制 nodes/edges，新节点 ID 加项目前缀避免冲突；publish/unpublish 校验 owner
+- **前端**: Settings.tsx 新增 ProfileTab 组件对接 authApi.getMe + authApi.update
+- **前端**: Templates.tsx 重写移除 MOCK，对接 templateApi.list（debounce 搜索）+ 分类筛选 + clone 跳转编辑器
+- **前端**: Home.tsx 项目卡片新增"发布为模板"按钮 + Modal（分类/标签输入）
+- **前端**: apiClient.ts 新增 UserUpdateRequest/TemplateResponse/TemplatePublishRequest 类型 + authApi.update + templateApi
+- **涉及文件**: auth.py, project.py, templates.py, schemas/project.py, router.py, a1b2c3d4e5f6_add_template_fields_to_projects.py, Settings.tsx, Templates.tsx, Home.tsx, apiClient.ts
+
 ---
 
 ## 下一阶段开发计划
@@ -110,7 +132,7 @@
 
 ---
 
-### 阶段三：设置页 + 模板市场（P2）
+### 阶段三：设置页 + 模板市场（P2）✅ 已完成
 
 #### 6. 设置页持久化
 - **后端**: auth.py 扩展 `PUT /me` 端点
@@ -167,6 +189,7 @@
 | `/api/v1/auth/register` | POST | ✅ | — |
 | `/api/v1/auth/login` | POST | ✅ | — |
 | `/api/v1/auth/me` | GET | ✅ | — |
+| `/api/v1/auth/me` | PUT | ✅ | 更新 username/email/avatar_url（唯一性校验） |
 | `/api/v1/projects/` | GET | ✅ | — |
 | `/api/v1/projects/` | POST | ✅ | — |
 | `/api/v1/projects/{id}` | GET | ✅ | — |
@@ -194,6 +217,10 @@
 | `/api/v1/ai/models` | GET/POST | ✅ | AI Model CRUD |
 | `/api/v1/ai/models/{id}` | PUT/DELETE | ✅ | AI Model CRUD |
 | `/api/v1/ai/models/default` | GET | ✅ | 获取默认 AI 模型（AI 推理节点自动选模型） |
+| `/api/v1/templates/` | GET | ✅ | 模板列表（支持 q 搜索 name/tags + category 筛选） |
+| `/api/v1/templates/{id}/clone` | POST | ✅ | 克隆模板为新项目（复制 nodes/edges，ID 加前缀） |
+| `/api/v1/projects/{id}/publish` | POST | ✅ | 发布项目为模板（category + tags） |
+| `/api/v1/templates/{id}` | DELETE | ✅ | 取消模板发布（仅 owner） |
 | `/api/v1/collab/status` | GET | ✅ | 硬编码状态 |
 
 ## 数据库表结构
@@ -201,7 +228,7 @@
 | 表名 | 模型 | 状态 |
 |------|------|------|
 | `users` | User | ✅ 已创建 |
-| `projects` | Project | ✅ 已创建 |
+| `projects` | Project | ✅ 已创建（含 is_template/template_category/template_tags 字段 + ix_projects_is_template 索引） |
 | `workflow_nodes` | WorkflowNode | ✅ 已创建 |
 | `workflow_edges` | WorkflowEdge | ✅ 已创建 |
 | `media_assets` | MediaAsset | ✅ 已创建 |

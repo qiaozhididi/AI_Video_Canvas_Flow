@@ -6,12 +6,15 @@ import {
 import { toast } from 'sonner';
 import {
   aiApi,
+  authApi,
   type AiProviderResponse,
   type AiProviderCreateRequest,
   type AiProviderUpdateRequest,
   type AiModelResponse,
   type AiModelCreateRequest,
   type AiModelUpdateRequest,
+  type UserResponse,
+  type UserUpdateRequest,
 } from '../utils/apiClient';
 
 // ── 常量 ──
@@ -549,14 +552,102 @@ function AiConfigTab() {
   );
 }
 
+// ── 个人信息标签页 ──
+
+function ProfileTab() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+
+  useEffect(() => {
+    authApi.getMe()
+      .then((user: UserResponse) => {
+        setUsername(user.username);
+        setEmail(user.email);
+        setAvatarUrl(user.avatar_url ?? '');
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : '加载用户信息失败';
+        toast.error(msg);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const data: UserUpdateRequest = {
+        username,
+        email,
+        avatar_url: avatarUrl,
+      };
+      await authApi.update(data);
+      toast.success('个人信息已保存');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '保存失败';
+      toast.error(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <p className="text-sm text-slate-500">加载中...</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-medium text-white font-display">个人信息</h2>
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-slate-500 uppercase tracking-wider">显示名称</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 uppercase tracking-wider">邮箱</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
+          />
+        </div>
+        <div>
+          <label className="text-xs text-slate-500 uppercase tracking-wider">头像 URL</label>
+          <input
+            type="text"
+            value={avatarUrl}
+            onChange={(e) => setAvatarUrl(e.target.value)}
+            placeholder="https://..."
+            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-neon-purple"
+          />
+        </div>
+      </div>
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Save className="w-4 h-4" />
+        {saving ? '保存中...' : '保存修改'}
+      </button>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════
 // 主组件
 // ═══════════════════════════════════════════════════
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('profile');
-  const [displayName, setDisplayName] = useState('用户');
-  const [email, setEmail] = useState('user@example.com');
 
   const tabs = [
     { id: 'profile', label: '个人信息', icon: User },
@@ -592,35 +683,7 @@ export default function Settings() {
 
           {/* 内容 */}
           <div className="flex-1">
-            {activeTab === 'profile' && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-medium text-white font-display">个人信息</h2>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-xs text-slate-500 uppercase tracking-wider">显示名称</label>
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 uppercase tracking-wider">邮箱</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
-                    />
-                  </div>
-                </div>
-                <button className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity">
-                  <Save className="w-4 h-4" />
-                  保存修改
-                </button>
-              </div>
-            )}
+            {activeTab === 'profile' && <ProfileTab />}
 
             {activeTab === 'api' && (
               <div className="space-y-4">
