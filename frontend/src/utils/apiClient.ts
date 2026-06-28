@@ -113,6 +113,19 @@ export interface ProjectUpdateRequest {
   description?: string;
 }
 
+// ── 模板 ──
+
+export interface TemplateResponse extends ProjectResponse {
+  is_template: boolean;
+  template_category: string | null;
+  template_tags: string[] | null;
+}
+
+export interface TemplatePublishRequest {
+  category: string;
+  tags: string[];
+}
+
 // ── 工作流（节点/边） ──
 
 export interface NodeResponse {
@@ -349,6 +362,30 @@ export const projectApi = {
 
   delete: (id: string) =>
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
+};
+
+// ── 模板市场 ──
+
+export const templateApi = {
+  list: (params?: { q?: string; category?: string }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.q) searchParams.set('q', params.q);
+    if (params?.category) searchParams.set('category', params.category);
+    const qs = searchParams.toString();
+    return request<TemplateResponse[]>(`/templates/${qs ? '?' + qs : ''}`);
+  },
+
+  clone: (templateId: string) =>
+    request<ProjectResponse>(`/templates/${templateId}/clone`, { method: 'POST' }),
+
+  publish: (projectId: string, data: TemplatePublishRequest) =>
+    request<TemplateResponse>(`/projects/${projectId}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  unpublish: (templateId: string) =>
+    request<void>(`/templates/${templateId}`, { method: 'DELETE' }),
 };
 
 // ── 工作流（节点/边） ──
