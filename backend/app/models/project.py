@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -19,3 +19,6 @@ class Project(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_template: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    template_category: Mapped[str | None] = mapped_column(String(32))
+    template_tags: Mapped[list | None] = mapped_column(JSON)
