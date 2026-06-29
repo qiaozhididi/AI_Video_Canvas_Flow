@@ -42,6 +42,9 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   isPlaying: false,
 
   play: () => {
+    if (rAFId !== null) {
+      cancelAnimationFrame(rAFId);
+    }
     set({ isPlaying: true });
     lastTimestamp = null;
     const tick = (timestamp: number) => {
