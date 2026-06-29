@@ -54,8 +54,13 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       if (lastTimestamp === null) {
         lastTimestamp = timestamp;
       }
-      const delta = (timestamp - lastTimestamp) / 1000; // ms → s
+      const rawDelta = (timestamp - lastTimestamp) / 1000; // ms → s
       lastTimestamp = timestamp;
+
+      // 限制单帧 delta 上限，防止页面后台/标签页切换/自动化环境
+      // 导致 rAF 批量调度引起 timestamp 跳变，播放速度异常快
+      // 正常 60fps ≈ 16ms，30fps ≈ 33ms，上限 50ms 不影响正常播放
+      const delta = Math.max(0, Math.min(rawDelta, 0.05));
 
       const nextTime = state.data.currentTime + delta;
       if (nextTime >= state.data.duration) {
