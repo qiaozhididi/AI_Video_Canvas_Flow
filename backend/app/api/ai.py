@@ -266,3 +266,54 @@ async def ensure_default_ai_config(db):
     db.add(model)
     await db.commit()
     logger.info(f"[AI:Init] 已创建默认 Provider: {provider.name}, Model: {model.display_name}")
+
+
+# ── AI 快速生成 ──
+
+class GenerateWorkflowRequest(BaseModel):
+    description: str
+    mode: str  # "replace" | "append"
+    model_id: str | None = None
+
+
+class GenerateWorkflowResponse(BaseModel):
+    nodes: list[dict]
+    edges: list[dict]
+
+
+@router.post("/generate-workflow", summary="AI 快速生成工作流")
+async def generate_workflow_endpoint(
+    body: GenerateWorkflowRequest,
+    db: DBSession,
+    user: CurrentUser,
+):
+    """根据自然语言描述生成工作流节点和边
+
+    - description: 工作流描述
+    - mode: "replace"(替换画布) | "append"(追加到画布)
+    - model_id: 可选 LLM 模型 UUID,不传则取默认 LLM 模型
+    """
+    from app.services.ai_service import generate_workflow as _generate_workflow
+
+    if body.mode not in ("replace", "append"):
+        raise HTTPException(status_code=422, detail="mode 必须为 'replace' 或 'append'")
+    if not body.description.strip():
+        raise HTTPException(status_code=422, detail="description 不能为空")
+
+    try:
+        result = await _generate_workflow(db, body.description, body.model_id)
+    except RuntimeError as e:
+        # 区分错误类型返回合适的状态码
+        msg = str(e)
+        if "未找到可用的 LLM 模型" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        elif "AI 返回格式异常" in msg or "AI 生成内容无效" in msg:
+            raise HTTPException(status_code=502, detail=msg)
+        else:
+            raise HTTPException(status_code=502, detail=f"AI 服务调用失败: {msg}")
+    except Exception as e:
+        logger.error(f"[AI:GenerateWorkflow] 未预期错误: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"AI 服务调用失败: {str(e)}")
+
+    logger.info(f"[AI:GenerateWorkflow] user={user.id}, mode={body.mode}, nodes={len(result['nodes'])}")
+    return result
