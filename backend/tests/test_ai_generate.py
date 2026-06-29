@@ -116,3 +116,28 @@ async def test_generate_workflow_raises_when_all_invalid():
         mock_llm.return_value = fake_llm_response
         with pytest.raises(RuntimeError, match="AI 生成内容无效"):
             await generate_workflow(db=None, description="测试", model_id="fake-uuid")
+
+
+@pytest.mark.asyncio
+async def test_generate_workflow_prefills_model_id_for_ai_inference():
+    """AI 推理节点应预填 model_id(当存在对应 model_type 的 active 模型时)"""
+    fake_llm_response = '''{"nodes":[
+        {"id":"n1","subtype":"text_input","label":"文本输入"},
+        {"id":"n2","subtype":"text_to_image","label":"文生图"}
+    ],"edges":[
+        {"from":"n1","to":"n2"}
+    ]}'''
+
+    with patch('app.services.ai_service.call_llm', new_callable=AsyncMock) as mock_llm:
+        mock_llm.return_value = fake_llm_response
+        # mock 默认模型查询:返回 fake model UUID
+        with patch('app.services.ai_service._get_default_model_for_type', new_callable=AsyncMock) as mock_default:
+            mock_default.return_value = "fake-image-gen-uuid"
+            result = await generate_workflow(db=None, description="测试", model_id="fake-llm-uuid")
+
+    assert len(result["nodes"]) == 2
+    n2 = result["nodes"][1]
+    # AI 推理节点应预填 model_id
+    assert n2["config"]["params"]["model_id"] == "fake-image-gen-uuid"
+    # prompt 也应预填为 description
+    assert n2["config"]["params"]["prompt"] == "测试"

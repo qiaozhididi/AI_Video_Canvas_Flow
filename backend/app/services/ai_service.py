@@ -208,7 +208,10 @@ NODE_DEFAULT_LABELS: dict[str, str] = {
     "audio_output": "音频输出",
 }
 
-# 各 subtype 的默认 params(与前端 NODE_TEMPLATES 一致)
+# 各 subtype 的默认 params(AI 生成专用)
+# 注:subtype 集合与 frontend/src/types/canvas.ts 的 NODE_TEMPLATES 一致,
+# 但 defaultParams 字段不同 — 后端执行读 size/duration 等,前端 NODE_TEMPLATES 用 width/height 等。
+# 这是有意设计,因 AI 生成的节点由后端执行,字段需匹配后端 call_image_gen 等函数的读取逻辑。
 NODE_DEFAULT_PARAMS: dict[str, dict] = {
     "text_input": {"text": ""},
     "image_input": {"url": ""},
