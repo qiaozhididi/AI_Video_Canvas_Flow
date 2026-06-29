@@ -83,7 +83,32 @@
 - **前端**: workflowExecutor.ts 收集上游输入节点 `params.text`/`params.url` 为虚拟 artifacts 传给下游
 - **涉及文件**: render.py, render_tasks.py, ai.py, render_task.py, 19c11929fcbb_add_node_id_to_render_tasks.py, workflowExecutor.ts, Editor.tsx, EditorLayout.tsx, apiClient.ts, canvasStore.ts
 
-### 6. 编辑器自动保存后端化
+### 6. WebSocket 实时协作完善
+- **后端**: Socket.IO ASGI 挂载共端口（`ASGIApp(sio, other_asgi_app=app)`，走 `/socket.io/`）
+- **后端**: connect 事件 JWT 鉴权（query string 解析 token + `jose.jwt.decode` 验证 + 查 DB 获取 username，无 token/无效返回 False 拒绝连接）
+- **后端**: `_room_members` 全局 dict 维护房间成员清单，join_project ack 返回在线用户快照
+- **后端**: user_joined/user_left 广播（用 `_remove_member_from_room` 返回值守卫，与 disconnect 一致）
+- **后端**: node_update/edge_update/cursor_move 仅广播不写 DB（依赖现有 autoSaveStore 双防抖保存）
+- **后端**: cursor_move 广播自包含 user_id/username + 完整 sid（解决前端按 sid 关联失败问题）
+- **前端**: 新建 `collabStore.ts` 封装 Socket.IO 客户端（connect/disconnect/joinProject/leaveProject/emit*/on* + cursor 50ms 节流 + connect_error 处理）
+- **前端**: canvasStore 接入 collabStore 实现实时同步（9 个变更方法加 emit + applyRemoteNodeUpdate/applyRemoteEdgeUpdate 无回环）
+- **前端**: EditorLayout 接入 collabStore + 在线用户头像列表 UI（最多 5 个 +N，当前用户 border-neon-blue 标记）
+- **前端**: RemoteCursors 组件用 `useViewport()` 订阅 viewport 变化渲染远端光标（按 user_id hash 取色）
+- **前端**: Canvas.tsx onNodesChange/onEdgesChange/onConnect 补协作广播（拖动结束/update、删除/delete、连线改用 canvasStore.addEdge）
+- **设计决策**: query string 传 JWT token（避免 CORS preflight + 适配 Socket.IO 协议）；协作变更不写 DB（依赖现有自动保存）；完整协作（含远端光标）
+- **验证**: 后端 14/14 端到端验证点通过（verify_task6.py），前端 tsc clean
+- **涉及文件**:
+  - `backend/app/ws/collaboration.py`
+  - `frontend/src/stores/collabStore.ts`（新建）
+  - `frontend/src/stores/canvasStore.ts`
+  - `frontend/src/components/EditorLayout.tsx`
+  - `frontend/src/components/canvas/Canvas.tsx`
+  - `frontend/src/components/canvas/RemoteCursors.tsx`（新建）
+  - `frontend/src/types/canvas.ts`
+  - `backend/verify_task1.py`、`backend/verify_task6.py`
+  - `docs/superpowers/plans/2026-06-27-websocket-collaboration.md`
+
+### 7. 编辑器自动保存后端化
 - **后端**: project_snapshots 表 + Alembic 迁移（JSONB 存 nodes/edges/timelineData，含 project_id+source+created_at 索引）
 - **后端**: snapshots.py 快照 CRUD API（POST/GET/GET latest/DELETE）+ POST /snapshots/{id}/restore 单事务恢复端点
 - **后端**: 5 auto 快照上限策略（插入前清理最旧 auto 快照，manual 不计数）
@@ -94,7 +119,7 @@
 - **前端**: projectStore 新增 refreshCurrentProject 方法避免恢复对话框误重弹
 - **涉及文件**: project_snapshot.py, snapshots.py, snapshot.py, projects.py, autoSaveStore.ts, projectStore.ts, apiClient.ts, EditorLayout.tsx
 
-### 7. 设置页持久化 + 模板市场
+### 8. 设置页持久化 + 模板市场
 - **后端**: auth.py 新增 PUT /me 端点（UserUpdateRequest + 唯一性校验 + avatar_url）
 - **后端**: Project 模型新增 is_template/template_category/template_tags 字段 + Alembic 迁移 + seed 3 官方模板
 - **后端**: templates.py 新增 4 端点（GET /templates/ 列表搜索 + POST /templates/{id}/clone 克隆 + POST /projects/{id}/publish 发布 + DELETE /templates/{id} 取消发布）
@@ -152,15 +177,9 @@
 
 ### 阶段四：WebSocket 协作（P2）
 
-> 注：执行工作流按钮已在阶段一完成（见已完成任务 #5）
+> ✅ 已完成（2026-06-28，merge commit b62a44d）。详见上方「已完成任务 #6」。
 
-#### 8. WebSocket 实时协作完善
-- **后端**: Socket.IO 连接验证 JWT
-- **后端**: node_update/edge_update 事件写入数据库
-- **前端**: WebSocket 客户端 + 远端光标渲染
-- **涉及文件**:
-  - `backend/app/ws/collaboration.py`
-  - `frontend/src/stores/collabStore.ts`（需新建）
+> 注：执行工作流按钮已在阶段一完成（见已完成任务 #5）
 
 ---
 
@@ -221,7 +240,6 @@
 | `/api/v1/templates/{id}/clone` | POST | ✅ | 克隆模板为新项目（复制 nodes/edges，ID 加前缀） |
 | `/api/v1/projects/{id}/publish` | POST | ✅ | 发布项目为模板（category + tags） |
 | `/api/v1/templates/{id}` | DELETE | ✅ | 取消模板发布（仅 owner） |
-| `/api/v1/collab/status` | GET | ✅ | 硬编码状态 |
 
 ## 数据库表结构
 
@@ -246,6 +264,7 @@
 | canvasStore | 内存（通过 projectStore 间接保存） | 后端 workflowApi | ⚠️ 间接对接 |
 | timelineStore | 内存 | 后端 workflowApi | ❌ 未对接 |
 | autoSaveStore | 后端 API | 后端 API | ✅ 已完成（Task 6：async 调 snapshotApi，localStorage 已移除） |
+| collabStore | 内存（socket 事件） | 内存（不写 DB） | ✅ 已完成（协作变更依赖 autoSaveStore 持久化） |
 | historyStore | 内存（刷新丢失） | 可保持内存 | ✅ 无需后端 |
 
 ## Mock 数据目录结构
