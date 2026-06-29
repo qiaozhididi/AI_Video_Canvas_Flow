@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -27,7 +27,7 @@ import type { CanvasNodeData, NodeSubtype } from '@/types/canvas';
 const nodeTypes = { canvasNode: CanvasNodeComponent };
 
 export default function Canvas() {
-  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken } = useCanvasStore();
   const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const markDirty = useAutoSaveStore((s) => s.markDirty);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
@@ -174,6 +174,14 @@ export default function Canvas() {
     },
     [addNode, pushAddNode, markDirty]
   );
+
+  // 监听 fitViewToken 变化,触发 ReactFlow 自适应视图(AI 生成后用)
+  useEffect(() => {
+    if (fitViewToken === 0) return; // 跳过初始值
+    if (reactFlowInstance.current) {
+      reactFlowInstance.current.fitView({ padding: 0.2, duration: 300 });
+    }
+  }, [fitViewToken]);
 
   return (
     <div className="w-full h-full">

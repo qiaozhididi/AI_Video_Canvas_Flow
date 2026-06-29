@@ -6,10 +6,12 @@ import { useHistoryStore } from '@/stores/historyStore';
 import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useAuthStore } from '@/stores/authStore';
-import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock } from 'lucide-react';
+import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
+import AiGenerateModal from './AiGenerateModal';
+import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
 
 // 在线用户头像配色（按 user_id hash 选取）
 const AVATAR_COLORS = [
@@ -51,6 +53,7 @@ export default function EditorLayout() {
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowExecutionStatus>({
     state: 'idle', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null
   });
+  const [showAiModal, setShowAiModal] = useState(false);
 
   const handleExecuteWorkflow = async () => {
     if (workflowStatus.state === 'running') return;
@@ -72,6 +75,14 @@ export default function EditorLayout() {
   const handleCancelWorkflow = () => {
     cancelWorkflowExecution();
     setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: '用户取消' });
+  };
+
+  const handleAiGenerated = (
+    nodes: NodeCreateRequest[],
+    edges: EdgeCreateRequest[],
+    mode: 'replace' | 'append',
+  ) => {
+    useCanvasStore.getState().loadGeneratedWorkflow(nodes, edges, mode);
   };
 
   // 加载项目
@@ -271,6 +282,18 @@ export default function EditorLayout() {
         >
           <Save className="w-3.5 h-3.5" />
           保存
+        </button>
+
+        <div className="h-5 w-px bg-canvas-border" />
+
+        <button
+          onClick={() => setShowAiModal(true)}
+          disabled={workflowStatus.state === 'running'}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-blue to-neon-purple rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          title="AI 生成工作流"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+          AI 生成
         </button>
 
         <div className="h-5 w-px bg-canvas-border" />
