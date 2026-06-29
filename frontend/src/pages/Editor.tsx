@@ -3,6 +3,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useTimelineStore } from '@/stores/timelineStore';
 import Canvas from '@/components/canvas/Canvas';
 import NodePanel from '@/components/panels/NodePanel';
 import PropertyPanel from '@/components/panels/PropertyPanel';
@@ -59,6 +60,13 @@ export default function Editor() {
     }
     return `/api/v1/media/${artifact.url.replace(/^\//, '')}`;
   }, [selectedNodeId, nodes]);
+
+  // 时间轴 ↔ 预览联动
+  const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
+  const setTimelineCurrentTime = useTimelineStore((s) => s.setCurrentTime);
+  const handleTimeUpdate = useCallback((time: number) => {
+    setTimelineCurrentTime(time);
+  }, [setTimelineCurrentTime]);
 
   // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);
@@ -156,7 +164,11 @@ export default function Editor() {
           {/* 视频预览 */}
           {showPreview && (
             <div className="w-80 border-l border-canvas-border p-2">
-              <VideoPreview src={previewUrl} />
+              <VideoPreview
+                src={previewUrl}
+                currentTime={timelineCurrentTime}
+                onTimeUpdate={handleTimeUpdate}
+              />
             </div>
           )}
         </div>

@@ -6,12 +6,15 @@ import 'video.js/dist/video-js.css';
 interface VideoPreviewProps {
   src?: string;
   poster?: string;
+  currentTime?: number;
+  onTimeUpdate?: (time: number) => void;
 }
 
-export default function VideoPreview({ src, poster }: VideoPreviewProps) {
+export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }: VideoPreviewProps) {
   const videoRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Player | null>(null);
 
+  // 创建/更新 player（src/poster 变化时）
   useEffect(() => {
     if (!videoRef.current) return;
 
@@ -29,6 +32,14 @@ export default function VideoPreview({ src, poster }: VideoPreviewProps) {
         poster: poster || '',
         sources: src ? [{ src, type: 'video/mp4' }] : [],
       });
+
+      // 注册 timeupdate 回调（播放进度变化时回写）
+      playerRef.current.on('timeupdate', () => {
+        const time = playerRef.current?.currentTime();
+        if (typeof time === 'number' && onTimeUpdate) {
+          onTimeUpdate(time);
+        }
+      });
     } else {
       if (src) {
         playerRef.current.src({ src, type: 'video/mp4' });
@@ -41,7 +52,18 @@ export default function VideoPreview({ src, poster }: VideoPreviewProps) {
     return () => {
       // 组件卸载时不销毁 player，避免重复创建
     };
-  }, [src, poster]);
+  }, [src, poster, onTimeUpdate]);
+
+  // currentTime 变化时跳转播放位置（避免回环：onTimeUpdate 触发的 currentTime 变化不再触发跳转）
+  useEffect(() => {
+    if (playerRef.current && typeof currentTime === 'number') {
+      const playerTime = playerRef.current.currentTime();
+      // 仅当差异 > 0.3s 时跳转，避免 timeupdate 回调造成的微小回环
+      if (Math.abs(playerTime - currentTime) > 0.3) {
+        playerRef.current.currentTime(currentTime);
+      }
+    }
+  }, [currentTime]);
 
   useEffect(() => {
     return () => {
