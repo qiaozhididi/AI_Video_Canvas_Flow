@@ -1,16 +1,18 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useTimelineStore } from '@/stores/timelineStore';
 import Canvas from '@/components/canvas/Canvas';
 import NodePanel from '@/components/panels/NodePanel';
 import PropertyPanel from '@/components/panels/PropertyPanel';
 import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
 import { loadMockData } from '@/mock';
-import { ChevronDown, ChevronUp, Database, RotateCcw, RotateCw } from 'lucide-react';
-import type { CanvasNodeData } from '@/types/canvas';
+import { ChevronDown, ChevronUp, Database, Plus, RotateCcw, RotateCw } from 'lucide-react';
+import type { CanvasNodeData, Artifact } from '@/types/canvas';
+import type { Clip, TrackType } from '@/types/timeline';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import { aiApi } from '@/utils/apiClient';
 import type { AiModelResponse } from '@/utils/apiClient';
@@ -41,6 +43,31 @@ export default function Editor() {
   const isDirty = useAutoSaveStore((s) => s.isDirty);
 
   const currentProject = useProjectStore((s) => s.currentProject);
+
+  // 计算视频预览 URL：订阅选中节点的 outputArtifacts
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
+  const previewUrl = useMemo(() => {
+    if (!selectedNodeId) return undefined;
+    const node = nodes.find((n) => n.id === selectedNodeId);
+    if (!node || !node.data.outputArtifacts.length) return undefined;
+    // 优先 video，其次 image（VideoPreview 也能展示图片但语义上优先 video）
+    const videoArt = node.data.outputArtifacts.find((a) => a.type === 'video');
+    const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
+    const artifact = videoArt || imageArt;
+    if (!artifact) return undefined;
+    // 相对路径加 /api/v1/media/ 前缀；外部 URL 直接用
+    if (artifact.url.startsWith('http://') || artifact.url.startsWith('https://')) {
+      return artifact.url;
+    }
+    return `/api/v1/media/${artifact.url.replace(/^\//, '')}`;
+  }, [selectedNodeId, nodes]);
+
+  // 时间轴 ↔ 预览联动
+  const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
+  const setTimelineCurrentTime = useTimelineStore((s) => s.setCurrentTime);
+  const handleTimeUpdate = useCallback((time: number) => {
+    setTimelineCurrentTime(time);
+  }, [setTimelineCurrentTime]);
 
   // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);
@@ -138,7 +165,11 @@ export default function Editor() {
           {/* 视频预览 */}
           {showPreview && (
             <div className="w-80 border-l border-canvas-border p-2">
-              <VideoPreview />
+              <VideoPreview
+                src={previewUrl}
+                currentTime={timelineCurrentTime}
+                onTimeUpdate={handleTimeUpdate}
+              />
             </div>
           )}
         </div>
@@ -300,6 +331,11 @@ function PropertyPanelWithHistory({
   const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
 
+  // 时间轴：加入片段所需
+  const addClip = useTimelineStore((s) => s.addClip);
+  const timelineTracks = useTimelineStore((s) => s.data.tracks);
+  const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
+
   if (!selectedNode) {
     return (
       <div className="w-72 h-full bg-canvas-panel border-l border-canvas-border flex items-center justify-center">
@@ -309,6 +345,29 @@ function PropertyPanelWithHistory({
   }
 
   const data = selectedNode.data;
+
+  const handleAddToTimeline = (artifact: Artifact) => {
+    // 按 artifact 类型匹配轨道：video → video 轨，audio → audio 轨，image → video 轨（图片作为静态帧）
+    const trackType: TrackType = artifact.type === 'audio' ? 'audio' : 'video';
+    const targetTrack = timelineTracks.find((t) => t.type === trackType);
+    if (!targetTrack) {
+      console.warn(`[Timeline] 未找到 ${trackType} 类型轨道，请先添加`);
+      return;
+    }
+
+    // 默认时长：video/audio 5s，image 3s
+    const duration = artifact.type === 'image' ? 3 : 5;
+    const clip: Clip = {
+      id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      trackId: targetTrack.id,
+      start: timelineCurrentTime,
+      end: timelineCurrentTime + duration,
+      mediaUrl: artifact.url.startsWith('http://') || artifact.url.startsWith('https://') ? artifact.url : `/api/v1/media/${artifact.url.replace(/^\//, '')}`,
+      label: data.label,
+      color: undefined,
+    };
+    addClip(targetTrack.id, clip);
+  };
 
   const handleParamChange = (key: string, value: unknown) => {
     useHistoryStore.getState().pushUpdateNodeData({
@@ -448,8 +507,22 @@ function PropertyPanelWithHistory({
               </div>
             )}
             {data.outputArtifacts.length > 0 && (
-              <div className="mt-1 text-xs text-slate-400">
-                输出: {data.outputArtifacts.length} 个资产
+              <div className="mt-2 space-y-1">
+                <label className="text-xs text-slate-500 uppercase tracking-wider">输出资产</label>
+                {data.outputArtifacts.map((artifact) => (
+                  <div key={artifact.id} className="flex items-center gap-2 px-2 py-1 bg-canvas-bg rounded-md">
+                    <span className="text-xs text-slate-400 uppercase">{artifact.type}</span>
+                    <span className="text-xs text-slate-300 truncate flex-1">{artifact.filename}</span>
+                    <button
+                      onClick={() => handleAddToTimeline(artifact)}
+                      className="flex items-center gap-1 px-2 py-0.5 text-xs text-neon-blue hover:bg-neon-blue/10 rounded transition-colors"
+                      title="加入时间轴"
+                    >
+                      <Plus className="w-3 h-3" />
+                      加入时间轴
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             {data.error && (
