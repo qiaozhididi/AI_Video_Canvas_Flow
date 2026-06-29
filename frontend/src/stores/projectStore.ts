@@ -208,6 +208,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         const snapshots = await snapshotApi.list(projectId);
         useAutoSaveStore.getState().setSnapshots(snapshots);
+
+        // 从最新 auto 快照恢复 timelineData（静默恢复，不触发崩溃恢复对话框）
+        const latestAutoSnapshot = snapshots
+          .filter((s) => s.source === 'auto')
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+        if (latestAutoSnapshot?.snapshot_data?.timelineData) {
+          useTimelineStore.getState().loadTimeline(latestAutoSnapshot.snapshot_data.timelineData);
+        }
       } catch (err) {
         console.error('[ProjectStore] 加载快照列表失败:', err);
       }
