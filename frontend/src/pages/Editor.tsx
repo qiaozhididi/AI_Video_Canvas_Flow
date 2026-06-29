@@ -10,8 +10,9 @@ import PropertyPanel from '@/components/panels/PropertyPanel';
 import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
 import { loadMockData } from '@/mock';
-import { ChevronDown, ChevronUp, Database, RotateCcw, RotateCw } from 'lucide-react';
-import type { CanvasNodeData } from '@/types/canvas';
+import { ChevronDown, ChevronUp, Database, Plus, RotateCcw, RotateCw } from 'lucide-react';
+import type { CanvasNodeData, Artifact } from '@/types/canvas';
+import type { Clip, TrackType } from '@/types/timeline';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import { aiApi } from '@/utils/apiClient';
 import type { AiModelResponse } from '@/utils/apiClient';
@@ -330,6 +331,11 @@ function PropertyPanelWithHistory({
   const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
 
+  // 时间轴：加入片段所需
+  const addClip = useTimelineStore((s) => s.addClip);
+  const timelineTracks = useTimelineStore((s) => s.data.tracks);
+  const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
+
   if (!selectedNode) {
     return (
       <div className="w-72 h-full bg-canvas-panel border-l border-canvas-border flex items-center justify-center">
@@ -339,6 +345,29 @@ function PropertyPanelWithHistory({
   }
 
   const data = selectedNode.data;
+
+  const handleAddToTimeline = (artifact: Artifact) => {
+    // 按 artifact 类型匹配轨道：video → video 轨，audio → audio 轨，image → video 轨（图片作为静态帧）
+    const trackType: TrackType = artifact.type === 'audio' ? 'audio' : 'video';
+    const targetTrack = timelineTracks.find((t) => t.type === trackType);
+    if (!targetTrack) {
+      console.warn(`[Timeline] 未找到 ${trackType} 类型轨道，请先添加`);
+      return;
+    }
+
+    // 默认时长：video/audio 5s，image 3s
+    const duration = artifact.type === 'image' ? 3 : 5;
+    const clip: Clip = {
+      id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      trackId: targetTrack.id,
+      start: timelineCurrentTime,
+      end: timelineCurrentTime + duration,
+      mediaUrl: artifact.url.startsWith('http') ? artifact.url : `/api/v1/media/${artifact.url.replace(/^\//, '')}`,
+      label: data.label,
+      color: undefined,
+    };
+    addClip(targetTrack.id, clip);
+  };
 
   const handleParamChange = (key: string, value: unknown) => {
     useHistoryStore.getState().pushUpdateNodeData({
@@ -478,8 +507,22 @@ function PropertyPanelWithHistory({
               </div>
             )}
             {data.outputArtifacts.length > 0 && (
-              <div className="mt-1 text-xs text-slate-400">
-                输出: {data.outputArtifacts.length} 个资产
+              <div className="mt-2 space-y-1">
+                <label className="text-xs text-slate-500 uppercase tracking-wider">输出资产</label>
+                {data.outputArtifacts.map((artifact) => (
+                  <div key={artifact.id} className="flex items-center gap-2 px-2 py-1 bg-canvas-bg rounded-md">
+                    <span className="text-xs text-slate-400 uppercase">{artifact.type}</span>
+                    <span className="text-xs text-slate-300 truncate flex-1">{artifact.filename}</span>
+                    <button
+                      onClick={() => handleAddToTimeline(artifact)}
+                      className="flex items-center gap-1 px-2 py-0.5 text-xs text-neon-blue hover:bg-neon-blue/10 rounded transition-colors"
+                      title="加入时间轴"
+                    >
+                      <Plus className="w-3 h-3" />
+                      加入时间轴
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
             {data.error && (
