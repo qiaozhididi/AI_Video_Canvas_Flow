@@ -548,6 +548,13 @@ export const aiApi = {
   },
   /** 获取默认 AI 模型 */
   getDefaultModel: () => request<AiModelResponse>('/ai/models/default'),
+
+  /** AI 快速生成工作流 */
+  generateWorkflow: (data: { description: string; mode: 'replace' | 'append'; model_id?: string }) =>
+    request<WorkflowSaveRequest>('/ai/generate-workflow', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 // ── 快照 ──
