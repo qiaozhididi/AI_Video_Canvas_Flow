@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import type { Track, Clip, TimelineData } from '@/types/timeline';
 import { createDefaultTimeline } from '@/types/timeline';
 
+// 模块级 rAF 状态（不放入 Zustand state，避免每帧触发组件重渲染）
+let rAFId: number | null = null;
+let lastTimestamp: number | null = null;
+
 interface TimelineState {
   data: TimelineData;
   isPlaying: boolean;
@@ -37,13 +41,55 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   data: createDefaultTimeline(),
   isPlaying: false,
 
-  play: () => set({ isPlaying: true }),
-  pause: () => set({ isPlaying: false }),
+  play: () => {
+    set({ isPlaying: true });
+    lastTimestamp = null;
+    const tick = (timestamp: number) => {
+      const state = useTimelineStore.getState();
+      if (!state.isPlaying) return;
 
-  seekTo: (time) =>
+      if (lastTimestamp === null) {
+        lastTimestamp = timestamp;
+      }
+      const delta = (timestamp - lastTimestamp) / 1000; // ms → s
+      lastTimestamp = timestamp;
+
+      const nextTime = state.data.currentTime + delta;
+      if (nextTime >= state.data.duration) {
+        // 播放到末尾自动停止
+        set((s) => ({
+          data: { ...s.data, currentTime: s.data.duration },
+          isPlaying: false,
+        }));
+        rAFId = null;
+        lastTimestamp = null;
+        return;
+      }
+
+      set((s) => ({
+        data: { ...s.data, currentTime: nextTime },
+      }));
+      rAFId = requestAnimationFrame(tick);
+    };
+    rAFId = requestAnimationFrame(tick);
+  },
+
+  pause: () => {
+    if (rAFId !== null) {
+      cancelAnimationFrame(rAFId);
+      rAFId = null;
+    }
+    lastTimestamp = null;
+    set({ isPlaying: false });
+  },
+
+  seekTo: (time) => {
+    // 播放中 seek 重置时间戳，避免下一帧 delta 跳变
+    lastTimestamp = null;
     set((state) => ({
       data: { ...state.data, currentTime: Math.max(0, Math.min(time, state.data.duration)) },
-    })),
+    }));
+  },
 
   setCurrentTime: (time) =>
     set((state) => ({
