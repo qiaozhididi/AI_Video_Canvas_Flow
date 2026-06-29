@@ -1,6 +1,6 @@
 # AI Canvas Flow — 开发路线图与未完成功能清单
 
-> 更新时间: 2026-06-27
+> 更新时间: 2026-06-29
 
 ## 当前项目状态概览
 
@@ -10,19 +10,21 @@
 | 前端 | 媒体库 | ✅ 完成 | MinIO 上传/下载/缩略图懒加载/分页/拖拽上传 |
 | 前端 | 渲染中心 | ✅ 完成 | 真实 API 对接，任务创建/列表/轮询/取消/下载 |
 | 前端 | 执行工作流 | ✅ 完成 | 单节点执行 + 全工作流拓扑编排（Kahn 算法按层并行） |
-| 前端 | 模板市场 | ❌ Stub | 全量 MOCK 数据，后端无模板 API |
-| 前端 | 设置页 | ⚠️ 部分 | AI 配置面板已实现，其他设置无持久化 |
-| 前端 | 时间轴 | ✅ 完成 | rAF 播放循环 + 加入时间轴按钮 + 双向联动 |
+| 前端 | 模板市场 | ✅ 完成 | 列表搜索/分类筛选/克隆/发布/取消发布，已对接 PostgreSQL |
+| 前端 | 设置页 | ✅ 完成 | AI 配置面板 + 用户资料持久化（username/email/avatar_url） |
+| 前端 | 时间轴 | ✅ 完成 | rAF 播放循环 + 加入时间轴按钮 + 双向联动 + 片段 resize 拖拽（吸附/tooltip/视觉反馈） |
 | 前端 | 视频预览 | ✅ 完成 | 接入选中节点 outputArtifacts + 时间轴双向联动 |
 | 前端 | 自动保存 | ✅ 完成 | 双防抖+5 快照+崩溃恢复，已对接 PostgreSQL 后端（project_snapshots 表） |
-| 后端 | 认证 API | ✅ 完成 | 注册/登录/JWT |
+| 后端 | 认证 API | ✅ 完成 | 注册/登录/JWT + PUT /me 资料更新 |
 | 后端 | 项目 CRUD | ✅ 完成 | 级联删除 |
 | 后端 | 工作流 CRUD | ✅ 完成 | 7 端点全对接数据库 |
 | 后端 | 媒体资产 | ✅ 完成 | MinIO 上传/presign/下载/删除 |
 | 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消 |
 | 后端 | AI 可配置系统 | ✅ 完成 | Provider/Model CRUD + 默认配置 + LLM 调用封装 |
 | 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务，RabbitMQ 4.x 兼容 |
-| 后端 | WebSocket | ⚠️ 部分 | 广播可用，缺鉴权/持久化 |
+| 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI + JWT 鉴权 + 房间成员管理 + 远端光标同步 |
+| 后端 | 模板市场 | ✅ 完成 | 列表/克隆/发布/取消发布 4 端点 |
+| 后端 | 快照系统 | ✅ 完成 | project_snapshots 表 + CRUD + 单事务恢复 + 5 auto 上限 |
 
 ---
 
@@ -30,10 +32,10 @@
 
 | 层面 | 完成度 | 说明 |
 |------|--------|------|
-| 后端 API | **98%** | 全部核心端点已实现（含 templates），仅 collaboration 为桩代码 |
-| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates） |
-| 前端 Store 对接 | **50%** | authStore/projectStore/canvasStore(间接) 已对接；autoSaveStore/timelineStore 待对接 |
-| 前端页面对接 | **90%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流) 已对接；MediaLibrary 有 Mock 降级 |
+| 后端 API | **100%** | 全部核心端点已实现（含 templates/snapshots/collaboration WS 鉴权） |
+| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates + snapshots） |
+| 前端 Store 对接 | **80%** | authStore/projectStore/canvasStore(间接)/autoSaveStore/collabStore 已对接；timelineStore 通过快照恢复部分对接 |
+| 前端页面对接 | **95%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴) 已对接；MediaLibrary 有 Mock 降级 |
 
 ---
 
@@ -130,30 +132,25 @@
 - **前端**: apiClient.ts 新增 UserUpdateRequest/TemplateResponse/TemplatePublishRequest 类型 + authApi.update + templateApi
 - **涉及文件**: auth.py, project.py, templates.py, schemas/project.py, router.py, a1b2c3d4e5f6_add_template_fields_to_projects.py, Settings.tsx, Templates.tsx, Home.tsx, apiClient.ts
 
+### 9. 核心创作闭环（视频预览 + 时间轴播放 + 双向联动）
+- **前端**: timelineStore 新增 requestAnimationFrame 播放循环（tick 用 getState 取最新值避免闭包陈旧，到 duration 自动 pause；rAF 时间戳 delta clamp 50ms 防止后台/自动化环境跳变）
+- **前端**: VideoPreview 接入选中节点 outputArtifacts（优先 video → image，相对路径加 `/api/v1/media/` 前缀）
+- **前端**: 时间轴 ↔ 视频预览双向联动（currentTime 跳转 + onTimeUpdate 回写，0.3s 阈值防回环，onTimeUpdate 用 ref 模式避免闭包陈旧）
+- **前端**: PropertyPanelWithHistory 扩展 outputArtifacts 展示 + 「加入时间轴」按钮（按 artifact 类型匹配轨道，image 3s / video/audio 5s 默认时长）
+- **前端**: Timeline.tsx 片段 resize/move 拖拽 UI（Pointer Events + setPointerCapture try-catch + 统一 DragState + 吸附对齐 8px 阈值 + 拖拽时长 tooltip + cursor 锁定视觉反馈）
+- **前端**: projectStore.loadProjectToCanvas 从最新 auto 快照恢复 timelineData（打开项目时时间轴状态恢复）
+- **验证**: 19 项端到端验证清单，6 项 MCP 自动化通过 + 13 项待人工；rAF 播放速度从 80x 修复到 0.999x；拖拽 4 项优化全部通过
+- **合并**: merge commit 7a4bd7e（feature/core-creation-loop → main）
+- **涉及文件**: timelineStore.ts, VideoPreview.tsx, Editor.tsx, Timeline.tsx, projectStore.ts, verify_core_loop.md
+- **后续优化**: rAF clamp（commit c5f5d96）、clip resize 拖拽（commit 43d65a2）、Timeline 重构统一 DragState（commit 6c122ec）、快照恢复 timelineData（commit e5a034d）
+
 ---
 
 ## 下一阶段开发计划
 
-### 阶段二：编辑器自动保存后端化（P1）
+### 阶段二：编辑器自动保存后端化（P1）✅ 已完成
 
-> 当前 autoSaveStore 双防抖+5 快照已实现，但快照仅存 localStorage，需切换到 PostgreSQL 后端
-
-#### 5.1 自动保存快照后端化
-- **后端**: 新增 `project_snapshots` 表（JSONB 存 nodes/edges/timelineData）+ Alembic 迁移
-- **后端**: 新增快照 CRUD API（POST/GET/GET latest/DELETE）+ `POST /snapshots/{id}/restore` 单事务恢复端点
-- **后端**: 5 auto 快照上限策略（插入前清理最旧 auto 快照，manual 快照不计数）
-- **前端**: autoSaveStore 移除 localStorage 逻辑，`saveNow()` 改 async 调 `snapshotApi.create()`
-- **前端**: `checkRecovery()` 改 async 调 `snapshotApi.getLatest()`，对比 `created_at` vs `project.updatedAt`
-- **前端**: `restoreSnapshot()` 调 `snapshotApi.restore()` 后刷新本地 stores
-- **前端**: projectStore.loadProjectToCanvas() 加载快照列表填充 autoSaveStore
-- **设计文档**: `docs/superpowers/specs/2026-06-27-autosave-backend-migration-design.md`
-- **涉及文件**:
-  - `backend/app/models/project_snapshot.py`（新建）
-  - `backend/app/api/snapshots.py`（新建）
-  - `backend/app/schemas/snapshot.py`（新建）
-  - `frontend/src/stores/autoSaveStore.ts`
-  - `frontend/src/stores/projectStore.ts`
-  - `frontend/src/utils/apiClient.ts`
+> 详见上方「已完成任务 #7」。project_snapshots 表 + CRUD + 单事务恢复 + 5 auto 上限，autoSaveStore 移除 localStorage 切换到 PostgreSQL。
 
 ---
 
@@ -185,18 +182,20 @@
 
 ### 阶段五：增强体验（P3）
 
-#### 10. 时间轴播放驱动
-- requestAnimationFrame 播放循环
-- 片段 resize 拖拽 UI
+#### 10. 时间轴播放驱动 ✅ 已完成
+- requestAnimationFrame 播放循环（rAF timestamp delta clamp 50ms）
+- 片段 resize 拖拽 UI（Pointer Events + 吸附对齐 + tooltip + 视觉反馈）
 
-#### 11. 视频预览联动
-- 播放器与时间轴同步
-- 执行工作流后输出视频传入 VideoPreview
+#### 11. 视频预览联动 ✅ 已完成
+- 播放器与时间轴同步（currentTime 跳转 + onTimeUpdate 回写，0.3s 阈值防回环）
+- 执行工作流后输出视频传入 VideoPreview（接入选中节点 outputArtifacts）
 
-#### 12. AI 快速生成
+> #10/#11 详见上方「已完成任务 #9」，merge commit 7a4bd7e。
+
+#### 12. AI 快速生成 ⏳ 待开发
 - 输入描述 → LLM API → 生成工作流节点/边
 
-#### 13. 节点快捷操作
+#### 13. 节点快捷操作 ⏳ 待开发
 - 复制/粘贴、全选/框选、对齐工具
 
 ---
@@ -253,7 +252,7 @@
 | `render_tasks` | RenderTask | ✅ 已创建（含 node_id 列） |
 | `ai_providers` | AiProvider | ✅ 已创建 |
 | `ai_models` | AiModel | ✅ 已创建 |
-| `project_snapshots` | ProjectSnapshot | ⏳ 阶段二待创建 |
+| `project_snapshots` | ProjectSnapshot | ✅ 已创建（JSONB 存 nodes/edges/timelineData + source 索引 + 5 auto 上限） |
 
 ## 前端 Store 数据持久化现状
 
@@ -262,8 +261,8 @@
 | authStore | 后端 API | 后端 API | ✅ 已完成 |
 | projectStore | 后端 API | 后端 projectApi | ✅ 已完成 |
 | canvasStore | 内存（通过 projectStore 间接保存） | 后端 workflowApi | ⚠️ 间接对接 |
-| timelineStore | 内存 | 后端 workflowApi | ❌ 未对接 |
-| autoSaveStore | 后端 API | 后端 API | ✅ 已完成（Task 6：async 调 snapshotApi，localStorage 已移除） |
+| timelineStore | 内存（通过快照恢复） | 后端 snapshotApi | ⚠️ 部分对接（loadProjectToCanvas 从最新 auto 快照恢复 timelineData；主动保存依赖 autoSaveStore 快照） |
+| autoSaveStore | 后端 API | 后端 API | ✅ 已完成（async 调 snapshotApi，localStorage 已移除，5 auto 上限） |
 | collabStore | 内存（socket 事件） | 内存（不写 DB） | ✅ 已完成（协作变更依赖 autoSaveStore 持久化） |
 | historyStore | 内存（刷新丢失） | 可保持内存 | ✅ 无需后端 |
 

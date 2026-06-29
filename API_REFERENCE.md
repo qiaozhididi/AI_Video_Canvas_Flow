@@ -15,7 +15,8 @@
 5. [渲染任务](#5-渲染任务)
 6. [AI 配置（Provider/Model）](#6-ai-配置providermodel)
 7. [快照](#7-快照)
-8. [通用错误码](#8-通用错误码)
+8. [模板市场](#8-模板市场)
+9. [通用错误码](#9-通用错误码)
 
 ---
 
@@ -99,9 +100,33 @@ curl http://localhost:8000/api/v1/auth/me \
 {
   "id": "65e9619c-6cba-4333-aa5d-397e726711f4",
   "username": "alice",
-  "email": "alice@example.com"
+  "email": "alice@example.com",
+  "avatar_url": null
 }
 ```
+
+---
+
+### PUT /auth/me — 更新当前用户资料
+
+```bash
+curl -X PUT http://localhost:8000/api/v1/auth/me \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice_new","email":"alice_new@example.com","avatar_url":"https://..."}'
+```
+
+**请求体：** 仅传需要更新的字段
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| username | string | 否 | 新用户名（唯一性校验） |
+| email | string | 否 | 新邮箱（唯一性校验） |
+| avatar_url | string \| null | 否 | 头像 URL |
+
+**响应 200：** 更新后的用户对象（同 GET /auth/me）
+
+**错误：** 400 用户名已存在 / 邮箱已被注册
 
 ---
 
@@ -865,7 +890,102 @@ curl -X POST http://localhost:8000/api/v1/snapshots/<snapshot_id>/restore \
 
 ---
 
-## 8. 通用错误码
+## 8. 模板市场
+
+> 模板复用 projects 表（`is_template` 标记），支持列表搜索/分类筛选/克隆为新项目/发布项目为模板。克隆时复制 nodes/edges，新节点 ID 加项目前缀避免冲突。
+
+### GET /templates/ — 获取模板列表
+
+```bash
+curl 'http://localhost:8000/api/v1/templates/?q=视频&category=marketing' \
+  -H 'Authorization: Bearer <token>'
+```
+
+**查询参数：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| q | string | 否 | 搜索关键词（匹配 name 模糊 OR tags 包含） |
+| category | string | 否 | 按分类筛选 |
+
+**响应 200：** `TemplateResponse[]`，按 `created_at DESC` 排序
+
+```json
+[
+  {
+    "id": "c0e6f694-...",
+    "name": "产品宣传视频模板",
+    "description": "...",
+    "cover_url": null,
+    "owner_id": "65e9619c-...",
+    "created_at": "2026-06-27T12:00:00",
+    "updated_at": "2026-06-27T12:00:00",
+    "is_template": true,
+    "template_category": "marketing",
+    "template_tags": ["产品", "宣传"]
+  }
+]
+```
+
+---
+
+### POST /templates/{template_id}/clone — 克隆模板为新项目
+
+```bash
+curl -X POST http://localhost:8000/api/v1/templates/<template_id>/clone \
+  -H 'Authorization: Bearer <token>'
+```
+
+**路径参数：** `template_id` (UUID 字符串)
+
+**逻辑：** 创建新项目 → 复制模板的 nodes/edges（新节点 ID 加项目前缀 `{new_project_id前8位}_{原node_id}`）→ commit
+
+**响应 200：** 新项目对象（`ProjectResponse`，`is_template=false`，名称为 `{原模板名} 副本`）
+
+**错误：** 404 模板不存在
+
+---
+
+### POST /projects/{project_id}/publish — 发布项目为模板
+
+```bash
+curl -X POST http://localhost:8000/api/v1/projects/<project_id>/publish \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"category":"marketing","tags":["产品","宣传"]}'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| category | string | 是 | 模板分类 |
+| tags | string[] | 是 | 模板标签数组 |
+
+**逻辑：** 校验 owner → 设置 `is_template=true` + category + tags
+
+**响应 200：** `TemplateResponse`
+
+**错误：** 404 项目不存在或无权访问
+
+---
+
+### DELETE /templates/{template_id} — 取消模板发布
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/templates/<template_id> \
+  -H 'Authorization: Bearer <token>'
+```
+
+**逻辑：** 校验 owner → 设置 `is_template=false` + 清空 category/tags
+
+**响应 204：** 无内容
+
+**错误：** 404 模板不存在或无权访问
+
+---
+
+## 9. 通用错误码
 
 | HTTP 状态码 | 错误信息 | 说明 |
 |-------------|----------|------|
@@ -890,12 +1010,13 @@ curl -X POST http://localhost:8000/api/v1/snapshots/<snapshot_id>/restore \
 所有 API 调用已封装在 `frontend/src/utils/apiClient.ts`：
 
 ```typescript
-import { authApi, projectApi, workflowApi, mediaApi, renderApi, aiApi } from '@/utils/apiClient';
+import { authApi, projectApi, workflowApi, mediaApi, renderApi, aiApi, snapshotApi, templateApi } from '@/utils/apiClient';
 
 // 认证
 authApi.register(username, email, password);
 authApi.login(username, password);
 authApi.getMe();
+authApi.update({ username?, email?, avatar_url? });   // 更新当前用户资料
 
 // 项目
 projectApi.list();
@@ -936,6 +1057,20 @@ aiApi.models.list(providerId?);
 aiApi.models.update(id, data);
 aiApi.models.delete(id);
 aiApi.getDefaultModel();                               // 获取默认 AI 模型
+
+// 快照（自动保存/崩溃恢复）
+snapshotApi.create(projectId, { source, label?, snapshot_data });  // 创建快照
+snapshotApi.list(projectId, source?);                              // 快照列表（可选 source 筛选）
+snapshotApi.getLatest(projectId);                                  // 最新快照（崩溃恢复检测）
+snapshotApi.get(snapshotId);                                       // 快照详情
+snapshotApi.delete(snapshotId);                                    // 删除快照
+snapshotApi.restore(snapshotId);                                   // 单事务恢复到 nodes/edges
+
+// 模板市场
+templateApi.list({ q?, category? });                    // 模板列表（搜索 + 分类筛选）
+templateApi.clone(templateId);                          // 克隆模板为新项目
+templateApi.publish(projectId, { category, tags });     // 发布项目为模板
+templateApi.unpublish(templateId);                      // 取消模板发布
 ```
 
 > `request()` 函数自动注入 `Authorization` Header、处理 401 跳转登录、解析错误响应。
