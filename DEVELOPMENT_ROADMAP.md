@@ -12,8 +12,9 @@
 | 前端 | 执行工作流 | ✅ 完成 | 单节点执行 + 全工作流拓扑编排（Kahn 算法按层并行） |
 | 前端 | 模板市场 | ❌ Stub | 全量 MOCK 数据，后端无模板 API |
 | 前端 | 设置页 | ⚠️ 部分 | AI 配置面板已实现，其他设置无持久化 |
-| 前端 | 时间轴 | ⚠️ 部分 | 无播放驱动循环 |
-| 前端 | 视频预览 | ⚠️ 部分 | 无视频源传入 |
+| 前端 | 时间轴 | ✅ 完成 | rAF 播放循环 + 加入时间轴按钮 + 双向联动 |
+| 前端 | 视频预览 | ✅ 完成 | 接入选中节点 outputArtifacts + 时间轴双向联动 |
+| 前端 | 实时协作 | ✅ 完成 | Socket.IO 客户端 + collabStore + RemoteCursors + EditorLayout 在线列表 |
 | 前端 | 自动保存 | ✅ 完成 | 双防抖+5 快照+崩溃恢复，已对接 PostgreSQL 后端（project_snapshots 表） |
 | 后端 | 认证 API | ✅ 完成 | 注册/登录/JWT |
 | 后端 | 项目 CRUD | ✅ 完成 | 级联删除 |
@@ -22,7 +23,7 @@
 | 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消 |
 | 后端 | AI 可配置系统 | ✅ 完成 | Provider/Model CRUD + 默认配置 + LLM 调用封装 |
 | 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务，RabbitMQ 4.x 兼容 |
-| 后端 | WebSocket | ⚠️ 部分 | 广播可用，缺鉴权/持久化 |
+| 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI 挂载 + JWT 鉴权（query string）+ 房间成员清单 + node/edge/cursor 广播 |
 
 ---
 
@@ -30,10 +31,10 @@
 
 | 层面 | 完成度 | 说明 |
 |------|--------|------|
-| 后端 API | **98%** | 全部核心端点已实现（含 templates），仅 collaboration 为桩代码 |
+| 后端 API | **100%** | 全部核心端点已实现（含 templates + WebSocket 协作），collaboration 桩代码已替换为真实实现 |
 | 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates） |
-| 前端 Store 对接 | **50%** | authStore/projectStore/canvasStore(间接) 已对接；autoSaveStore/timelineStore 待对接 |
-| 前端页面对接 | **90%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流) 已对接；MediaLibrary 有 Mock 降级 |
+| 前端 Store 对接 | **70%** | authStore/projectStore/canvasStore/autoSaveStore/collabStore/timelineStore(播放+片段) 已对接；timelineStore 持久化待对接 |
+| 前端页面对接 | **95%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流) 已对接；MediaLibrary 有 Mock 降级 |
 
 ---
 
@@ -185,13 +186,13 @@
 
 ### 阶段五：增强体验（P3）
 
-#### 10. 时间轴播放驱动
-- requestAnimationFrame 播放循环
-- 片段 resize 拖拽 UI
+#### 10. 时间轴播放驱动 ✅
+- requestAnimationFrame 播放循环 ✅
+- 片段 resize 拖拽 UI（P1，待后续）
 
-#### 11. 视频预览联动
-- 播放器与时间轴同步
-- 执行工作流后输出视频传入 VideoPreview
+#### 11. 视频预览联动 ✅
+- 播放器与时间轴同步 ✅
+- 执行工作流后输出视频传入 VideoPreview ✅
 
 #### 12. AI 快速生成
 - 输入描述 → LLM API → 生成工作流节点/边
