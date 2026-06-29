@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { useTimelineStore } from '@/stores/timelineStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import {
@@ -15,6 +15,24 @@ const TRACK_COLORS: Record<TrackType, string> = {
   effect: '#06B6D4',
 };
 
+// 拖拽类型：移动 / 左边缘 resize / 右边缘 resize
+type DragType = 'move' | 'resize-left' | 'resize-right';
+
+// 拖拽状态（统一管理 move + resize）
+interface DragState {
+  type: DragType;
+  trackId: string;
+  clipId: string;
+  startX: number;     // 鼠标起始 clientX
+  origStart: number;  // clip 原始 start
+  origEnd: number;    // clip 原始 end
+}
+
+// 吸附阈值（像素）
+const SNAP_THRESHOLD_PX = 8;
+// 片段最小时长（秒）
+const MIN_CLIP_DURATION = 0.5;
+
 export default function Timeline() {
   const {
     data, isPlaying, play, pause, seekTo,
@@ -23,6 +41,8 @@ export default function Timeline() {
   } = useTimelineStore();
   const { nodes } = useCanvasStore();
   const timelineRef = useRef<HTMLDivElement>(null);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const PIXELS_PER_SECOND = 80 * data.zoom;
 
@@ -43,39 +63,125 @@ export default function Timeline() {
     [PIXELS_PER_SECOND, data.duration, seekTo]
   );
 
-  // resize 手柄拖拽处理（Pointer Events + setPointerCapture）
-  const handleResizeStart = useCallback(
-    (e: React.PointerEvent, trackId: string, clip: Clip, edge: 'left' | 'right') => {
+  // 吸附计算：在阈值内吸附到整数秒/播放头/其他片段边缘，否则返回原值
+  const findSnap = useCallback(
+    (time: number, excludeClipId: string): number => {
+      const candidates = new Set<number>();
+      // 整数秒刻度
+      for (let i = 0; i <= Math.ceil(data.duration); i++) candidates.add(i);
+      // 播放头
+      candidates.add(data.currentTime);
+      // 其他片段的起止边缘
+      data.tracks.forEach((t) =>
+        t.clips.forEach((c) => {
+          if (c.id !== excludeClipId) {
+            candidates.add(c.start);
+            candidates.add(c.end);
+          }
+        })
+      );
+
+      const thresholdSec = SNAP_THRESHOLD_PX / PIXELS_PER_SECOND;
+      let best = time;
+      let bestDist = thresholdSec;
+      candidates.forEach((t) => {
+        const d = Math.abs(t - time);
+        if (d < bestDist) {
+          bestDist = d;
+          best = t;
+        }
+      });
+      return best;
+    },
+    [data.duration, data.currentTime, data.tracks, PIXELS_PER_SECOND]
+  );
+
+  // 统一拖拽启动：处理 move / resize-left / resize-right
+  const handleDragStart = useCallback(
+    (e: React.PointerEvent, trackId: string, clip: Clip, type: DragType) => {
       e.stopPropagation();
       e.preventDefault();
-      const startX = e.clientX;
-      const startClipStart = clip.start;
-      const startClipEnd = clip.end;
-      const minDuration = 0.5;
-      const maxEnd = data.duration;
+      try {
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // setPointerCapture 在某些环境可能失败（如自动化测试），不影响拖拽
+      }
 
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      const state: DragState = {
+        type,
+        trackId,
+        clipId: clip.id,
+        startX: e.clientX,
+        origStart: clip.start,
+        origEnd: clip.end,
+      };
+      setDragState(state);
+
+      // 锁定全局 cursor，防止拖拽中光标闪烁
+      document.body.style.cursor = type === 'move' ? 'grabbing' : 'ew-resize';
+      document.body.style.userSelect = 'none';
 
       const handleMove = (ev: PointerEvent) => {
-        const dt = (ev.clientX - startX) / PIXELS_PER_SECOND;
-        if (edge === 'left') {
-          const newStart = Math.max(0, Math.min(startClipStart + dt, startClipEnd - minDuration));
-          resizeClip(trackId, clip.id, newStart, startClipEnd);
+        const dt = (ev.clientX - state.startX) / PIXELS_PER_SECOND;
+        const { origStart, origEnd } = state;
+        const duration = origEnd - origStart;
+
+        if (type === 'move') {
+          // 移动：整体平移，吸附 newStart，不能超出 [0, duration - clipDuration]
+          let newStart = Math.max(0, Math.min(origStart + dt, data.duration - duration));
+          newStart = findSnap(newStart, clip.id);
+          newStart = Math.max(0, Math.min(newStart, data.duration - duration));
+          moveClip(trackId, clip.id, newStart);
+          setTooltip({
+            x: ev.clientX,
+            y: ev.clientY,
+            text: `${formatTime(newStart)} → ${formatTime(newStart + duration)} (${duration.toFixed(1)}s)`,
+          });
+        } else if (type === 'resize-left') {
+          // 左 resize：调整 start，吸附后仍需满足 minDuration
+          let newStart = Math.max(0, Math.min(origStart + dt, origEnd - MIN_CLIP_DURATION));
+          newStart = findSnap(newStart, clip.id);
+          newStart = Math.min(newStart, origEnd - MIN_CLIP_DURATION);
+          newStart = Math.max(0, newStart);
+          resizeClip(trackId, clip.id, newStart, origEnd);
+          setTooltip({
+            x: ev.clientX,
+            y: ev.clientY,
+            text: `${formatTime(newStart)} → ${formatTime(origEnd)} (${(origEnd - newStart).toFixed(1)}s)`,
+          });
         } else {
-          const newEnd = Math.max(startClipStart + minDuration, Math.min(startClipEnd + dt, maxEnd));
-          resizeClip(trackId, clip.id, startClipStart, newEnd);
+          // 右 resize：调整 end，吸附后仍需满足 minDuration
+          let newEnd = Math.max(origStart + MIN_CLIP_DURATION, Math.min(origEnd + dt, data.duration));
+          newEnd = findSnap(newEnd, clip.id);
+          newEnd = Math.max(newEnd, origStart + MIN_CLIP_DURATION);
+          newEnd = Math.min(newEnd, data.duration);
+          resizeClip(trackId, clip.id, origStart, newEnd);
+          setTooltip({
+            x: ev.clientX,
+            y: ev.clientY,
+            text: `${formatTime(origStart)} → ${formatTime(newEnd)} (${(newEnd - origStart).toFixed(1)}s)`,
+          });
         }
       };
-      const handleUp = (ev: PointerEvent) => {
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+
+      const handleUp = () => {
+        try {
+          (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {
+          // releasePointerCapture 失败不影响清理
+        }
         window.removeEventListener('pointermove', handleMove);
         window.removeEventListener('pointerup', handleUp);
+        setDragState(null);
+        setTooltip(null);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
       };
 
       window.addEventListener('pointermove', handleMove);
       window.addEventListener('pointerup', handleUp);
     },
-    [PIXELS_PER_SECOND, data.duration, resizeClip]
+    [data.duration, findSnap, moveClip, resizeClip]
   );
 
   // 时间刻度
@@ -245,48 +351,52 @@ export default function Timeline() {
                 key={track.id}
                 className="h-10 relative border-b border-canvas-border/30"
               >
-                {track.clips.map((clip) => (
-                  <div
-                    key={clip.id}
-                    className="absolute top-1 h-8 rounded-md flex items-center px-2 cursor-move group overflow-hidden"
-                    style={{
-                      left: clip.start * PIXELS_PER_SECOND,
-                      width: (clip.end - clip.start) * PIXELS_PER_SECOND,
-                      backgroundColor: TRACK_COLORS[track.type] + '40',
-                      borderLeft: `3px solid ${TRACK_COLORS[track.type]}`,
-                    }}
-                    draggable
-                    onDragEnd={(e) => {
-                      // 简化拖拽处理
-                      const rect = timelineRef.current?.getBoundingClientRect();
-                      if (!rect) return;
-                      const x = e.clientX - rect.left;
-                      const newStart = Math.max(0, x / PIXELS_PER_SECOND);
-                      moveClip(track.id, clip.id, newStart);
-                    }}
-                  >
-                    <span className="text-xs text-slate-300 truncate">{clip.label}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeClip(track.id, clip.id);
+                {track.clips.map((clip) => {
+                  const isDragging = dragState?.clipId === clip.id;
+                  return (
+                    <div
+                      key={clip.id}
+                      className={`absolute top-1 h-8 rounded-md flex items-center px-2 cursor-grab group overflow-hidden transition-shadow ${
+                        isDragging
+                          ? 'ring-2 ring-white/70 shadow-lg z-10'
+                          : 'hover:ring-1 hover:ring-white/30'
+                      }`}
+                      style={{
+                        left: clip.start * PIXELS_PER_SECOND,
+                        width: (clip.end - clip.start) * PIXELS_PER_SECOND,
+                        backgroundColor: TRACK_COLORS[track.type] + '40',
+                        borderLeft: `3px solid ${TRACK_COLORS[track.type]}`,
                       }}
-                      className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/20 transition-opacity"
+                      onPointerDown={(e) => handleDragStart(e, track.id, clip, 'move')}
                     >
-                      <X className="w-3 h-3 text-slate-400" />
-                    </button>
-                    {/* 左 resize 手柄 */}
-                    <div
-                      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/30 transition-colors"
-                      onPointerDown={(e) => handleResizeStart(e, track.id, clip, 'left')}
-                    />
-                    {/* 右 resize 手柄 */}
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/30 transition-colors"
-                      onPointerDown={(e) => handleResizeStart(e, track.id, clip, 'right')}
-                    />
-                  </div>
-                ))}
+                      <span className="text-xs text-slate-300 truncate pointer-events-none">{clip.label}</span>
+                      <button
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeClip(track.id, clip.id);
+                        }}
+                        className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/20 transition-opacity"
+                      >
+                        <X className="w-3 h-3 text-slate-400" />
+                      </button>
+                      {/* 左 resize 手柄 */}
+                      <div
+                        className={`absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize transition-colors ${
+                          isDragging && dragState?.type === 'resize-left' ? 'bg-white/60' : 'hover:bg-white/40'
+                        }`}
+                        onPointerDown={(e) => handleDragStart(e, track.id, clip, 'resize-left')}
+                      />
+                      {/* 右 resize 手柄 */}
+                      <div
+                        className={`absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize transition-colors ${
+                          isDragging && dragState?.type === 'resize-right' ? 'bg-white/60' : 'hover:bg-white/40'
+                        }`}
+                        onPointerDown={(e) => handleDragStart(e, track.id, clip, 'resize-right')}
+                      />
+                    </div>
+                  );
+                })}
               </div>
             ))}
 
@@ -300,6 +410,15 @@ export default function Timeline() {
           </div>
         </div>
       </div>
+      {/* 拖拽时长 tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 pointer-events-none px-2 py-1 rounded bg-slate-900/90 border border-canvas-border text-xs text-slate-100 font-mono shadow-lg"
+          style={{ left: tooltip.x + 12, top: tooltip.y + 12 }}
+        >
+          {tooltip.text}
+        </div>
+      )}
     </div>
   );
 }
