@@ -362,7 +362,7 @@ function PropertyPanelWithHistory({
       trackId: targetTrack.id,
       start: timelineCurrentTime,
       end: timelineCurrentTime + duration,
-      mediaUrl: artifact.url.startsWith('http') ? artifact.url : `/api/v1/media/${artifact.url.replace(/^\//, '')}`,
+      mediaUrl: artifact.url.startsWith('http://') || artifact.url.startsWith('https://') ? artifact.url : `/api/v1/media/${artifact.url.replace(/^\//, '')}`,
       label: data.label,
       color: undefined,
     };

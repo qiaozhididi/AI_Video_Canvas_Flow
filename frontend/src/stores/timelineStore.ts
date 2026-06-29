@@ -96,7 +96,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
 
   setCurrentTime: (time) =>
     set((state) => ({
-      data: { ...state.data, currentTime: time },
+      data: { ...state.data, currentTime: Math.max(0, Math.min(time, state.data.duration)) },
     })),
 
   addTrack: (type) =>
