@@ -364,6 +364,12 @@ export default function EditorLayout() {
           </div>
         </div>
       )}
+      {/* AI 生成模态框 */}
+      <AiGenerateModal
+        open={showAiModal}
+        onClose={() => setShowAiModal(false)}
+        onGenerated={handleAiGenerated}
+      />
     </div>
   );
 }
