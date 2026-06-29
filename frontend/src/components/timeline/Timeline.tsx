@@ -6,7 +6,7 @@ import {
   Plus, Volume2, VolumeX, Lock, Unlock, Eye, EyeOff,
   Trash2, ZoomIn, ZoomOut,
 } from 'lucide-react';
-import type { TrackType } from '@/types/timeline';
+import type { TrackType, Clip } from '@/types/timeline';
 
 const TRACK_COLORS: Record<TrackType, string> = {
   video: '#7C3AED',
@@ -19,7 +19,7 @@ export default function Timeline() {
   const {
     data, isPlaying, play, pause, seekTo,
     addTrack, removeTrack, toggleTrackMute, toggleTrackLock, toggleTrackVisibility,
-    removeClip, moveClip, setZoom,
+    removeClip, moveClip, resizeClip, setZoom,
   } = useTimelineStore();
   const { nodes } = useCanvasStore();
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -41,6 +41,41 @@ export default function Timeline() {
       seekTo(time);
     },
     [PIXELS_PER_SECOND, data.duration, seekTo]
+  );
+
+  // resize 手柄拖拽处理（Pointer Events + setPointerCapture）
+  const handleResizeStart = useCallback(
+    (e: React.PointerEvent, trackId: string, clip: Clip, edge: 'left' | 'right') => {
+      e.stopPropagation();
+      e.preventDefault();
+      const startX = e.clientX;
+      const startClipStart = clip.start;
+      const startClipEnd = clip.end;
+      const minDuration = 0.5;
+      const maxEnd = data.duration;
+
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+      const handleMove = (ev: PointerEvent) => {
+        const dt = (ev.clientX - startX) / PIXELS_PER_SECOND;
+        if (edge === 'left') {
+          const newStart = Math.max(0, Math.min(startClipStart + dt, startClipEnd - minDuration));
+          resizeClip(trackId, clip.id, newStart, startClipEnd);
+        } else {
+          const newEnd = Math.max(startClipStart + minDuration, Math.min(startClipEnd + dt, maxEnd));
+          resizeClip(trackId, clip.id, startClipStart, newEnd);
+        }
+      };
+      const handleUp = (ev: PointerEvent) => {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+        window.removeEventListener('pointermove', handleMove);
+        window.removeEventListener('pointerup', handleUp);
+      };
+
+      window.addEventListener('pointermove', handleMove);
+      window.addEventListener('pointerup', handleUp);
+    },
+    [PIXELS_PER_SECOND, data.duration, resizeClip]
   );
 
   // 时间刻度
@@ -240,6 +275,16 @@ export default function Timeline() {
                     >
                       <X className="w-3 h-3 text-slate-400" />
                     </button>
+                    {/* 左 resize 手柄 */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/30 transition-colors"
+                      onPointerDown={(e) => handleResizeStart(e, track.id, clip, 'left')}
+                    />
+                    {/* 右 resize 手柄 */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-white/30 transition-colors"
+                      onPointerDown={(e) => handleResizeStart(e, track.id, clip, 'right')}
+                    />
                   </div>
                 ))}
               </div>
