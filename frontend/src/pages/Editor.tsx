@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState } from 'react';
+import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
@@ -41,6 +41,24 @@ export default function Editor() {
   const isDirty = useAutoSaveStore((s) => s.isDirty);
 
   const currentProject = useProjectStore((s) => s.currentProject);
+
+  // 计算视频预览 URL：订阅选中节点的 outputArtifacts
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
+  const previewUrl = useMemo(() => {
+    if (!selectedNodeId) return undefined;
+    const node = nodes.find((n) => n.id === selectedNodeId);
+    if (!node || !node.data.outputArtifacts.length) return undefined;
+    // 优先 video，其次 image（VideoPreview 也能展示图片但语义上优先 video）
+    const videoArt = node.data.outputArtifacts.find((a) => a.type === 'video');
+    const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
+    const artifact = videoArt || imageArt;
+    if (!artifact) return undefined;
+    // 相对路径加 /api/v1/media/ 前缀；外部 URL 直接用
+    if (artifact.url.startsWith('http://') || artifact.url.startsWith('https://')) {
+      return artifact.url;
+    }
+    return `/api/v1/media/${artifact.url.replace(/^\//, '')}`;
+  }, [selectedNodeId, nodes]);
 
   // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);
@@ -138,7 +156,7 @@ export default function Editor() {
           {/* 视频预览 */}
           {showPreview && (
             <div className="w-80 border-l border-canvas-border p-2">
-              <VideoPreview />
+              <VideoPreview src={previewUrl} />
             </div>
           )}
         </div>
