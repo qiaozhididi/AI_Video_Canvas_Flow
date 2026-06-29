@@ -13,6 +13,13 @@ interface VideoPreviewProps {
 export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }: VideoPreviewProps) {
   const videoRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Player | null>(null);
+  // 用 ref 存储 onTimeUpdate 回调，避免闭包陈旧 + 从依赖数组移除
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+
+  // 同步 ref 到最新的 onTimeUpdate
+  useEffect(() => {
+    onTimeUpdateRef.current = onTimeUpdate;
+  }, [onTimeUpdate]);
 
   // 创建/更新 player（src/poster 变化时）
   useEffect(() => {
@@ -36,8 +43,8 @@ export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }:
       // 注册 timeupdate 回调（播放进度变化时回写）
       playerRef.current.on('timeupdate', () => {
         const time = playerRef.current?.currentTime();
-        if (typeof time === 'number' && onTimeUpdate) {
-          onTimeUpdate(time);
+        if (typeof time === 'number' && onTimeUpdateRef.current) {
+          onTimeUpdateRef.current(time);
         }
       });
     } else {
@@ -52,7 +59,7 @@ export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }:
     return () => {
       // 组件卸载时不销毁 player，避免重复创建
     };
-  }, [src, poster, onTimeUpdate]);
+  }, [src, poster]);
 
   // currentTime 变化时跳转播放位置（避免回环：onTimeUpdate 触发的 currentTime 变化不再触发跳转）
   useEffect(() => {
