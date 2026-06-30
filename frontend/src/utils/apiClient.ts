@@ -215,6 +215,8 @@ export interface RenderTaskResponse {
   result_url: string | null;
   error_message: string | null;
   node_id: string | null;
+  node_label: string | null;
+  project_name: string | null;
   created_at: string;
   updated_at: string;
 }

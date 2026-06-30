@@ -21,10 +21,26 @@ function getStatusConfig(status: string) {
 // ── 任务类型 ──
 
 const TASK_TYPES = [
-  { value: 'video_render', label: '视频渲染' },
-  { value: 'image_render', label: '图片渲染' },
-  { value: 'audio_render', label: '音频渲染' },
+  { value: 'ai_text2img', label: '文生图' },
+  { value: 'ai_img2video', label: '图生视频' },
+  { value: 'ai_tts', label: '文生语音' },
+  { value: 'render', label: '渲染' },
 ];
+
+// 任务类型友好显示
+const TASK_TYPE_LABELS: Record<string, string> = {
+  ai_text2img: '文生图',
+  ai_img2video: '图生视频',
+  ai_tts: '文生语音',
+  render: '渲染',
+  video_render: '视频渲染',
+  image_render: '图片渲染',
+  audio_render: '音频渲染',
+};
+
+function getTaskTypeLabel(taskType: string): string {
+  return TASK_TYPE_LABELS[taskType] ?? taskType;
+}
 
 // ── 格式化 ──
 
@@ -228,6 +244,8 @@ export default function RenderCenter() {
               <thead>
                 <tr className="bg-canvas-panel text-xs text-slate-500">
                   <th className="text-left px-4 py-3 font-medium">任务 ID</th>
+                  <th className="text-left px-4 py-3 font-medium">项目</th>
+                  <th className="text-left px-4 py-3 font-medium">节点</th>
                   <th className="text-left px-4 py-3 font-medium">类型</th>
                   <th className="text-left px-4 py-3 font-medium">状态</th>
                   <th className="text-left px-4 py-3 font-medium">进度</th>
@@ -243,7 +261,9 @@ export default function RenderCenter() {
                   return (
                     <tr key={task.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
                       <td className="px-4 py-3 text-sm text-slate-200 font-mono">{task.id.slice(0, 8)}</td>
-                      <td className="px-4 py-3 text-xs text-slate-400">{task.task_type}</td>
+                      <td className="px-4 py-3 text-xs text-slate-400">{task.project_name ?? '-'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-300">{task.node_label ?? '-'}</td>
+                      <td className="px-4 py-3 text-xs text-slate-400">{getTaskTypeLabel(task.task_type)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <Icon className={`w-3.5 h-3.5 ${config.color} ${task.status === 'running' ? 'animate-spin' : ''}`} />

@@ -26,7 +26,11 @@ class RenderTaskCreate(BaseModel):
     input_artifacts: list[dict] | None = None  # 上游输出资产
 
 
-def _task_to_dict(task: RenderTask) -> dict:
+def _task_to_dict(
+    task: RenderTask,
+    node_label: str | None = None,
+    project_name: str | None = None,
+) -> dict:
     return {
         "id": str(task.id),
         "project_id": str(task.project_id),
@@ -38,6 +42,8 @@ def _task_to_dict(task: RenderTask) -> dict:
         "result_url": task.result_url,
         "error_message": task.error_message,
         "node_id": task.node_id,
+        "node_label": node_label,
+        "project_name": project_name,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
     }
@@ -57,7 +63,39 @@ async def list_render_tasks(
     stmt = stmt.order_by(RenderTask.created_at.desc()).limit(limit)
     result = await db.execute(stmt)
     tasks = result.scalars().all()
-    return [_task_to_dict(t) for t in tasks]
+
+    # 批量查询关联的节点标签和项目名称，便于渲染中心区分不同节点的任务
+    from app.models.workflow import WorkflowNode
+    from app.models.project import Project
+
+    node_ids = {t.node_id for t in tasks if t.node_id}
+    project_ids = {t.project_id for t in tasks}
+
+    node_labels: dict[str, str] = {}
+    if node_ids:
+        node_result = await db.execute(
+            select(WorkflowNode.id, WorkflowNode.config).where(WorkflowNode.id.in_(node_ids))
+        )
+        for nid, config in node_result.all():
+            label = config.get("label") if isinstance(config, dict) else None
+            node_labels[nid] = label or nid
+
+    project_names: dict[str, str] = {}
+    if project_ids:
+        proj_result = await db.execute(
+            select(Project.id, Project.name).where(Project.id.in_(project_ids))
+        )
+        for pid, name in proj_result.all():
+            project_names[str(pid)] = name
+
+    return [
+        _task_to_dict(
+            t,
+            node_label=node_labels.get(t.node_id) if t.node_id else None,
+            project_name=project_names.get(str(t.project_id)),
+        )
+        for t in tasks
+    ]
 
 
 @router.post("/", summary="创建渲染任务")
