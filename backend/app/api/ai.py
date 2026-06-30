@@ -315,5 +315,5 @@ async def generate_workflow_endpoint(
         logger.error(f"[AI:GenerateWorkflow] 未预期错误: {e}", exc_info=True)
         raise HTTPException(status_code=502, detail=f"AI 服务调用失败: {str(e)}")
 
-    logger.info(f"[AI:GenerateWorkflow] user={user.id}, mode={body.mode}, nodes={len(result['nodes'])}")
+    logger.info(f"[AI:GenerateWorkflow] user={user}, mode={body.mode}, nodes={len(result['nodes'])}")
     return result
