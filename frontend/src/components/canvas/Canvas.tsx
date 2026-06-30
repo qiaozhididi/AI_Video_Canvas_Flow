@@ -30,12 +30,13 @@ import type { CanvasNodeData, NodeSubtype } from '@/types/canvas';
 const nodeTypes = { canvasNode: CanvasNodeComponent };
 
 export default function Canvas() {
-  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken, setSelectedNodeIds } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken, selectedNodeIds, setSelectedNodeIds } = useCanvasStore();
   const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const markDirty = useAutoSaveStore((s) => s.markDirty);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
 
-  // 将 store 中的 CanvasNode 映射为 ReactFlow Node，保留 ReactFlow 内部状态
+  // 将 store 中的 CanvasNode 映射为 ReactFlow Node，保留 React Flow 内部状态
+  // selected 由 selectedNodeIds 派生（单一事实来源）：框选 onSelectionChange 与 Ctrl+A selectAll 均通过 selectedNodeIds 驱动 React Flow 视觉高亮
   const reactFlowNodes: Node[] = useMemo(
     () => nodes.map((n) => ({
       id: n.id,
@@ -43,8 +44,9 @@ export default function Canvas() {
       position: n.position,
       data: { ...n.data } as Record<string, unknown>,
       measured: n.measured,
+      selected: selectedNodeIds.includes(n.id),
     })),
-    [nodes]
+    [nodes, selectedNodeIds]
   );
 
   const onNodesChange: OnNodesChange = useCallback(
