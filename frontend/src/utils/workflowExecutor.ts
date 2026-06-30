@@ -160,7 +160,8 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
     const artifacts: Artifact[] = result.result_url
       ? [{
           id: `artifact-${Date.now()}`,
-          type: taskType.startsWith('ai_text2img') ? 'image'
+          type: node.data.subtype === 'image_output' ? 'image'
+            : taskType.startsWith('ai_text2img') ? 'image'
             : taskType.startsWith('ai_img2video') ? 'video'
             : taskType.startsWith('ai_tts') ? 'audio'
             : 'video',

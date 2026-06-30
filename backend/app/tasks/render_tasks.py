@@ -82,21 +82,35 @@ async def _run_task(task_id: str, model_id: str | None, prompt: str | None, inpu
     """完整的异步任务执行流程——在同一个事件循环中运行"""
     from sqlalchemy import select
     from app.models.render_task import RenderTask
+    from app.models.workflow import WorkflowNode
 
     sf = _get_celery_session_factory()
 
-    # 1. 读取 task_type
+    # 1. 读取 task_type 和 node_id
     async with sf() as db:
         result = await db.execute(
-            select(RenderTask.task_type).where(RenderTask.id == uuid.UUID(task_id))
+            select(RenderTask.task_type, RenderTask.node_id).where(RenderTask.id == uuid.UUID(task_id))
         )
-        task_type = result.scalar_one_or_none()
+        row = result.one_or_none()
+        if not row:
+            raise ValueError(f"任务 {task_id} 不存在")
+        task_type, node_id = row
 
     # 2. 根据 task_type 路由
     if task_type and task_type.startswith("ai_"):
         return await _execute_ai_task(task_id, model_id, prompt, input_artifacts)
     else:
-        return await _execute_render_task(task_id, input_artifacts)
+        # 查询节点 subtype（用于 image_output 透传逻辑）
+        subtype = None
+        if node_id:
+            async with sf() as db:
+                node_result = await db.execute(
+                    select(WorkflowNode.config).where(WorkflowNode.id == node_id)
+                )
+                config = node_result.scalar_one_or_none()
+                if config and isinstance(config, dict):
+                    subtype = config.get("subtype")
+        return await _execute_render_task(task_id, input_artifacts, subtype)
 
 
 @celery_app.task(bind=True, name="run_render_task")
@@ -297,11 +311,27 @@ async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict
 
 
 async def _execute_render_task(
-    task_id: str, input_artifacts: list[dict] | None = None
+    task_id: str, input_artifacts: list[dict] | None = None, subtype: str | None = None
 ) -> dict:
-    """执行默认渲染任务（模拟进度）"""
+    """执行默认渲染任务
+
+    image_output 节点：透传上游图片 URL 作为 result_url
+    其他节点：模拟渲染进度
+    """
     sf = _get_celery_session_factory()
 
+    # image_output 节点：从上游 artifacts 提取图片 URL 透传
+    if subtype == "image_output" and input_artifacts:
+        image_art = next((a for a in input_artifacts if a.get("type") == "image" and a.get("url")), None)
+        if image_art:
+            result_url = image_art["url"]
+            async with sf() as db:
+                await _update_task(db, task_id, status="running", progress=50)
+                await asyncio.sleep(0.5)
+                await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
+            return {"task_id": task_id, "status": "completed", "result_url": result_url}
+
+    # 其他节点：模拟渲染进度
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=0)
 
