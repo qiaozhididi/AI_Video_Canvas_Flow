@@ -5,6 +5,7 @@ import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
@@ -146,6 +147,10 @@ export default function EditorLayout() {
   // 快捷键绑定
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 输入框聚焦时不触发（避免影响文本编辑）
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
       // Ctrl+Z 撤销
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -156,6 +161,34 @@ export default function EditorLayout() {
         e.preventDefault();
         redo();
       }
+      // Ctrl/Cmd+C 复制选中节点
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
+        const { nodes, edges, selectedNodeIds } = useCanvasStore.getState();
+        if (selectedNodeIds.length > 0) {
+          const selectedNodes = nodes.filter((n) => selectedNodeIds.includes(n.id));
+          const internalEdges = edges.filter(
+            (ed) => selectedNodeIds.includes(ed.source) && selectedNodeIds.includes(ed.target)
+          );
+          useClipboardStore.getState().copy(selectedNodes, internalEdges);
+          e.preventDefault();
+        }
+      }
+
+      // Ctrl/Cmd+V 粘贴
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
+        const pasted = useClipboardStore.getState().paste();
+        if (pasted) {
+          useCanvasStore.getState().addPastedNodes(pasted.nodes, pasted.edges);
+          e.preventDefault();
+        }
+      }
+
+      // Ctrl/Cmd+A 全选
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        useCanvasStore.getState().selectAll();
+        e.preventDefault();
+      }
+
       // Ctrl+S 保存
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();

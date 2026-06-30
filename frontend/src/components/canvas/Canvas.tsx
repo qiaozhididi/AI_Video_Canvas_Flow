@@ -11,9 +11,11 @@ import {
   applyEdgeChanges,
   BackgroundVariant,
   ConnectionLineType,
+  SelectionMode,
   type Node,
   type Edge,
   type ReactFlowInstance,
+  type OnSelectionChangeFunc,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -22,12 +24,13 @@ import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useCollabStore } from '@/stores/collabStore';
 import CanvasNodeComponent from './CanvasNode';
 import RemoteCursors from './RemoteCursors';
+import AlignmentToolbar from './AlignmentToolbar';
 import type { CanvasNodeData, NodeSubtype } from '@/types/canvas';
 
 const nodeTypes = { canvasNode: CanvasNodeComponent };
 
 export default function Canvas() {
-  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken, setSelectedNodeIds } = useCanvasStore();
   const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const markDirty = useAutoSaveStore((s) => s.markDirty);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
@@ -175,6 +178,11 @@ export default function Canvas() {
     [addNode, pushAddNode, markDirty]
   );
 
+  // 选中状态同步到 store（供 EditorLayout 复制使用）
+  const onSelectionChange: OnSelectionChangeFunc = useCallback(({ nodes: selected }) => {
+    setSelectedNodeIds(selected.map((n) => n.id));
+  }, [setSelectedNodeIds]);
+
   // 监听 fitViewToken 变化,触发 ReactFlow 自适应视图(AI 生成后用)
   useEffect(() => {
     if (fitViewToken === 0) return; // 跳过初始值
@@ -194,6 +202,7 @@ export default function Canvas() {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onMouseMove={onMouseMove}
+        onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -201,10 +210,13 @@ export default function Canvas() {
         connectionLineType={ConnectionLineType.SmoothStep}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode={['Meta', 'Control']}
         className="bg-canvas-bg"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2A2A3E" />
         <RemoteCursors />
+        <AlignmentToolbar />
         <Controls
           position="bottom-right"
           showInteractive={false}
