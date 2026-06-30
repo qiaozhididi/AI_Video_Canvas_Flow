@@ -6,11 +6,12 @@ import 'video.js/dist/video-js.css';
 interface VideoPreviewProps {
   src?: string;
   poster?: string;
+  mediaType?: 'image' | 'video';
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
 }
 
-export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }: VideoPreviewProps) {
+export default function VideoPreview({ src, poster, mediaType, currentTime, onTimeUpdate }: VideoPreviewProps) {
   const videoRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Player | null>(null);
   // 用 ref 存储 onTimeUpdate 回调，避免闭包陈旧 + 从依赖数组移除
@@ -83,7 +84,9 @@ export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }:
 
   return (
     <div className="w-full h-full bg-black rounded-lg overflow-hidden">
-      {src ? (
+      {src && mediaType === 'image' ? (
+        <img src={src} alt="预览图片" className="w-full h-full object-contain" />
+      ) : src ? (
         <div ref={videoRef} className="w-full h-full" />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
@@ -93,7 +96,7 @@ export default function VideoPreview({ src, poster, currentTime, onTimeUpdate }:
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
             </div>
-            <p className="text-sm text-slate-500">暂无视频预览</p>
+            <p className="text-sm text-slate-500">暂无预览</p>
             <p className="text-xs text-slate-600">执行工作流后在此预览</p>
           </div>
         </div>

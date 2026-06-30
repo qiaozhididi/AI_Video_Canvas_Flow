@@ -44,22 +44,22 @@ export default function Editor() {
 
   const currentProject = useProjectStore((s) => s.currentProject);
 
-  // 计算视频预览 URL：订阅选中节点的 outputArtifacts
+  // 计算预览 URL 和类型：订阅选中节点的 outputArtifacts
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
-  const previewUrl = useMemo(() => {
-    if (!selectedNodeId) return undefined;
+  const preview = useMemo(() => {
+    if (!selectedNodeId) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
     const node = nodes.find((n) => n.id === selectedNodeId);
-    if (!node || !node.data.outputArtifacts.length) return undefined;
-    // 优先 video，其次 image（VideoPreview 也能展示图片但语义上优先 video）
+    if (!node || !node.data.outputArtifacts.length) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
+    // 优先 video，其次 image
     const videoArt = node.data.outputArtifacts.find((a) => a.type === 'video');
     const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
     const artifact = videoArt || imageArt;
-    if (!artifact) return undefined;
+    if (!artifact) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
     // 相对路径加 /api/v1/media/ 前缀；外部 URL 直接用
-    if (artifact.url.startsWith('http://') || artifact.url.startsWith('https://')) {
-      return artifact.url;
-    }
-    return `/api/v1/media/${artifact.url.replace(/^\//, '')}`;
+    const url = (artifact.url.startsWith('http://') || artifact.url.startsWith('https://'))
+      ? artifact.url
+      : `/api/v1/media/${artifact.url.replace(/^\//, '')}`;
+    return { url, type: artifact.type as 'image' | 'video' };
   }, [selectedNodeId, nodes]);
 
   // 时间轴 ↔ 预览联动
@@ -166,7 +166,8 @@ export default function Editor() {
           {showPreview && (
             <div className="w-80 border-l border-canvas-border p-2">
               <VideoPreview
-                src={previewUrl}
+                src={preview.url}
+                mediaType={preview.type}
                 currentTime={timelineCurrentTime}
                 onTimeUpdate={handleTimeUpdate}
               />
