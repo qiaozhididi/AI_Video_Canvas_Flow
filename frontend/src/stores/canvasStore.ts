@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import type { CanvasNode, CanvasEdge, CanvasNodeData, NodeStatus } from '@/types/canvas';
 import { NODE_TEMPLATES } from '@/types/canvas';
 import { useCollabStore, type NodeUpdatePayload, type EdgeUpdatePayload } from './collabStore';
+import { useAutoSaveStore } from './autoSaveStore';
+import { toCanvasNode, toCanvasEdge } from '@/utils/canvasTransform';
+import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
 
 // ── 协作广播 helper ──
 // 从 collabStore 读取当前 project_id（collabStore.connect 时设置）。
@@ -79,6 +82,17 @@ interface CanvasState {
 
   // 清空
   clearCanvas: () => void;
+
+  // fitView 触发(Canvas.tsx 监听 token 变化触发 reactFlowInstance.fitView)
+  fitViewToken: number;
+  requestFitView: () => void;
+
+  // AI 快速生成:加载后端返回的 nodes/edges 到画布
+  loadGeneratedWorkflow: (
+    nodes: NodeCreateRequest[],
+    edges: EdgeCreateRequest[],
+    mode: 'replace' | 'append',
+  ) => void;
 
   // 远端变更应用（不触发 emit，避免回环）
   applyRemoteNodeUpdate: (data: NodeUpdatePayload) => void;
@@ -218,6 +232,49 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   clearCanvas: () => {
     // 整体重置（如切换项目），不广播
     set({ nodes: [], edges: [], selectedNodeId: null });
+  },
+
+  fitViewToken: 0,
+
+  requestFitView: () => {
+    set((state) => ({ fitViewToken: state.fitViewToken + 1 }));
+  },
+
+  loadGeneratedWorkflow: (nodes, edges, mode) => {
+    const newNodes = nodes.map(toCanvasNode);
+
+    if (mode === 'replace') {
+      // 替换:清空后加载(不广播,避免高频 emit)
+      set({ nodes: newNodes, edges: edges.map(toCanvasEdge), selectedNodeId: null });
+    } else {
+      // 追加:保留现有节点,新节点直接 push;edges 的 id 加前缀避免冲突
+      const existingIds = new Set(get().nodes.map((n) => n.id));
+      const existingEdgeIds = new Set(get().edges.map((e) => e.id));
+      const dedupedNodes = newNodes.filter((n) => !existingIds.has(n.id));
+      const newEdges = edges
+        .map((e, idx) => {
+          const converted = toCanvasEdge(e);
+          // 加前缀避免与现有 edge id 冲突
+          return { ...converted, id: `gen-${converted.id}-${idx}` };
+        })
+        .filter((e) => !existingEdgeIds.has(e.id));
+
+      set((state) => ({
+        nodes: [...state.nodes, ...dedupedNodes],
+        edges: [...state.edges, ...newEdges],
+      }));
+    }
+
+    // 选中首个节点(便于用户立即查看属性)
+    if (newNodes.length > 0) {
+      set({ selectedNodeId: newNodes[0].id });
+    }
+
+    // 触发 fitView(Canvas.tsx 监听 fitViewToken 变化)
+    get().requestFitView();
+
+    // 标记脏状态(触发 autoSaveStore 防抖保存)
+    useAutoSaveStore.getState().markDirty();
   },
 
   // ── 远端变更应用（绝不调 emit，避免回环） ──

@@ -6,6 +6,7 @@ import { useTimelineStore } from './timelineStore';
 import { useAutoSaveStore } from './autoSaveStore';
 import { projectApi, workflowApi, snapshotApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
+import { toCanvasNode, toCanvasEdge } from '@/utils/canvasTransform';
 
 interface ProjectState {
   projects: Project[];
@@ -73,50 +74,6 @@ function toEdgeCreate(e: CanvasEdge) {
     target_node_id: e.target,
     source_port: e.sourceHandle || null,
     target_port: e.targetHandle || null,
-  };
-}
-
-/** 后端 NodeResponse → 前端 CanvasNode */
-function toCanvasNode(n: {
-  id: string;
-  node_type: string;
-  label: string | null;
-  position_x: number;
-  position_y: number;
-  config: Record<string, unknown> | null;
-}): CanvasNode {
-  const config = n.config || {};
-  return {
-    id: n.id,
-    type: n.node_type,
-    position: { x: n.position_x, y: n.position_y },
-    data: {
-      type: (config.type as CanvasNode['data']['type']) || 'input',
-      subtype: (config.subtype as CanvasNode['data']['subtype']) || 'text_input',
-      label: n.label || (config.label as string) || '未命名',
-      params: (config.params as Record<string, unknown>) || {},
-      status: (config.status as CanvasNode['data']['status']) || 'idle',
-      progress: (config.progress as number) || 0,
-      outputArtifacts: (config.outputArtifacts as CanvasNode['data']['outputArtifacts']) || [],
-      error: config.error as string | undefined,
-    },
-  };
-}
-
-/** 后端 EdgeResponse → 前端 CanvasEdge */
-function toCanvasEdge(e: {
-  id: string;
-  source_node_id: string;
-  target_node_id: string;
-  source_port: string | null;
-  target_port: string | null;
-}): CanvasEdge {
-  return {
-    id: e.id,
-    source: e.source_node_id,
-    target: e.target_node_id,
-    sourceHandle: e.source_port || undefined,
-    targetHandle: e.target_port || undefined,
   };
 }
 
