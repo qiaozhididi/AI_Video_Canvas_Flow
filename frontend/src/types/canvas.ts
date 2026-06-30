@@ -94,18 +94,18 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
   { type: 'input', subtype: 'text_input', label: '文本输入', icon: 'Type', category: '输入', defaultParams: { text: '' } },
   { type: 'input', subtype: 'image_input', label: '图片输入', icon: 'Image', category: '输入', defaultParams: { url: '' } },
   { type: 'input', subtype: 'audio_input', label: '音频输入', icon: 'Music', category: '输入', defaultParams: { url: '' } },
-  // AI 推理节点
-  { type: 'ai_inference', subtype: 'text_to_image', label: '文生图', icon: 'Wand2', category: 'AI 推理', defaultParams: { model: 'sd3', width: 1024, height: 1024, steps: 30 } },
-  { type: 'ai_inference', subtype: 'image_to_video', label: '图生视频', icon: 'Video', category: 'AI 推理', defaultParams: { model: 'kling', duration: 5, fps: 24 } },
-  { type: 'ai_inference', subtype: 'text_to_speech', label: '文生语音', icon: 'Mic', category: 'AI 推理', defaultParams: { model: 'cosyvoice', voice: 'default', speed: 1.0 } },
+  // AI 推理节点(params 字段与后端 NODE_DEFAULT_PARAMS 保持一致)
+  { type: 'ai_inference', subtype: 'text_to_image', label: '文生图', icon: 'Wand2', category: 'AI 推理', defaultParams: { prompt: '', size: '1024x1024' } },
+  { type: 'ai_inference', subtype: 'image_to_video', label: '图生视频', icon: 'Video', category: 'AI 推理', defaultParams: { prompt: '', duration: 5 } },
+  { type: 'ai_inference', subtype: 'text_to_speech', label: '文生语音', icon: 'Mic', category: 'AI 推理', defaultParams: { text: '', voice: 'default' } },
   // 处理节点
   { type: 'processing', subtype: 'upscale', label: '高清放大', icon: 'Maximize', category: '处理', defaultParams: { scale: 2 } },
-  { type: 'processing', subtype: 'style_transfer', label: '风格化', icon: 'Palette', category: '处理', defaultParams: { style: 'anime' } },
+  { type: 'processing', subtype: 'style_transfer', label: '风格化', icon: 'Palette', category: '处理', defaultParams: { style: '' } },
   { type: 'processing', subtype: 'remove_bg', label: '抠图', icon: 'Scissors', category: '处理', defaultParams: {} },
   { type: 'processing', subtype: 'extend_image', label: '扩图', icon: 'Expand', category: '处理', defaultParams: { direction: 'all' } },
   // 控制节点
   { type: 'control', subtype: 'if_else', label: '条件分支', icon: 'GitBranch', category: '控制', defaultParams: { condition: '' } },
-  { type: 'control', subtype: 'loop', label: '循环', icon: 'Repeat', category: '控制', defaultParams: { count: 3 } },
+  { type: 'control', subtype: 'loop', label: '循环', icon: 'Repeat', category: '控制', defaultParams: { count: 1 } },
   { type: 'control', subtype: 'merge', label: '合并', icon: 'GitMerge', category: '控制', defaultParams: {} },
   // 输出节点
   { type: 'output', subtype: 'video_output', label: '视频输出', icon: 'Film', category: '输出', defaultParams: { format: 'mp4' } },
