@@ -263,10 +263,18 @@
 | `/api/v1/ai/models` | GET/POST | ✅ | AI Model CRUD |
 | `/api/v1/ai/models/{id}` | PUT/DELETE | ✅ | AI Model CRUD |
 | `/api/v1/ai/models/default` | GET | ✅ | 获取默认 AI 模型（AI 推理节点自动选模型） |
+| `/api/v1/ai/generate-workflow` | POST | ✅ | AI 快速生成工作流（mode: replace/append，LLM 解析描述生成节点/边） |
+| `/api/v1/projects/{id}/snapshots` | POST | ✅ | 创建快照（auto 源受 5 条上限） |
+| `/api/v1/projects/{id}/snapshots` | GET | ✅ | 快照列表（可按 source 筛选） |
+| `/api/v1/projects/{id}/snapshots/latest` | GET | ✅ | 获取最新快照 |
+| `/api/v1/snapshots/{id}` | GET | ✅ | 快照详情 |
+| `/api/v1/snapshots/{id}` | DELETE | ✅ | 删除快照 |
+| `/api/v1/snapshots/{id}/restore` | POST | ✅ | 单事务恢复快照到 nodes/edges |
 | `/api/v1/templates/` | GET | ✅ | 模板列表（支持 q 搜索 name/tags + category 筛选） |
 | `/api/v1/templates/{id}/clone` | POST | ✅ | 克隆模板为新项目（复制 nodes/edges，ID 加前缀） |
 | `/api/v1/projects/{id}/publish` | POST | ✅ | 发布项目为模板（category + tags） |
 | `/api/v1/templates/{id}` | DELETE | ✅ | 取消模板发布（仅 owner） |
+| `/api/v1/collab/status` | GET | ✅ | 协作服务状态检查（实际协作走 Socket.IO `/socket.io/`） |
 
 ## 数据库表结构
 

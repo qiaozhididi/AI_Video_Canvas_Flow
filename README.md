@@ -122,9 +122,13 @@ docker compose up -d
 
 | 文档 | 说明 |
 |------|------|
+| [开发路线图](DEVELOPMENT_ROADMAP.md) | 项目进度跟踪、已完成任务清单、后续开发计划 |
+| [API 参考文档](API_REFERENCE.md) | 全部 API 端点详尽文档（含 curl 示例、字段映射） |
 | [前端开发技术文档](docs/frontend-technical-guide.md) | 前端架构、状态管理、组件体系、开发规范 |
 | [后端开发技术文档](docs/backend-technical-guide.md) | 后端架构、API 设计、数据模型、部署方案 |
 | [AI 视频工作流方案](docs/AI_Video_Workflow方案.md) | 系统架构全景与核心功能设计 |
+| [后端服务说明](backend/README.md) | 后端项目结构、API 表、数据库模型、环境变量 |
+| [实施计划归档](docs/superpowers/plans/) | 各功能模块的实施计划文档（已完成归档） |
 
 ## License
 
