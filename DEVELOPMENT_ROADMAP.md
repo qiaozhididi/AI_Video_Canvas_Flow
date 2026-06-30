@@ -1,6 +1,6 @@
 # AI Canvas Flow — 开发路线图与未完成功能清单
 
-> 更新时间: 2026-06-29
+> 更新时间: 2026-06-30
 
 ## 当前项目状态概览
 
@@ -8,19 +8,22 @@
 |------|------|------|------|
 | 前端 | 画布编辑器 | ✅ 完成 | 节点拖放、连线、属性编辑、撤销重做 |
 | 前端 | 媒体库 | ✅ 完成 | MinIO 上传/下载/缩略图懒加载/分页/拖拽上传 |
-| 前端 | 渲染中心 | ✅ 完成 | 真实 API 对接，任务创建/列表/轮询/取消/下载 |
+| 前端 | 渲染中心 | ✅ 完成 | 真实 API 对接，任务创建/列表/轮询/取消/下载，显示 node_label/project_name |
 | 前端 | 执行工作流 | ✅ 完成 | 单节点执行 + 全工作流拓扑编排（Kahn 算法按层并行） |
 | 前端 | 模板市场 | ✅ 完成 | 列表搜索/分类筛选/克隆/发布/取消发布，已对接 PostgreSQL |
 | 前端 | 设置页 | ✅ 完成 | AI 配置面板 + 用户资料持久化（username/email/avatar_url） |
 | 前端 | 时间轴 | ✅ 完成 | rAF 播放循环 + 加入时间轴按钮 + 双向联动 + 片段 resize 拖拽（吸附/tooltip/视觉反馈） |
 | 前端 | 视频预览 | ✅ 完成 | 接入选中节点 outputArtifacts + 时间轴双向联动 |
 | 前端 | 自动保存 | ✅ 完成 | 双防抖+5 快照+崩溃恢复，已对接 PostgreSQL 后端（project_snapshots 表） |
+| 前端 | AI 快速生成 | ✅ 完成 | 自然语言描述 → LLM 生成工作流节点/边，支持替换/追加模式 |
+| 前端 | 节点字段统一 | ✅ 完成 | 手动拖拽与 AI 生成节点 params 字段统一（prompt/size/model_id 等） |
 | 后端 | 认证 API | ✅ 完成 | 注册/登录/JWT + PUT /me 资料更新 |
 | 后端 | 项目 CRUD | ✅ 完成 | 级联删除 |
 | 后端 | 工作流 CRUD | ✅ 完成 | 7 端点全对接数据库 |
 | 后端 | 媒体资产 | ✅ 完成 | MinIO 上传/presign/下载/删除 |
-| 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消 |
+| 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消，返回 node_label/project_name |
 | 后端 | AI 可配置系统 | ✅ 完成 | Provider/Model CRUD + 默认配置 + LLM 调用封装 |
+| 后端 | AI 工作流生成 | ✅ 完成 | POST /ai/generate-workflow，LLM 解析描述生成节点/边 + 自动布局 |
 | 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务，RabbitMQ 4.x 兼容 |
 | 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI + JWT 鉴权 + 房间成员管理 + 远端光标同步 |
 | 后端 | 模板市场 | ✅ 完成 | 列表/克隆/发布/取消发布 4 端点 |
@@ -32,10 +35,10 @@
 
 | 层面 | 完成度 | 说明 |
 |------|--------|------|
-| 后端 API | **100%** | 全部核心端点已实现（含 templates/snapshots/collaboration WS 鉴权） |
-| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates + snapshots） |
-| 前端 Store 对接 | **80%** | authStore/projectStore/canvasStore(间接)/autoSaveStore/collabStore 已对接；timelineStore 通过快照恢复部分对接 |
-| 前端页面对接 | **95%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴) 已对接；MediaLibrary 有 Mock 降级 |
+| 后端 API | **100%** | 全部核心端点已实现（含 templates/snapshots/collaboration WS 鉴权 + AI 工作流生成） |
+| 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates + snapshots + generateWorkflow） |
+| 前端 Store 对接 | **90%** | authStore/projectStore/canvasStore(间接)/autoSaveStore/collabStore 已对接；timelineStore 通过快照恢复部分对接 |
+| 前端页面对接 | **100%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴+AI 生成) 全部对接；MediaLibrary 有 Mock 降级 |
 
 ---
 
@@ -144,6 +147,30 @@
 - **涉及文件**: timelineStore.ts, VideoPreview.tsx, Editor.tsx, Timeline.tsx, projectStore.ts, verify_core_loop.md
 - **后续优化**: rAF clamp（commit c5f5d96）、clip resize 拖拽（commit 43d65a2）、Timeline 重构统一 DragState（commit 6c122ec）、快照恢复 timelineData（commit e5a034d）
 
+### 10. AI 快速生成工作流
+- **后端**: ai_service.py 新增 `generate_workflow(db, description, model_id)` — LLM 解析自然语言描述 → 生成节点/边 JSON + `_compute_layout` 自动网格布局
+- **后端**: ai.py 新增 `POST /ai/generate-workflow` 端点，支持 `mode: replace | append`（replace 需二次确认）
+- **后端**: LLM Prompt 内嵌节点子类型白名单（text_to_image/image_to_video/text_to_speech/upscale/style_transfer/remove_bg/extend_image/text_input/image_input/video_output/image_output/audio_output）+ JSON Schema 约束
+- **后端**: `_parse_llm_json` 容错解析（剥离 ```json fence + 尾部逗号清理 + 降级 ast.literal_eval）
+- **前端**: canvasTransform.ts 新增 `toCanvasNode`/`toCanvasEdge` 转换器（后端 NodeCreateRequest → 前端 CanvasNode，config 解包到 data）
+- **前端**: AiGenerateModal.tsx 弹窗组件（描述输入框 + 模式选择 + Ctrl/Cmd+Enter 提交 + 错误提示）
+- **前端**: canvasStore.ts 新增 `loadGeneratedWorkflow` 方法（replace 清空画布 / append 追加 + 自动 fitView）
+- **前端**: EditorLayout.tsx 工具栏新增「AI 生成」按钮接入弹窗，生成后通过 `fitViewToken` 触发 Canvas 自适应视图
+- **前端**: Canvas.tsx 订阅 `fitViewToken` 变化调用 `fitView()`
+- **测试**: backend/tests/test_ai_generate.py 5 个单元测试（含 mock LLM 响应、布局计算、字段映射）
+- **合并**: merge commit 2693a9c（feature/ai-quick-generate → main，--no-ff），11 文件 +958/-47
+- **涉及文件**: ai_service.py, ai.py, test_ai_generate.py, canvasTransform.ts, AiGenerateModal.tsx, canvasStore.ts, EditorLayout.tsx, Canvas.tsx, apiClient.ts
+- **验证文档**: frontend/verify_ai_generate.md（49 项验证清单）
+
+### 11. 节点字段统一与技术债清理（第 1 步）
+- **背景**: 手动拖拽节点与 AI 生成节点 params 字段不一致（如 text_to_image 用 model/width/height/steps vs prompt/size/model_id）
+- **后端**: canvas.ts NODE_TEMPLATES.defaultParams 与后端 NODE_DEFAULT_PARAMS 对齐
+- **前端**: PropertyPanelWithHistory 改用 `Object.entries().map()` 动态渲染 params，不硬编码字段名
+- **前端**: AI 生成的 text_to_image 节点统一使用 `prompt`/`size`/`model_id`；image_to_video 使用 `prompt`/`duration`
+- **修复**: ai.py 第 318 行 `user.id` → `user`（CurrentUser 返回 user_id 字符串）
+- **涉及文件**: ai.py, canvas.ts, Editor.tsx
+- **后续待办**: 第 2 步执行链 params 读取（workflowExecutor.ts + RenderTaskCreate schema + render_tasks.py）
+
 ---
 
 ## 下一阶段开发计划
@@ -192,8 +219,9 @@
 
 > #10/#11 详见上方「已完成任务 #9」，merge commit 7a4bd7e。
 
-#### 12. AI 快速生成 ⏳ 待开发
+#### 12. AI 快速生成 ✅ 已完成
 - 输入描述 → LLM API → 生成工作流节点/边
+- 详见上方「已完成任务 #10」（merge commit 2693a9c）
 
 #### 13. 节点快捷操作 ⏳ 待开发
 - 复制/粘贴、全选/框选、对齐工具

@@ -1,5 +1,7 @@
 # AI 快速生成 实施计划
 
+> ✅ **状态：已完成（2026-06-30）** — 全部 6 个 Task 已执行完毕并合并到 main（merge commit 2693a9c，--no-ff）。下方 checkbox 未逐个同步更新，但所有步骤均已验证通过（tsc + pytest + 人工验证清单）。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 用户输入自然语言描述 → 后端调 LLM → 自动生成工作流节点/边并加载到画布,实现"描述即可用,生成即可执行"。

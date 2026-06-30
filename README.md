@@ -16,6 +16,7 @@ AI_Canvas_Flow/
 
 - **工作流编辑器**：基于 React Flow 的无限画布，5 类 16 种节点类型，拖拽/点击添加，连线编排
 - **工作流编排引擎**：单节点执行 + 全工作流拓扑排序（Kahn 算法按层并行），自动收集上游输入节点输出
+- **AI 快速生成**：自然语言描述 → LLM 自动生成工作流节点/边，支持替换/追加模式，自动布局 + 参数预填
 - **时间轴编辑器**：多轨道时间线（视频/音频/字幕/特效），rAF 播放循环，片段 resize/move 拖拽（吸附对齐 + 时长 tooltip + 视觉反馈）
 - **视频预览**：接入选中节点 outputArtifacts，与时间轴双向联动（currentTime 跳转 + onTimeUpdate 回写）
 - **AI 推理引擎**：文生图、图生视频、文生语音、高清放大、风格化、抠图、扩图；Celery 异步处理，进度实时写回 DB
@@ -100,8 +101,9 @@ cp .env.example .env
 # 启动开发服务器
 uvicorn app.main:app --reload --port 8000
 
-# 启动 Celery Worker
-celery -A app.tasks.celery_app worker -l info
+# 启动 Celery Worker（RabbitMQ 4.x 需加兼容参数）
+celery -A app.tasks.celery_app worker --loglevel=info --pool=solo \
+  --without-mingle --without-gossip --without-heartbeat
 
 # 数据库迁移
 alembic upgrade head
