@@ -320,8 +320,8 @@ async def _execute_render_task(
     """
     sf = _get_celery_session_factory()
 
-    # image_output 节点：从上游 artifacts 提取图片 URL 透传
-    if subtype == "image_output" and input_artifacts:
+    # image_output / upscale 节点：从上游 artifacts 提取图片 URL 透传
+    if subtype in ("image_output", "upscale") and input_artifacts:
         image_art = next((a for a in input_artifacts if a.get("type") == "image" and a.get("url")), None)
         if image_art:
             result_url = image_art["url"]
