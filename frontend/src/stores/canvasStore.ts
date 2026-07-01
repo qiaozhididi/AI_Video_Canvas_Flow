@@ -3,6 +3,7 @@ import type { CanvasNode, CanvasEdge, CanvasNodeData, NodeStatus } from '@/types
 import { NODE_TEMPLATES } from '@/types/canvas';
 import { useCollabStore, type NodeUpdatePayload, type EdgeUpdatePayload } from './collabStore';
 import { useAutoSaveStore } from './autoSaveStore';
+import { useHistoryStore } from './historyStore';
 import { toCanvasNode, toCanvasEdge } from '@/utils/canvasTransform';
 import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
 
@@ -59,6 +60,7 @@ interface CanvasState {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
   selectedNodeId: string | null;
+  selectedNodeIds: string[];  // 多选状态（React Flow onSelectionChange 同步）
 
   // 节点操作
   addNode: (subtype: string, position: { x: number; y: number }) => void;
@@ -66,6 +68,8 @@ interface CanvasState {
   updateNodeData: (id: string, data: Partial<CanvasNodeData>) => void;
   updateNodePosition: (id: string, position: { x: number; y: number }) => void;
   setSelectedNode: (id: string | null) => void;
+  setSelectedNodeIds: (ids: string[]) => void;
+  selectAll: () => void;
 
   // 边操作
   addEdge: (edge: CanvasEdge) => void;
@@ -97,12 +101,19 @@ interface CanvasState {
   // 远端变更应用（不触发 emit，避免回环）
   applyRemoteNodeUpdate: (data: NodeUpdatePayload) => void;
   applyRemoteEdgeUpdate: (data: EdgeUpdatePayload) => void;
+
+  // 粘贴节点（由 clipboardStore.paste 调用）
+  addPastedNodes: (nodes: CanvasNode[], edges: CanvasEdge[]) => void;
+
+  // 对齐节点位置
+  alignNodes: (updates: Map<string, { x: number; y: number }>) => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: null,
+  selectedNodeIds: [],
 
   addNode: (subtype, position) => {
     const template = NODE_TEMPLATES.find((t) => t.subtype === subtype);
@@ -162,6 +173,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   setSelectedNode: (id) => {
     set({ selectedNodeId: id });
+  },
+
+  setSelectedNodeIds: (ids) => {
+    set({ selectedNodeIds: ids });
+  },
+
+  selectAll: () => {
+    const allIds = get().nodes.map((n) => n.id);
+    set({
+      selectedNodeIds: allIds,
+      nodes: get().nodes.map((n) => ({ ...n })),
+    });
   },
 
   addEdge: (edge) => {
@@ -274,6 +297,50 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     get().requestFitView();
 
     // 标记脏状态(触发 autoSaveStore 防抖保存)
+    useAutoSaveStore.getState().markDirty();
+  },
+
+  addPastedNodes: (nodes, edges) => {
+    const oldNodes = get().nodes;
+    const oldEdges = get().edges;
+    const newNodes = [...oldNodes, ...nodes];
+    const newEdges = [...oldEdges, ...edges];
+
+    set({ nodes: newNodes, edges: newEdges });
+
+    // 历史记录（复用 batch_set）
+    useHistoryStore.getState().pushBatchSetNodes({ from: oldNodes, to: newNodes });
+    useHistoryStore.getState().pushBatchSetEdges({ from: oldEdges, to: newEdges });
+
+    // 协作广播
+    nodes.forEach((n) => emitNodeChange('add', n));
+    edges.forEach((e) => emitEdgeChange('add', e));
+
+    // 标记脏状态
+    useAutoSaveStore.getState().markDirty();
+  },
+
+  alignNodes: (updates) => {
+    const oldNodes = get().nodes;
+    const newNodes = oldNodes.map((n) => {
+      const update = updates.get(n.id);
+      return update ? { ...n, position: update } : n;
+    });
+
+    set({ nodes: newNodes });
+
+    // 历史记录
+    useHistoryStore.getState().pushBatchSetNodes({ from: oldNodes, to: newNodes });
+
+    // 协作广播：广播位置变更
+    for (const [id, pos] of updates) {
+      const node = newNodes.find((n) => n.id === id);
+      if (node) {
+        emitNodeChange('update', { ...node, position: pos });
+      }
+    }
+
+    // 标记脏状态
     useAutoSaveStore.getState().markDirty();
   },
 

@@ -11,9 +11,11 @@ import {
   applyEdgeChanges,
   BackgroundVariant,
   ConnectionLineType,
+  SelectionMode,
   type Node,
   type Edge,
   type ReactFlowInstance,
+  type OnSelectionChangeFunc,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -22,17 +24,19 @@ import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useCollabStore } from '@/stores/collabStore';
 import CanvasNodeComponent from './CanvasNode';
 import RemoteCursors from './RemoteCursors';
+import AlignmentToolbar from './AlignmentToolbar';
 import type { CanvasNodeData, NodeSubtype } from '@/types/canvas';
 
 const nodeTypes = { canvasNode: CanvasNodeComponent };
 
 export default function Canvas() {
-  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken, selectedNodeIds, setSelectedNodeIds } = useCanvasStore();
   const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const markDirty = useAutoSaveStore((s) => s.markDirty);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
 
-  // 将 store 中的 CanvasNode 映射为 ReactFlow Node，保留 ReactFlow 内部状态
+  // 将 store 中的 CanvasNode 映射为 ReactFlow Node，保留 React Flow 内部状态
+  // selected 由 selectedNodeIds 派生（单一事实来源）：框选 onSelectionChange 与 Ctrl+A selectAll 均通过 selectedNodeIds 驱动 React Flow 视觉高亮
   const reactFlowNodes: Node[] = useMemo(
     () => nodes.map((n) => ({
       id: n.id,
@@ -40,8 +44,9 @@ export default function Canvas() {
       position: n.position,
       data: { ...n.data } as Record<string, unknown>,
       measured: n.measured,
+      selected: selectedNodeIds.includes(n.id),
     })),
-    [nodes]
+    [nodes, selectedNodeIds]
   );
 
   const onNodesChange: OnNodesChange = useCallback(
@@ -175,6 +180,11 @@ export default function Canvas() {
     [addNode, pushAddNode, markDirty]
   );
 
+  // 选中状态同步到 store（供 EditorLayout 复制使用）
+  const onSelectionChange: OnSelectionChangeFunc = useCallback(({ nodes: selected }) => {
+    setSelectedNodeIds(selected.map((n) => n.id));
+  }, [setSelectedNodeIds]);
+
   // 监听 fitViewToken 变化,触发 ReactFlow 自适应视图(AI 生成后用)
   useEffect(() => {
     if (fitViewToken === 0) return; // 跳过初始值
@@ -194,6 +204,7 @@ export default function Canvas() {
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
         onMouseMove={onMouseMove}
+        onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -201,10 +212,13 @@ export default function Canvas() {
         connectionLineType={ConnectionLineType.SmoothStep}
         fitView
         deleteKeyCode={['Backspace', 'Delete']}
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode={['Meta', 'Control']}
         className="bg-canvas-bg"
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2A2A3E" />
         <RemoteCursors />
+        <AlignmentToolbar />
         <Controls
           position="bottom-right"
           showInteractive={false}
