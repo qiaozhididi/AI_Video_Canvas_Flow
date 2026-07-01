@@ -34,7 +34,12 @@ export const useClipboardStore = create<ClipboardState>((set, get) => ({
     if (nodes.length === 0) return;
     set({
       clipboard: {
-        nodes: nodes.map((n) => ({ ...n, data: { ...n.data } })),
+        // 深拷贝 position 和 data.params，避免与原节点共享引用
+        nodes: nodes.map((n) => ({
+          ...n,
+          position: { ...n.position },
+          data: { ...n.data, params: { ...n.data.params } },
+        })),
         edges: edges.map((e) => ({ ...e })),
         copiedAt: Date.now(),
       },
