@@ -1,6 +1,6 @@
 # AI Canvas Flow — 开发路线图与未完成功能清单
 
-> 更新时间: 2026-06-30
+> 更新时间: 2026-07-01
 
 ## 当前项目状态概览
 
@@ -223,8 +223,14 @@
 - 输入描述 → LLM API → 生成工作流节点/边
 - 详见上方「已完成任务 #10」（merge commit 2693a9c）
 
-#### 13. 节点快捷操作 ⏳ 待开发
-- 复制/粘贴、全选/框选、对齐工具
+#### 13. 节点快捷操作 ✅ 已完成
+- 复制/粘贴（Ctrl/Cmd+C/V）、全选/框选（Ctrl/Cmd+A）、8 种对齐工具（左/右/顶/底/水平居中/垂直居中/水平等距/垂直等距）
+- 浮动对齐工具条（选中 ≥2 节点显示，等距分布需 ≥3 节点）
+- 复用现有 historyStore/collabStore/autoSaveStore 机制
+- 单元测试：alignment.ts（8 函数边界场景）+ clipboardStore.ts（copy/paste/clear 深拷贝与 ID 生成），48/48 通过
+- MCP 端到端验证：复制粘贴（9→18 节点，内部边重映射）+ 对齐（左对齐/顶对齐/水平等距分布）
+- 合并: merge commit 1234e14（--no-ff）
+- 涉及文件: alignment.ts, clipboardStore.ts, canvasStore.ts, AlignmentToolbar.tsx, Canvas.tsx, EditorLayout.tsx, verify_node_quick_actions.md
 
 ---
 
