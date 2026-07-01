@@ -39,10 +39,12 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
 
   const [editValue, setEditValue] = useState(data.label);
   const inputRef = useRef<HTMLInputElement>(null);
+  const cancelledRef = useRef(false);
 
   // 进入编辑态时聚焦并全选
   useEffect(() => {
     if (isEditing && inputRef.current) {
+      cancelledRef.current = false;
       inputRef.current.focus();
       inputRef.current.select();
       setEditValue(data.label);
@@ -50,11 +52,16 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
   }, [isEditing, data.label]);
 
   const commitRename = () => {
+    if (cancelledRef.current) {
+      cancelledRef.current = false;
+      return;
+    }
     renameNode(id, editValue);
     setEditingNodeId(null);
   };
 
   const cancelRename = () => {
+    cancelledRef.current = true;
     setEditingNodeId(null);
   };
 
