@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X, Keyboard } from 'lucide-react';
 
 interface ShortcutHelpModalProps {
@@ -43,6 +44,19 @@ const GROUPS: { title: string; items: ShortcutItem[] }[] = [
 ];
 
 export default function ShortcutHelpModal({ open, onClose }: ShortcutHelpModalProps) {
+  // Esc 键关闭（与 ContextMenu.tsx 一致的标准模式）
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   return (
