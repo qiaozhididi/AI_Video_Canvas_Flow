@@ -87,7 +87,7 @@ export default function ContextMenu({ visible, position, items, onClose }: Conte
           handleItemClick(items[activeIndex]);
         }
       } else if (e.key === 'ArrowRight') {
-        if (activeIndex >= 0 && items[activeIndex]?.submenu) {
+        if (activeIndex >= 0 && !items[activeIndex]?.disabled && items[activeIndex]?.submenu) {
           setSubmenuOpenIndex(activeIndex);
         }
       } else if (e.key === 'ArrowLeft') {
@@ -102,8 +102,8 @@ export default function ContextMenu({ visible, position, items, onClose }: Conte
   // 边界检测：菜单宽度估算 200px，高度按 items 数 * 32px 估算
   const MENU_WIDTH = 200;
   const MENU_HEIGHT = items.length * 32;
-  const adjustedX = position.x + MENU_WIDTH > window.innerWidth ? position.x - MENU_WIDTH : position.x;
-  const adjustedY = position.y + MENU_HEIGHT > window.innerHeight ? position.y - MENU_HEIGHT : position.y;
+  const adjustedX = Math.max(0, position.x + MENU_WIDTH > window.innerWidth ? position.x - MENU_WIDTH : position.x);
+  const adjustedY = Math.max(0, position.y + MENU_HEIGHT > window.innerHeight ? position.y - MENU_HEIGHT : position.y);
 
   return (
     <div
