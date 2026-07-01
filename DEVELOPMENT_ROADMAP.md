@@ -232,6 +232,21 @@
 - 合并: merge commit 1234e14（--no-ff）
 - 涉及文件: alignment.ts, clipboardStore.ts, canvasStore.ts, AlignmentToolbar.tsx, Canvas.tsx, EditorLayout.tsx, verify_node_quick_actions.md
 
+### 14. 右键菜单 + 快捷键体系
+- **前端**: 新增 ContextMenu 通用浮层组件（MenuItem 接口、边界检测、键盘导航、子菜单）
+- **前端**: 新增 useContextMenu hook 管理菜单状态（visible/position/type/targetNodeId）
+- **前端**: 新增 ShortcutHelpModal 快捷键帮助面板（分组列表 + Esc/遮罩关闭）
+- **前端**: CanvasNode 支持 inline 重命名（双击/F2 进入编辑态，Enter 确认/Escape 取消/onBlur 确认，cancelledRef 守卫避免 Escape 误提交）
+- **前端**: Canvas 绑定 onNodeContextMenu/onPaneContextMenu，构建节点/画布菜单项（复制/粘贴/重命名/执行/删除/对齐子菜单/新建节点子菜单）
+- **前端**: EditorLayout 扩展快捷键（F2 重命名/Escape 取消/Ctrl+/ 帮助/F5 执行），Escape 优先级链（编辑态 > 帮助面板 > 选中）
+- **修复**: canvasStore.removeNode 写历史（原不写历史导致无法撤销）
+- **新增**: canvasStore.removeNodes 批量删除方法（单次写历史）
+- **新增**: canvasStore.renameNode 方法（写历史 + 协作广播）
+- **新增**: canvasStore.editingNodeId/setEditingNodeId 跨组件编辑态通信
+- **改进**: addPastedNodes 支持 targetPosition 参数（粘贴到右键位置）
+- **测试**: canvasStore.test.ts 单元测试（editingNodeId/renameNode/removeNode/removeNodes/addPastedNodes targetPosition），59/59 通过
+- **涉及文件**: ContextMenu.tsx, useContextMenu.ts, ShortcutHelpModal.tsx, canvasStore.ts, canvasStore.test.ts, CanvasNode.tsx, Canvas.tsx, EditorLayout.tsx
+
 ---
 
 ## 后端 API 完整清单

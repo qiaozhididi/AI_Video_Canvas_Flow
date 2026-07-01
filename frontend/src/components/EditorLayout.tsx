@@ -9,9 +9,10 @@ import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution } from '@/utils/workflowExecutor';
+import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
+import ShortcutHelpModal from './canvas/ShortcutHelpModal';
 import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
 
 // 在线用户头像配色（按 user_id hash 选取）
@@ -55,6 +56,7 @@ export default function EditorLayout() {
     state: 'idle', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null
   });
   const [showAiModal, setShowAiModal] = useState(false);
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
 
   const handleExecuteWorkflow = async () => {
     if (workflowStatus.state === 'running') return;
@@ -147,9 +149,64 @@ export default function EditorLayout() {
   // 快捷键绑定
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // 输入框聚焦时不触发（避免影响文本编辑）
+      // 输入框聚焦时不触发（避免影响文本编辑）—— 但 Escape 例外（用于退出编辑态）
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+      // Escape：优先级 链 —— 编辑态 > 帮助面板 > 选中
+      if (e.key === 'Escape') {
+        const { editingNodeId, selectedNodeIds } = useCanvasStore.getState();
+        if (editingNodeId !== null) {
+          e.preventDefault();
+          useCanvasStore.getState().setEditingNodeId(null);
+          return;
+        }
+        if (showShortcutHelp) {
+          e.preventDefault();
+          setShowShortcutHelp(false);
+          return;
+        }
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          useCanvasStore.getState().setSelectedNodeIds([]);
+          return;
+        }
+        return;
+      }
+
+      if (isInputFocused) return;
+
+      // F2：重命名选中节点（仅单选时）
+      if (e.key === 'F2') {
+        const { selectedNodeIds } = useCanvasStore.getState();
+        if (selectedNodeIds.length === 1) {
+          e.preventDefault();
+          useCanvasStore.getState().setEditingNodeId(selectedNodeIds[0]);
+        }
+        return;
+      }
+
+      // F5：执行选中节点（仅单选且 isExecutable 时）；一律阻止浏览器刷新
+      if (e.key === 'F5') {
+        e.preventDefault();
+        const { selectedNodeIds, nodes } = useCanvasStore.getState();
+        if (selectedNodeIds.length === 1) {
+          const node = nodes.find((n) => n.id === selectedNodeIds[0]);
+          if (node && isExecutable(node.data.subtype)) {
+            void executeNode(node.id).catch((err) => {
+              toast.error(`执行失败: ${err?.message || '未知错误'}`);
+            });
+          }
+        }
+        return;
+      }
+
+      // Ctrl/Cmd + / ：打开快捷键帮助面板
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+        e.preventDefault();
+        setShowShortcutHelp(true);
+        return;
+      }
 
       // Ctrl+Z 撤销
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -200,7 +257,7 @@ export default function EditorLayout() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [undo, redo, saveCurrentProject]);
+  }, [undo, redo, saveCurrentProject, showShortcutHelp]);
 
   if (!currentProject || currentProject.id !== projectId) {
     return (
@@ -402,6 +459,11 @@ export default function EditorLayout() {
         open={showAiModal}
         onClose={() => setShowAiModal(false)}
         onGenerated={handleAiGenerated}
+      />
+      {/* 快捷键帮助面板 */}
+      <ShortcutHelpModal
+        open={showShortcutHelp}
+        onClose={() => setShowShortcutHelp(false)}
       />
     </div>
   );

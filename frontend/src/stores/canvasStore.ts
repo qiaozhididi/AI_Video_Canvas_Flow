@@ -65,11 +65,17 @@ interface CanvasState {
   // 节点操作
   addNode: (subtype: string, position: { x: number; y: number }) => void;
   removeNode: (id: string) => void;
+  removeNodes: (ids: string[]) => void;  // 批量删除（单次写历史）
   updateNodeData: (id: string, data: Partial<CanvasNodeData>) => void;
   updateNodePosition: (id: string, position: { x: number; y: number }) => void;
   setSelectedNode: (id: string | null) => void;
   setSelectedNodeIds: (ids: string[]) => void;
   selectAll: () => void;
+
+  // inline 重命名编辑态
+  editingNodeId: string | null;
+  setEditingNodeId: (id: string | null) => void;
+  renameNode: (id: string, newLabel: string) => void;
 
   // 边操作
   addEdge: (edge: CanvasEdge) => void;
@@ -103,7 +109,11 @@ interface CanvasState {
   applyRemoteEdgeUpdate: (data: EdgeUpdatePayload) => void;
 
   // 粘贴节点（由 clipboardStore.paste 调用）
-  addPastedNodes: (nodes: CanvasNode[], edges: CanvasEdge[]) => void;
+  addPastedNodes: (
+    nodes: CanvasNode[],
+    edges: CanvasEdge[],
+    targetPosition?: { x: number; y: number },
+  ) => void;
 
   // 对齐节点位置
   alignNodes: (updates: Map<string, { x: number; y: number }>) => void;
@@ -114,6 +124,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   edges: [],
   selectedNodeId: null,
   selectedNodeIds: [],
+  editingNodeId: null,
 
   addNode: (subtype, position) => {
     const template = NODE_TEMPLATES.find((t) => t.subtype === subtype);
@@ -140,15 +151,82 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   removeNode: (id) => {
-    // 先记录受影响的边，set 后广播删除（节点删除会连带删除关联边）
-    const affectedEdges = get().edges.filter((e) => e.source === id || e.target === id);
-    set((state) => ({
-      nodes: state.nodes.filter((n) => n.id !== id),
-      edges: state.edges.filter((e) => e.source !== id && e.target !== id),
-      selectedNodeId: state.selectedNodeId === id ? null : state.selectedNodeId,
-    }));
+    const oldNodes = get().nodes;
+    const oldEdges = get().edges;
+    const affectedEdges = oldEdges.filter((e) => e.source === id || e.target === id);
+    const newNodes = oldNodes.filter((n) => n.id !== id);
+    const newEdges = oldEdges.filter((e) => e.source !== id && e.target !== id);
+
+    set({
+      nodes: newNodes,
+      edges: newEdges,
+      selectedNodeId: get().selectedNodeId === id ? null : get().selectedNodeId,
+      selectedNodeIds: get().selectedNodeIds.filter((sid) => sid !== id),
+    });
+
+    // 写历史（修复技术债：原实现不写历史导致无法撤销）
+    useHistoryStore.getState().pushBatchSetNodes({ from: oldNodes, to: newNodes });
+    useHistoryStore.getState().pushBatchSetEdges({ from: oldEdges, to: newEdges });
+
+    // 协作广播
     emitNodeDelete(id);
     affectedEdges.forEach((e) => emitEdgeDelete(e.id));
+
+    useAutoSaveStore.getState().markDirty();
+  },
+
+  removeNodes: (ids) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const oldNodes = get().nodes;
+    const oldEdges = get().edges;
+    const affectedEdges = oldEdges.filter((e) => idSet.has(e.source) || idSet.has(e.target));
+    const newNodes = oldNodes.filter((n) => !idSet.has(n.id));
+    const newEdges = oldEdges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target));
+
+    set({
+      nodes: newNodes,
+      edges: newEdges,
+      selectedNodeId: idSet.has(get().selectedNodeId || '') ? null : get().selectedNodeId,
+      selectedNodeIds: get().selectedNodeIds.filter((sid) => !idSet.has(sid)),
+    });
+
+    // 单次写历史
+    useHistoryStore.getState().pushBatchSetNodes({ from: oldNodes, to: newNodes });
+    useHistoryStore.getState().pushBatchSetEdges({ from: oldEdges, to: newEdges });
+
+    // 批量广播
+    ids.forEach((id) => emitNodeDelete(id));
+    affectedEdges.forEach((e) => emitEdgeDelete(e.id));
+
+    useAutoSaveStore.getState().markDirty();
+  },
+
+  setEditingNodeId: (id) => {
+    set({ editingNodeId: id });
+  },
+
+  renameNode: (id, newLabel) => {
+    const trimmed = newLabel.trim();
+    const oldNodes = get().nodes;
+    const target = oldNodes.find((n) => n.id === id);
+    if (!target) return;
+    if (trimmed === '' || trimmed === target.data.label) return;
+
+    const newNodes = oldNodes.map((n) =>
+      n.id === id ? { ...n, data: { ...n.data, label: trimmed } } : n,
+    );
+
+    set({ nodes: newNodes });
+
+    // 写历史
+    useHistoryStore.getState().pushBatchSetNodes({ from: oldNodes, to: newNodes });
+
+    // 协作广播
+    const updated = newNodes.find((n) => n.id === id);
+    if (updated) emitNodeChange('update', updated);
+
+    useAutoSaveStore.getState().markDirty();
   },
 
   updateNodeData: (id, data) => {
@@ -254,7 +332,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   clearCanvas: () => {
     // 整体重置（如切换项目），不广播
-    set({ nodes: [], edges: [], selectedNodeId: null });
+    set({ nodes: [], edges: [], selectedNodeId: null, editingNodeId: null });
   },
 
   fitViewToken: 0,
@@ -300,10 +378,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     useAutoSaveStore.getState().markDirty();
   },
 
-  addPastedNodes: (nodes, edges) => {
+  addPastedNodes: (nodes, edges, targetPosition) => {
     const oldNodes = get().nodes;
     const oldEdges = get().edges;
-    const newNodes = [...oldNodes, ...nodes];
+
+    // 计算 offset：有 targetPosition 时以第一个节点为锚点平移
+    let finalNodes = nodes;
+    if (targetPosition && nodes.length > 0) {
+      const anchor = nodes[0].position;
+      const dx = targetPosition.x - anchor.x;
+      const dy = targetPosition.y - anchor.y;
+      finalNodes = nodes.map((n) => ({
+        ...n,
+        position: { x: n.position.x + dx, y: n.position.y + dy },
+      }));
+    }
+
+    const newNodes = [...oldNodes, ...finalNodes];
     const newEdges = [...oldEdges, ...edges];
 
     set({ nodes: newNodes, edges: newEdges });
@@ -313,7 +404,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     useHistoryStore.getState().pushBatchSetEdges({ from: oldEdges, to: newEdges });
 
     // 协作广播
-    nodes.forEach((n) => emitNodeChange('add', n));
+    finalNodes.forEach((n) => emitNodeChange('add', n));
     edges.forEach((e) => emitEdgeChange('add', e));
 
     // 标记脏状态
