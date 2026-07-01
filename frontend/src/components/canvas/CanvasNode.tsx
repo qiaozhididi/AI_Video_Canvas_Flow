@@ -1,7 +1,8 @@
-import { memo } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { Handle, Position, type Node } from '@xyflow/react';
 import type { CanvasNodeData } from '@/types/canvas';
 import { NODE_CATEGORIES } from '@/types/canvas';
+import { useCanvasStore } from '@/stores/canvasStore';
 import {
   Type, Image, Music, Wand2, Video, Mic,
   Maximize, Palette, Scissors, Expand,
@@ -27,10 +28,35 @@ const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
 
 type CanvasNodeProps = { data: CanvasNodeData; selected: boolean; id: string };
 
-function CanvasNodeComponent({ data, selected }: CanvasNodeProps) {
+function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
   const category = NODE_CATEGORIES[data.type];
   const IconComponent = ICON_MAP[data.subtype] || AlertCircle;
   const StatusIcon = STATUS_ICONS[data.status];
+  const editingNodeId = useCanvasStore((s) => s.editingNodeId);
+  const setEditingNodeId = useCanvasStore((s) => s.setEditingNodeId);
+  const renameNode = useCanvasStore((s) => s.renameNode);
+  const isEditing = editingNodeId === id;
+
+  const [editValue, setEditValue] = useState(data.label);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 进入编辑态时聚焦并全选
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+      setEditValue(data.label);
+    }
+  }, [isEditing, data.label]);
+
+  const commitRename = () => {
+    renameNode(id, editValue);
+    setEditingNodeId(null);
+  };
+
+  const cancelRename = () => {
+    setEditingNodeId(null);
+  };
 
   const borderColor = data.status === 'running'
     ? 'border-status-running animate-pulse-neon'
@@ -71,9 +97,32 @@ function CanvasNodeComponent({ data, selected }: CanvasNodeProps) {
         >
           <IconComponent className="w-4 h-4" style={{ color: category.color }} />
         </div>
-        <span className="text-sm font-medium text-slate-200 font-display">
-          {data.label}
-        </span>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commitRename();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelRename();
+              }
+            }}
+            onBlur={commitRename}
+            className="flex-1 min-w-0 px-1 py-0 text-sm font-medium text-slate-200 font-display bg-canvas-bg border border-neon-purple rounded focus:outline-none"
+          />
+        ) : (
+          <span
+            className="flex-1 min-w-0 truncate text-sm font-medium text-slate-200 font-display"
+            onDoubleClick={() => setEditingNodeId(id)}
+            title={data.label}
+          >
+            {data.label}
+          </span>
+        )}
         {StatusIcon && (
           <StatusIcon
             className={`w-4 h-4 ml-auto ${
