@@ -332,7 +332,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   clearCanvas: () => {
     // 整体重置（如切换项目），不广播
-    set({ nodes: [], edges: [], selectedNodeId: null });
+    set({ nodes: [], edges: [], selectedNodeId: null, editingNodeId: null });
   },
 
   fitViewToken: 0,
