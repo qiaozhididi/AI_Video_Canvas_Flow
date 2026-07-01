@@ -186,13 +186,13 @@ export default function EditorLayout() {
         return;
       }
 
-      // F5：执行选中节点（仅单选且 isExecutable 时）
+      // F5：执行选中节点（仅单选且 isExecutable 时）；一律阻止浏览器刷新
       if (e.key === 'F5') {
+        e.preventDefault();
         const { selectedNodeIds, nodes } = useCanvasStore.getState();
         if (selectedNodeIds.length === 1) {
           const node = nodes.find((n) => n.id === selectedNodeIds[0]);
           if (node && isExecutable(node.data.subtype)) {
-            e.preventDefault();
             void executeNode(node.id).catch((err) => {
               toast.error(`执行失败: ${err?.message || '未知错误'}`);
             });
