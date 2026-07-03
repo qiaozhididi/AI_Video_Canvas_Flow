@@ -184,8 +184,8 @@ async def _execute_ai_task(
 
     task_type 路由规则：
     - ai_text2img → call_image_gen（文生图）
-    - ai_img2video → call_video_gen（图生视频，待实现）
-    - ai_tts → call_tts（文生语音，待实现）
+    - ai_img2video → call_video_gen（图生视频）
+    - ai_tts → call_audio_gen（文生语音）
     - ai_llm / 其他 → call_llm（文本生成）
     """
     sf = _get_celery_session_factory()
@@ -293,33 +293,110 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
         }
 
 
-async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None, node_params: dict | None = None) -> dict:
-    """图生视频（待实现，当前走模拟）"""
-    duration = (node_params or {}).get("duration", 5)
+async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
+    """图生视频：调用 video_gen API 或模拟"""
+    from app.services.ai_service import call_video_gen
 
     sf = _get_celery_session_factory()
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=10)
-        for p in [30, 60, 90]:
-            await asyncio.sleep(2)
-            await _update_task(db, task_id, progress=p)
-        result_url = f"ai_result/{task_id}/video.mp4"
+
+        if not prompt:
+            prompt = "一段流畅的视频"
+
+        # 从 input_artifacts 提取图片 URL
+        image_url = None
+        if input_artifacts:
+            for artifact in input_artifacts:
+                url = artifact.get("url", "")
+                if url and ("/image" in url or "/media" in url or url.startswith("http")):
+                    image_url = url
+                    break
+
+        await _update_task(db, task_id, progress=20)
+
+        result_url = ""
+        try:
+            if model_id:
+                # 获取 owner_id 用于 MinIO 持久化
+                render_task = await db.get(RenderTask, uuid.UUID(task_id))
+                owner_id = str(render_task.owner_id) if render_task else None
+
+                result = await call_video_gen(
+                    db, model_id, prompt, image_url=image_url,
+                    params={**(node_params or {}), "_owner_id": owner_id},
+                )
+                result_url = result["video_url"]
+        except ValueError as e:
+            logger.warning(f"[AI:Img2Video] 模型不匹配，回退模拟: {e}")
+            await _update_task(db, task_id, progress=40)
+        except RuntimeError as e:
+            logger.error(f"[AI:Img2Video] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+        except Exception as e:
+            logger.error(f"[AI:Img2Video] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+
+        if not result_url:
+            # 模拟生成（无模型或模型不匹配时）
+            for p in [40, 60, 80]:
+                await asyncio.sleep(2)
+                await _update_task(db, task_id, progress=p)
+            result_url = f"ai_result/{task_id}/video.mp4"
+
         await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
+
     return {"task_id": task_id, "status": "completed", "result_url": result_url}
 
 
 async def _do_tts(task_id: str, model_id: str | None, prompt: str, node_params: dict | None = None) -> dict:
-    """文生语音（待实现，当前走模拟）"""
-    voice = (node_params or {}).get("voice", "default")
+    """文生语音：调用 audio_gen API 或模拟"""
+    from app.services.ai_service import call_audio_gen
 
     sf = _get_celery_session_factory()
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=10)
-        for p in [30, 60, 90]:
-            await asyncio.sleep(1)
-            await _update_task(db, task_id, progress=p)
-        result_url = f"ai_result/{task_id}/audio.mp3"
+
+        if not prompt:
+            prompt = "这是一段语音合成示例。"
+
+        await _update_task(db, task_id, progress=20)
+
+        result_url = ""
+        try:
+            if model_id:
+                # 获取 owner_id 用于 MinIO 持久化
+                render_task = await db.get(RenderTask, uuid.UUID(task_id))
+                owner_id = str(render_task.owner_id) if render_task else None
+
+                result = await call_audio_gen(
+                    db, model_id, prompt,
+                    params={**(node_params or {}), "_owner_id": owner_id},
+                )
+                result_url = result["audio_url"]
+        except ValueError as e:
+            logger.warning(f"[AI:TTS] 模型不匹配，回退模拟: {e}")
+            await _update_task(db, task_id, progress=40)
+        except RuntimeError as e:
+            logger.error(f"[AI:TTS] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+        except Exception as e:
+            logger.error(f"[AI:TTS] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+
+        if not result_url:
+            # 模拟生成（无模型或模型不匹配时）
+            for p in [40, 60, 80]:
+                await asyncio.sleep(1)
+                await _update_task(db, task_id, progress=p)
+            result_url = f"ai_result/{task_id}/audio.mp3"
+
         await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
+
     return {"task_id": task_id, "status": "completed", "result_url": result_url}
 
 
