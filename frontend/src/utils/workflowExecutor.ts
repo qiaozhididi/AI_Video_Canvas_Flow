@@ -148,6 +148,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
     model_id: modelId,
     prompt,
     input_artifacts: inputPayload,
+    node_params: { ...node.data.params },
   });
 
   useCanvasStore.getState().setNodeStatus(nodeId, 'running', 0);
@@ -273,6 +274,76 @@ export async function executeWorkflow(): Promise<WorkflowExecutionStatus> {
   let completedNodes = 0;
 
   for (const layer of layers) {
+    if (cancelRequested) {
+      currentExecutionStatus.state = 'failed';
+      currentExecutionStatus.error = '用户取消';
+      break;
+    }
+
+    const results = await Promise.allSettled(
+      layer.map((nodeId) => executeNode(nodeId))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        completedNodes++;
+      } else {
+        currentExecutionStatus.state = 'failed';
+        currentExecutionStatus.failedNodeId = layer[i];
+        currentExecutionStatus.error = r.reason?.message || '节点执行失败';
+        currentExecutionStatus.completedNodes = completedNodes;
+        return { ...currentExecutionStatus };
+      }
+    }
+
+    currentExecutionStatus.completedNodes = completedNodes;
+  }
+
+  if (currentExecutionStatus.state === 'running') {
+    currentExecutionStatus.state = 'completed';
+  }
+
+  return { ...currentExecutionStatus };
+}
+
+// ── 断点续执行 ──
+
+export async function resumeWorkflow(): Promise<WorkflowExecutionStatus> {
+  const { nodes, edges } = useCanvasStore.getState();
+  const layers = topologicalSort(nodes, edges);
+
+  // 过滤掉已完成节点，只执行 idle/pending/failed 的节点
+  const pendingLayers = layers
+    .map((layer) =>
+      layer.filter((nodeId) => {
+        const node = nodes.find((n) => n.id === nodeId);
+        return node && node.data.status !== 'completed';
+      })
+    )
+    .filter((layer) => layer.length > 0);
+
+  const executableNodes = nodes.filter(
+    (n) => isExecutable(n.data.subtype) && n.data.status !== 'completed'
+  );
+  const totalNodes = executableNodes.length;
+
+  if (totalNodes === 0) {
+    return { state: 'completed', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null };
+  }
+
+  currentExecutionStatus = {
+    state: 'running',
+    totalNodes,
+    completedNodes: 0,
+    failedNodeId: null,
+    error: null,
+  };
+  cancelRequested = false;
+
+  let completedNodes = 0;
+
+  for (const layer of pendingLayers) {
     if (cancelRequested) {
       currentExecutionStatus.state = 'failed';
       currentExecutionStatus.error = '用户取消';
