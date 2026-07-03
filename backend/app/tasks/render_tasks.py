@@ -226,7 +226,10 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
     from app.services.ai_service import call_image_gen
 
     # 火山引擎 SeedReam 要求 size 为 1k/2k/4k 或 WIDTHxHEIGHT 格式
-    size = (node_params or {}).get("size", "2k")
+    # 用户可能输入 1920*1080 或 1920x1080 等格式，需规范化
+    size = (node_params or {}).get("size", "2k") or "2k"
+    if "*" in str(size):
+        size = str(size).replace("*", "x")
 
     sf = _get_celery_session_factory()
     async with sf() as db:
@@ -249,6 +252,24 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
             # 模型类型不匹配（如传入了 LLM 模型），回退到模拟生成
             logger.warning(f"[AI:Text2Img] 模型不匹配，回退模拟: {e}")
             await _update_task(db, task_id, progress=50)
+        except RuntimeError as e:
+            err_msg = str(e)
+            # size 参数不合法时，回退到 2k 重试
+            if "InvalidParameter" in err_msg and "size" in err_msg and size != "2k":
+                logger.warning(f"[AI:Text2Img] size={size} 不合法，回退到 2k 重试")
+                size = "2k"
+                try:
+                    result = await call_image_gen(db, model_id, prompt, params={"size": "2k"})
+                    result_url = result["url"]
+                    revised_prompt = result.get("revised_prompt", "")
+                except Exception as retry_err:
+                    logger.error(f"[AI:Text2Img] 重试也失败: {retry_err}", exc_info=True)
+                    await _update_task(db, task_id, status="failed", error_message=str(retry_err)[:500], progress=0)
+                    return {"task_id": task_id, "status": "failed", "error": str(retry_err)}
+            else:
+                logger.error(f"[AI:Text2Img] 调用失败: {e}", exc_info=True)
+                await _update_task(db, task_id, status="failed", error_message=err_msg[:500], progress=0)
+                return {"task_id": task_id, "status": "failed", "error": err_msg}
         except Exception as e:
             logger.error(f"[AI:Text2Img] 调用失败: {e}", exc_info=True)
             await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
