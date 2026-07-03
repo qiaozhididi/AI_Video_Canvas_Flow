@@ -71,7 +71,7 @@ export default function AlignmentToolbar() {
         const Icon = btn.icon;
         return (
           <button
-            key={idx}
+            key={btn.title}
             onClick={() => handleAlign(btn.fn)}
             title={btn.title}
             className="p-1.5 rounded hover:bg-canvas-hover text-slate-300 hover:text-white transition-colors"

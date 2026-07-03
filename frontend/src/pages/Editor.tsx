@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect, useState, useMemo } from 'react';
+import { useCallback, useRef, useState, useMemo } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
@@ -16,9 +16,6 @@ import type { Clip, TrackType } from '@/types/timeline';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import { aiApi } from '@/utils/apiClient';
 import type { AiModelResponse } from '@/utils/apiClient';
-
-// ===== 性能监控：重渲染检测 =====
-const PERF_LOG = '[Perf:Editor]';
 
 export default function Editor() {
   // ===== Store hooks =====
@@ -74,26 +71,6 @@ export default function Editor() {
   const [showPreview, setShowPreview] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-
-  // ===== 性能日志：记录每次渲染 =====
-  const renderInfo = useRef({ count: 0, lastTime: performance.now() });
-  renderInfo.current.count++;
-  const currentRender = renderInfo.current.count;
-
-  useEffect(() => {
-    const elapsed = performance.now() - renderInfo.current.lastTime;
-    renderInfo.current.lastTime = performance.now();
-
-    if (currentRender <= 3 || currentRender % 50 === 0) {
-      console.log(
-        `${PERF_LOG} 渲染 #${currentRender} | ` +
-        `耗时: ${elapsed.toFixed(1)}ms | ` +
-        `nodes: ${nodes.length} | edges: ${edges.length} | ` +
-        `canUndo: ${canUndo} | canRedo: ${canRedo} | ` +
-        `isDirty: ${isDirty}`
-      );
-    }
-  }, [currentRender, nodes.length, edges.length, canUndo, canRedo, isDirty]);
 
   // ===== Mock 数据加载（仅用于开发调试，已移至调试面板手动触发） =====
 

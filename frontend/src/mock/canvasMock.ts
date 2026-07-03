@@ -169,9 +169,4 @@ export function loadMockData() {
   canvasStore.setEdges(MOCK_EDGES);
 
   historyStore.resumeRecording();
-
-  console.log('[MockData] 已加载 Mock 数据:', {
-    nodes: MOCK_NODES.length,
-    edges: MOCK_EDGES.length,
-  });
 }

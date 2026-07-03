@@ -116,14 +116,14 @@ export default function ContextMenu({ visible, position, items, onClose }: Conte
     >
       {items.map((item, idx) => {
         if (item.separator) {
-          return <div key={idx} className="h-px bg-canvas-border my-1" />;
+          return <div key={`sep-${idx}`} className="h-px bg-canvas-border my-1" />;
         }
         const Icon = item.icon;
         const isActive = idx === activeIndex;
         const hasSubmenu = !!item.submenu;
         return (
           <div
-            key={idx}
+            key={item.label ?? idx}
             role="menuitem"
             onMouseEnter={() => {
               setActiveIndex(idx);
@@ -179,12 +179,12 @@ function Submenu({
     >
       {items.map((item, idx) => {
         if (item.separator) {
-          return <div key={idx} className="h-px bg-canvas-border my-1" />;
+          return <div key={`sep-${idx}`} className="h-px bg-canvas-border my-1" />;
         }
         const Icon = item.icon;
         return (
           <div
-            key={idx}
+            key={item.label ?? idx}
             role="menuitem"
             onMouseEnter={() => {}}
             onClick={(e) => {
