@@ -78,7 +78,7 @@ async def _mark_failed(task_id: str, error_message: str):
         await _update_task(db, task_id, status="failed", error_message=error_message, progress=0)
 
 
-async def _run_task(task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None):
+async def _run_task(task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None, node_params: dict | None = None):
     """完整的异步任务执行流程——在同一个事件循环中运行"""
     from sqlalchemy import select
     from app.models.render_task import RenderTask
@@ -96,9 +96,19 @@ async def _run_task(task_id: str, model_id: str | None, prompt: str | None, inpu
             raise ValueError(f"任务 {task_id} 不存在")
         task_type, node_id = row
 
-    # 2. 根据 task_type 路由
+    # 2. 如果未传 node_params 但有 node_id，从 WorkflowNode.config.params 读取
+    if not node_params and node_id:
+        async with sf() as db:
+            node_result = await db.execute(
+                select(WorkflowNode.config).where(WorkflowNode.id == node_id)
+            )
+            config = node_result.scalar_one_or_none()
+            if config and isinstance(config, dict):
+                node_params = config.get("params")
+
+    # 3. 根据 task_type 路由
     if task_type and task_type.startswith("ai_"):
-        return await _execute_ai_task(task_id, model_id, prompt, input_artifacts)
+        return await _execute_ai_task(task_id, model_id, prompt, input_artifacts, node_params)
     else:
         # 查询节点 subtype（用于 image_output 透传逻辑）
         subtype = None
@@ -110,7 +120,7 @@ async def _run_task(task_id: str, model_id: str | None, prompt: str | None, inpu
                 config = node_result.scalar_one_or_none()
                 if config and isinstance(config, dict):
                     subtype = config.get("subtype")
-        return await _execute_render_task(task_id, input_artifacts, subtype)
+        return await _execute_render_task(task_id, input_artifacts, subtype, node_params)
 
 
 @celery_app.task(bind=True, name="run_render_task")
@@ -121,6 +131,7 @@ def run_render_task(
     prompt: str = None,
     node_id: str = None,
     input_artifacts: list[dict] | None = None,
+    node_params: dict | None = None,
 ) -> dict:
     """渲染任务
 
@@ -130,11 +141,12 @@ def run_render_task(
         prompt: 用户提示词
         node_id: 关联的画布节点 ID
         input_artifacts: 上游节点输出资产列表
+        node_params: 节点参数（从 WorkflowNode.config.params 读取或调用方传入）
     """
     loop = _get_celery_loop()
     try:
         result = loop.run_until_complete(
-            _run_task(task_id, model_id, prompt, input_artifacts)
+            _run_task(task_id, model_id, prompt, input_artifacts, node_params)
         )
         return result
     except Exception as e:
@@ -166,7 +178,7 @@ def _extract_text_from_artifacts(artifacts: list[dict] | None) -> str:
 
 
 async def _execute_ai_task(
-    task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None = None
+    task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None = None, node_params: dict | None = None
 ) -> dict:
     """执行 AI 推理任务：按 task_type 路由到不同的 AI 服务
 
@@ -187,25 +199,33 @@ async def _execute_ai_task(
         )
         task_type = result.scalar_one_or_none() or ""
 
-    # 构建用户内容：优先 prompt，否则从 input_artifacts 提取文本
+    # 从 node_params 提取 model_id（当传入的 model_id 为空时）
+    if not model_id and node_params:
+        model_id = node_params.get("model_id")
+
+    # 构建用户内容：优先 prompt，否则从 node_params 提取，最后从 input_artifacts 提取文本
     user_content = prompt or ""
+    if not user_content and node_params:
+        user_content = node_params.get("prompt") or node_params.get("text") or ""
     if not user_content:
         user_content = _extract_text_from_artifacts(input_artifacts)
 
     # 按 task_type 路由
     if task_type == "ai_text2img":
-        return await _do_text2img(task_id, model_id, user_content, input_artifacts)
+        return await _do_text2img(task_id, model_id, user_content, input_artifacts, node_params)
     elif task_type == "ai_img2video":
-        return await _do_img2video(task_id, model_id, user_content, input_artifacts)
+        return await _do_img2video(task_id, model_id, user_content, input_artifacts, node_params)
     elif task_type == "ai_tts":
-        return await _do_tts(task_id, model_id, user_content)
+        return await _do_tts(task_id, model_id, user_content, node_params)
     else:
         return await _do_llm(task_id, model_id, user_content)
 
 
-async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None) -> dict:
+async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
     """文生图：调用 image_gen API 或模拟"""
     from app.services.ai_service import call_image_gen
+
+    size = (node_params or {}).get("size", "2048x2048")
 
     sf = _get_celery_session_factory()
     async with sf() as db:
@@ -221,7 +241,7 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
 
         try:
             if model_id:
-                result = await call_image_gen(db, model_id, prompt, params={"size": "2048x2048"})
+                result = await call_image_gen(db, model_id, prompt, params={"size": size})
                 result_url = result["url"]
                 revised_prompt = result.get("revised_prompt", "")
         except ValueError as e:
@@ -251,8 +271,10 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
         }
 
 
-async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None) -> dict:
+async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None, node_params: dict | None = None) -> dict:
     """图生视频（待实现，当前走模拟）"""
+    duration = (node_params or {}).get("duration", 5)
+
     sf = _get_celery_session_factory()
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=10)
@@ -264,8 +286,10 @@ async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_a
     return {"task_id": task_id, "status": "completed", "result_url": result_url}
 
 
-async def _do_tts(task_id: str, model_id: str | None, prompt: str) -> dict:
+async def _do_tts(task_id: str, model_id: str | None, prompt: str, node_params: dict | None = None) -> dict:
     """文生语音（待实现，当前走模拟）"""
+    voice = (node_params or {}).get("voice", "default")
+
     sf = _get_celery_session_factory()
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=10)
@@ -311,7 +335,7 @@ async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict
 
 
 async def _execute_render_task(
-    task_id: str, input_artifacts: list[dict] | None = None, subtype: str | None = None
+    task_id: str, input_artifacts: list[dict] | None = None, subtype: str | None = None, node_params: dict | None = None
 ) -> dict:
     """执行默认渲染任务
 
