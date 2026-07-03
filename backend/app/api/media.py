@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.request import urlopen
 
 from fastapi import APIRouter, HTTPException, UploadFile
@@ -36,7 +36,7 @@ async def upload_media(file: UploadFile, user: CurrentUser, db: DBSession):
     content = await file.read()
     owner_id = uuid.UUID(user)
     asset_id = uuid.uuid4()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     storage_key = f"media/{user}/{asset_id}/{file.filename}"
 
     # 上传文件到 MinIO

@@ -394,30 +394,6 @@ export const templateApi = {
 // ── 工作流（节点/边） ──
 
 export const workflowApi = {
-  listNodes: (projectId: string) =>
-    request<NodeResponse[]>(`/workflows/${projectId}/nodes`),
-
-  createNode: (projectId: string, data: NodeCreateRequest) =>
-    request<NodeResponse>(`/workflows/${projectId}/nodes`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  deleteNode: (projectId: string, nodeId: string) =>
-    request<void>(`/workflows/${projectId}/nodes/${nodeId}`, { method: 'DELETE' }),
-
-  listEdges: (projectId: string) =>
-    request<EdgeResponse[]>(`/workflows/${projectId}/edges`),
-
-  createEdge: (projectId: string, data: EdgeCreateRequest) =>
-    request<EdgeResponse>(`/workflows/${projectId}/edges`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-
-  deleteEdge: (projectId: string, edgeId: string) =>
-    request<void>(`/workflows/${projectId}/edges/${edgeId}`, { method: 'DELETE' }),
-
   /** 批量保存：替换项目的全部节点和边 */
   save: (projectId: string, data: WorkflowSaveRequest) =>
     request<WorkflowSaveResponse>(`/workflows/${projectId}/save`, {
@@ -552,8 +528,6 @@ export const aiApi = {
     getDefault: () =>
       request<AiModelResponse>('/ai/models/default'),
   },
-  /** 获取默认 AI 模型 */
-  getDefaultModel: () => request<AiModelResponse>('/ai/models/default'),
 
   /** AI 快速生成工作流 */
   generateWorkflow: (data: { description: string; mode: 'replace' | 'append'; model_id?: string }) =>

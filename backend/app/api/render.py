@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -125,7 +125,7 @@ async def create_render_task(body: RenderTaskCreate, db: DBSession, user: Curren
     # 回写 celery_task_id
     task.celery_task_id = celery_result.id
     task.status = "running"
-    task.updated_at = datetime.utcnow()
+    task.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(task)
 
@@ -163,7 +163,7 @@ async def cancel_render_task(task_id: str, db: DBSession, user: CurrentUser):
         logger.info(f"[Render:Cancel] revoked celery task {task.celery_task_id}")
 
     task.status = "cancelled"
-    task.updated_at = datetime.utcnow()
+    task.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(task)
 
@@ -219,7 +219,7 @@ async def retry_render_task(task_id: str, db: DBSession, user: CurrentUser):
 
     new_task.celery_task_id = celery_result.id
     new_task.status = "running"
-    new_task.updated_at = datetime.utcnow()
+    new_task.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(new_task)
 

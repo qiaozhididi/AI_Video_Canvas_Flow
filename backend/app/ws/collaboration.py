@@ -107,8 +107,8 @@ async def disconnect(sid):
         if removed:
             try:
                 await sio.leave_room(sid, room)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"清理操作失败: {e}")
             logger.debug(f"[WS:LeaveRoom] sid={sid} room={room} (auto on disconnect)")
             await sio.emit(
                 "user_left",
@@ -172,8 +172,8 @@ async def leave_project(sid, data):
         return
     try:
         await sio.leave_room(sid, room)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"清理操作失败: {e}")
     logger.info(
         f"[WS:LeaveProject] sid={sid} user={removed['user_id']} project={project_id}"
     )

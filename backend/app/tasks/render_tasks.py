@@ -59,7 +59,7 @@ async def _update_task(db, task_id: str, **kwargs):
     """更新渲染任务状态"""
     from sqlalchemy import select
     from app.models.render_task import RenderTask
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     result = await db.execute(select(RenderTask).where(RenderTask.id == uuid.UUID(task_id)))
     task = result.scalar_one_or_none()
@@ -67,7 +67,7 @@ async def _update_task(db, task_id: str, **kwargs):
         return
     for key, value in kwargs.items():
         setattr(task, key, value)
-    task.updated_at = datetime.utcnow()
+    task.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
 

@@ -113,7 +113,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
     modelId = node.data.params.model_id as string | undefined;
     if (!modelId) {
       try {
-        const defaultModel = await aiApi.getDefaultModel();
+        const defaultModel = await aiApi.models.getDefault();
         modelId = defaultModel.id;
       } catch {
         throw new Error('请先在设置页配置 AI 模型');
@@ -204,7 +204,8 @@ function topologicalSort(nodes: CanvasNode[], edges: CanvasEdge[]): string[][] {
 
   for (const edge of edges) {
     if (executableIds.has(edge.source) && executableIds.has(edge.target)) {
-      adjacency.get(edge.source)!.add(edge.target);
+      const targets = adjacency.get(edge.source);
+      if (targets) targets.add(edge.target);
       inDegree.set(edge.target, (inDegree.get(edge.target) || 0) + 1);
     }
   }
