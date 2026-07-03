@@ -51,6 +51,8 @@ export default function AlignmentToolbar() {
     const positionableNodes = selectedNodes.map((n) => ({
       id: n.id,
       position: n.position,
+      width: n.measured?.width,
+      height: n.measured?.height,
     }));
     const updates = fn(positionableNodes);
     alignNodes(updates);

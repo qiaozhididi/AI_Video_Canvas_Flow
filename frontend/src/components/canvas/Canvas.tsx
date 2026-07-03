@@ -373,7 +373,12 @@ export default function Canvas() {
   const handleAlign = (fn: typeof alignLeft) => {
     const { nodes, selectedNodeIds, alignNodes } = useCanvasStore.getState();
     const selectedNodes = nodes.filter((n) => selectedNodeIds.includes(n.id));
-    const positionable = selectedNodes.map((n) => ({ id: n.id, position: n.position }));
+    const positionable = selectedNodes.map((n) => ({
+      id: n.id,
+      position: n.position,
+      width: n.measured?.width,
+      height: n.measured?.height,
+    }));
     const updates = fn(positionable);
     alignNodes(updates);
   };

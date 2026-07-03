@@ -1,18 +1,81 @@
 /**
  * 节点对齐计算纯函数
  *
- * 8 种对齐方式，每个函数接收节点数组，返回需要更新的节点位置 Map。
- * 等距分布需 ≥3 节点，否则降级为左对齐/顶对齐。
+ * 4 种对齐方式 + 重叠错开保护。
+ * 每个函数接收节点数组（含尺寸），返回需要更新的节点位置 Map。
  */
 
 interface PositionableNode {
   id: string;
   position: { x: number; y: number };
+  width?: number;
+  height?: number;
 }
 
 type PositionMap = Map<string, { x: number; y: number }>;
 
-/** 左对齐：所有节点 x = min(x) */
+// 默认节点尺寸（与 CanvasNode min-w-[180px] 对齐）
+const DEFAULT_WIDTH = 180;
+const DEFAULT_HEIGHT = 60;
+// 节点间最小间距
+const MIN_GAP = 20;
+
+/** 安全获取节点宽度 */
+function w(n: PositionableNode): number {
+  return n.width || DEFAULT_WIDTH;
+}
+
+/** 安全获取节点高度 */
+function h(n: PositionableNode): number {
+  return n.height || DEFAULT_HEIGHT;
+}
+
+/**
+ * 对齐后检测重叠并自动错开
+ * 主轴对齐后，检查 crossAxis 方向是否重叠（位置差 < 节点尺寸），
+ * 重叠则按顺序推开，保证最小间距
+ */
+function resolveOverlaps(
+  positions: PositionMap,
+  nodes: PositionableNode[],
+  mainAxis: 'x' | 'y',
+): PositionMap {
+  const result = new Map(positions);
+  const crossAxis = mainAxis === 'x' ? 'y' : 'x';
+  const crossSize = mainAxis === 'x' ? h : w;
+
+  // 按 crossAxis 坐标排序
+  const sorted = [...nodes].sort((a, b) => {
+    const pa = result.get(a.id)!;
+    const pb = result.get(b.id)!;
+    return pa[crossAxis] - pb[crossAxis];
+  });
+
+  // 逐个检查 crossAxis 方向是否与前一个节点重叠
+  for (let i = 1; i < sorted.length; i++) {
+    const prevPos = result.get(sorted[i - 1].id)!;
+    const currPos = result.get(sorted[i].id)!;
+
+    // 前一个节点在 crossAxis 方向的结束位置 + 最小间距
+    const minStart = prevPos[crossAxis] + crossSize(sorted[i - 1]) + MIN_GAP;
+
+    if (currPos[crossAxis] < minStart) {
+      // 错开当前节点及后续所有节点
+      const shift = minStart - currPos[crossAxis];
+      for (let j = i; j < sorted.length; j++) {
+        const pos = result.get(sorted[j].id)!;
+        result.set(sorted[j].id, {
+          ...pos,
+          [crossAxis]: pos[crossAxis] + shift,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+/** 左对齐：所有节点 x = min(x)，自动错开 y 方向重叠 */
 export function alignLeft(nodes: PositionableNode[]): PositionMap {
   const result: PositionMap = new Map();
   if (nodes.length === 0) return result;
@@ -20,21 +83,10 @@ export function alignLeft(nodes: PositionableNode[]): PositionMap {
   for (const n of nodes) {
     result.set(n.id, { x: minX, y: n.position.y });
   }
-  return result;
+  return resolveOverlaps(result, nodes, 'x');
 }
 
-/** 右对齐：所有节点 x = max(x) */
-export function alignRight(nodes: PositionableNode[]): PositionMap {
-  const result: PositionMap = new Map();
-  if (nodes.length === 0) return result;
-  const maxX = Math.max(...nodes.map((n) => n.position.x));
-  for (const n of nodes) {
-    result.set(n.id, { x: maxX, y: n.position.y });
-  }
-  return result;
-}
-
-/** 顶部对齐：所有节点 y = min(y) */
+/** 顶部对齐：所有节点 y = min(y)，自动错开 x 方向重叠 */
 export function alignTop(nodes: PositionableNode[]): PositionMap {
   const result: PositionMap = new Map();
   if (nodes.length === 0) return result;
@@ -42,21 +94,10 @@ export function alignTop(nodes: PositionableNode[]): PositionMap {
   for (const n of nodes) {
     result.set(n.id, { x: n.position.x, y: minY });
   }
-  return result;
+  return resolveOverlaps(result, nodes, 'y');
 }
 
-/** 底部对齐：所有节点 y = max(y) */
-export function alignBottom(nodes: PositionableNode[]): PositionMap {
-  const result: PositionMap = new Map();
-  if (nodes.length === 0) return result;
-  const maxY = Math.max(...nodes.map((n) => n.position.y));
-  for (const n of nodes) {
-    result.set(n.id, { x: n.position.x, y: maxY });
-  }
-  return result;
-}
-
-/** 水平居中：所有节点 y = avg(y) */
+/** 水平居中：所有节点 y = avg(y)，自动错开 x 方向重叠 */
 export function alignHorizontalCenter(nodes: PositionableNode[]): PositionMap {
   const result: PositionMap = new Map();
   if (nodes.length === 0) return result;
@@ -64,10 +105,10 @@ export function alignHorizontalCenter(nodes: PositionableNode[]): PositionMap {
   for (const n of nodes) {
     result.set(n.id, { x: n.position.x, y: avgY });
   }
-  return result;
+  return resolveOverlaps(result, nodes, 'y');
 }
 
-/** 垂直居中：所有节点 x = avg(x) */
+/** 垂直居中：所有节点 x = avg(x)，自动错开 y 方向重叠 */
 export function alignVerticalCenter(nodes: PositionableNode[]): PositionMap {
   const result: PositionMap = new Map();
   if (nodes.length === 0) return result;
@@ -75,33 +116,5 @@ export function alignVerticalCenter(nodes: PositionableNode[]): PositionMap {
   for (const n of nodes) {
     result.set(n.id, { x: avgX, y: n.position.y });
   }
-  return result;
-}
-
-/** 水平等距分布：按 x 排序后均匀分布 x（需 ≥3 节点，否则降级为 alignLeft） */
-export function distributeHorizontal(nodes: PositionableNode[]): PositionMap {
-  if (nodes.length < 3) return alignLeft(nodes);
-  const sorted = [...nodes].sort((a, b) => a.position.x - b.position.x);
-  const firstX = sorted[0].position.x;
-  const lastX = sorted[sorted.length - 1].position.x;
-  const step = (lastX - firstX) / (sorted.length - 1);
-  const result: PositionMap = new Map();
-  sorted.forEach((n, i) => {
-    result.set(n.id, { x: firstX + step * i, y: n.position.y });
-  });
-  return result;
-}
-
-/** 垂直等距分布：按 y 排序后均匀分布 y（需 ≥3 节点，否则降级为 alignTop） */
-export function distributeVertical(nodes: PositionableNode[]): PositionMap {
-  if (nodes.length < 3) return alignTop(nodes);
-  const sorted = [...nodes].sort((a, b) => a.position.y - b.position.y);
-  const firstY = sorted[0].position.y;
-  const lastY = sorted[sorted.length - 1].position.y;
-  const step = (lastY - firstY) / (sorted.length - 1);
-  const result: PositionMap = new Map();
-  sorted.forEach((n, i) => {
-    result.set(n.id, { x: n.position.x, y: firstY + step * i });
-  });
-  return result;
+  return resolveOverlaps(result, nodes, 'x');
 }
