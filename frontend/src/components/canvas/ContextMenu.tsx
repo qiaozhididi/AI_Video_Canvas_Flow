@@ -34,6 +34,7 @@ export default function ContextMenu({ visible, position, items, onClose }: Conte
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
+        e.stopImmediatePropagation(); // 阻止传播到 EditorLayout 的 Escape 处理
         onClose();
       }
     };
@@ -145,7 +146,7 @@ export default function ContextMenu({ visible, position, items, onClose }: Conte
             )}
             {hasSubmenu && <ChevronRight className="w-3 h-3 text-slate-500" />}
             {hasSubmenu && submenuOpenIndex === idx && item.submenu && (
-              <Submenu items={item.submenu} parentX={adjustedX} onClose={onClose} />
+              <Submenu items={item.submenu} parentX={adjustedX} parentY={adjustedY + idx * 32} onClose={onClose} />
             )}
           </div>
         );
@@ -154,18 +155,24 @@ export default function ContextMenu({ visible, position, items, onClose }: Conte
   );
 }
 
-// 子菜单组件（右展开，靠右边缘时左展开）
+// 子菜单组件（右展开，靠右边缘时左展开；底部溢出时向上偏移）
 function Submenu({
   items,
   parentX,
+  parentY,
   onClose,
 }: {
   items: MenuItem[];
   parentX: number;
+  parentY: number;
   onClose: () => void;
 }) {
   const SUBMENU_WIDTH = 200;
+  const ITEM_HEIGHT = 32;
   const openRight = parentX + SUBMENU_WIDTH * 2 < window.innerWidth;
+  // 垂直溢出检测：子菜单总高度超出视口底部时，向上偏移
+  const submenuHeight = items.length * ITEM_HEIGHT;
+  const overflowBottom = parentY + submenuHeight > window.innerHeight;
   const handleSubClick = (item: MenuItem) => {
     if (item.disabled || item.separator || item.submenu) return;
     item.onClick?.();
@@ -174,8 +181,11 @@ function Submenu({
   return (
     <div
       role="menu"
-      className="absolute top-0 min-w-[200px] bg-canvas-panel border border-canvas-border rounded-lg shadow-2xl py-1"
-      style={{ left: openRight ? '100%' : '-100%' }}
+      className="absolute min-w-[200px] bg-canvas-panel border border-canvas-border rounded-lg shadow-2xl py-1"
+      style={{
+        left: openRight ? '100%' : '-100%',
+        ...(overflowBottom ? { bottom: 0 } : { top: 0 }),
+      }}
     >
       {items.map((item, idx) => {
         if (item.separator) {
@@ -186,7 +196,6 @@ function Submenu({
           <div
             key={item.label ?? idx}
             role="menuitem"
-            onMouseEnter={() => {}}
             onClick={(e) => {
               e.stopPropagation();
               handleSubClick(item);

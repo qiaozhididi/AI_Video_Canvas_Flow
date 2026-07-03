@@ -271,9 +271,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   removeEdge: (id) => {
+    const edge = get().edges.find((e) => e.id === id);
+    if (!edge) return;
     set((state) => ({
       edges: state.edges.filter((e) => e.id !== id),
     }));
+    useHistoryStore.getState().pushRemoveEdge({ edge });
+    useAutoSaveStore.getState().markDirty();
     emitEdgeDelete(id);
   },
 

@@ -53,7 +53,7 @@ export const useClipboardStore = create<ClipboardState>((set, get) => ({
 
     const ts = Date.now();
     const rand = Math.random().toString(36).slice(2, 8);
-    const offset = PASTE_OFFSET;
+    const offset = PASTE_OFFSET * (get().pasteCount + 1);
 
     // 旧 ID → 新 ID 映射
     const idMap = new Map<string, string>();

@@ -79,7 +79,19 @@ export default function Canvas() {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      const updated = applyNodeChanges(changes, reactFlowNodes);
+      // 拦截键盘删除（Backspace/Delete）：使用 removeNodes 写入历史 + markDirty，
+      // 而非 React Flow 默认的 applyNodeChanges → setNodes（不写历史、不触发保存）
+      const removeChanges = changes.filter((c) => c.type === 'remove');
+      if (removeChanges.length > 0) {
+        const removeIds = removeChanges.map((c) => c.id);
+        removeNodes(removeIds);
+      }
+
+      // 过滤掉 remove 变更，只处理其余变更（position/select/dimensions 等）
+      const nonRemoveChanges = changes.filter((c) => c.type !== 'remove');
+      if (nonRemoveChanges.length === 0) return;
+
+      const updated = applyNodeChanges(nonRemoveChanges, reactFlowNodes);
       setNodes(
         updated.map((n) => ({
           id: n.id,
@@ -90,12 +102,12 @@ export default function Canvas() {
         }))
       );
 
-      // 协作广播：拖动结束广播节点 update；删除广播节点 delete。
+      // 协作广播：拖动结束广播节点 update。
       // 拖动中（dragging=true）不广播，避免高频。applyRemote 走 store set() 直接改 state，
       // 不经过此回调（仅 React Flow 内部交互触发），故无回环。
       const projectId = useCollabStore.getState().currentProjectId;
       if (!projectId) return;
-      for (const change of changes) {
+      for (const change of nonRemoveChanges) {
         if (change.type === 'position' && change.dragging === false) {
           const node = updated.find((n) => n.id === change.id);
           if (node) {
@@ -112,40 +124,41 @@ export default function Canvas() {
               },
             });
           }
-        } else if (change.type === 'remove') {
-          useCollabStore.getState().emitNodeUpdate({
-            project_id: projectId,
-            node_id: change.id,
-            action: 'delete',
-          });
         }
       }
     },
-    [reactFlowNodes, setNodes]
+    [reactFlowNodes, setNodes, removeNodes]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      const updated = applyEdgeChanges(changes, edges as Edge[]);
-      setEdges(updated);
-
-      // 协作广播：删除广播 edge delete
-      const projectId = useCollabStore.getState().currentProjectId;
-      if (!projectId) return;
-      for (const change of changes) {
-        if (change.type === 'remove') {
-          useCollabStore.getState().emitEdgeUpdate({
-            project_id: projectId,
-            edge_id: change.id,
-            action: 'delete',
-          });
+      // 拦截键盘删除 Edge：使用 removeEdge 写入历史 + markDirty
+      const removeChanges = changes.filter((c) => c.type === 'remove');
+      if (removeChanges.length > 0) {
+        for (const c of removeChanges) {
+          useCanvasStore.getState().removeEdge(c.id);
         }
       }
+
+      const nonRemoveChanges = changes.filter((c) => c.type !== 'remove');
+      if (nonRemoveChanges.length === 0) return;
+
+      const updated = applyEdgeChanges(nonRemoveChanges, edges as Edge[]);
+      setEdges(updated);
     },
     [edges, setEdges]
   );
 
   const onConnect: OnConnect = useCallback((connection) => {
+    // 校验：拒绝自连接
+    if (connection.source === connection.target) return;
+    // 校验：拒绝重复边
+    const exists = useCanvasStore.getState().edges.some(
+      (e) => e.source === connection.source && e.target === connection.target
+        && e.sourceHandle === connection.sourceHandle && e.targetHandle === connection.targetHandle
+    );
+    if (exists) return;
+
     // 用 canvasStore.addEdge（已实现广播），而非 xyflow addEdge + setEdges（不广播）
     useCanvasStore.getState().addEdge({
       id: `edge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

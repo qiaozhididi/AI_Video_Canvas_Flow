@@ -6,7 +6,6 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useTimelineStore } from '@/stores/timelineStore';
 import Canvas from '@/components/canvas/Canvas';
 import NodePanel from '@/components/panels/NodePanel';
-import PropertyPanel from '@/components/panels/PropertyPanel';
 import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
 import { loadMockData } from '@/mock';
@@ -348,12 +347,37 @@ function PropertyPanelWithHistory({
   };
 
   const handleParamChange = (key: string, value: unknown) => {
-    useHistoryStore.getState().pushUpdateNodeData({
-      nodeId: selectedNode.id,
-      from: { params: { [key]: data.params[key] } },
-      to: { params: { [key]: value } },
-    });
     onUpdateData(selectedNode.id, { params: { ...data.params, [key]: value } });
+  };
+
+  // 记录参数编辑前的快照，用于 blur 时一次性写入历史
+  const paramSnapshotRef = useRef<Record<string, unknown> | null>(null);
+
+  const handleParamFocus = (key: string) => {
+    if (!paramSnapshotRef.current) {
+      paramSnapshotRef.current = {};
+    }
+    if (!(key in paramSnapshotRef.current)) {
+      paramSnapshotRef.current[key] = data.params[key];
+    }
+  };
+
+  const handleParamBlur = (key: string) => {
+    if (!paramSnapshotRef.current || !(key in paramSnapshotRef.current)) return;
+    const oldValue = paramSnapshotRef.current[key];
+    const newValue = data.params[key];
+    delete paramSnapshotRef.current[key];
+    if (Object.keys(paramSnapshotRef.current).length === 0) {
+      paramSnapshotRef.current = null;
+    }
+    // 只在值实际改变时记录历史
+    if (oldValue !== newValue) {
+      useHistoryStore.getState().pushUpdateNodeData({
+        nodeId: selectedNode.id,
+        from: { params: { [key]: oldValue } },
+        to: { params: { [key]: newValue } },
+      });
+    }
   };
 
   const handleExecute = async () => {
@@ -395,6 +419,8 @@ function PropertyPanelWithHistory({
             type="text"
             value={data.label}
             onChange={(e) => onUpdateData(selectedNode.id, { label: e.target.value })}
+            onFocus={() => { if (!paramSnapshotRef.current) paramSnapshotRef.current = {}; if (!('label' in paramSnapshotRef.current)) paramSnapshotRef.current['label'] = data.label; }}
+            onBlur={() => { if (paramSnapshotRef.current && 'label' in paramSnapshotRef.current) { const old = paramSnapshotRef.current['label']; delete paramSnapshotRef.current['label']; if (Object.keys(paramSnapshotRef.current).length === 0) paramSnapshotRef.current = null; if (old !== data.label) { useHistoryStore.getState().pushUpdateNodeData({ nodeId: selectedNode.id, from: { label: old as string }, to: { label: data.label } }); } } }}
             className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
           />
         </div>
@@ -409,6 +435,8 @@ function PropertyPanelWithHistory({
                   <textarea
                     value={value}
                     onChange={(e) => handleParamChange(key, e.target.value)}
+                    onFocus={() => handleParamFocus(key)}
+                    onBlur={() => handleParamBlur(key)}
                     rows={3}
                     className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 placeholder-slate-500 focus:outline-none focus:border-neon-purple resize-none"
                   />
@@ -417,6 +445,8 @@ function PropertyPanelWithHistory({
                     type="text"
                     value={value}
                     onChange={(e) => handleParamChange(key, e.target.value)}
+                    onFocus={() => handleParamFocus(key)}
+                    onBlur={() => handleParamBlur(key)}
                     className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
                   />
                 )
@@ -425,6 +455,8 @@ function PropertyPanelWithHistory({
                   type="number"
                   value={value}
                   onChange={(e) => handleParamChange(key, Number(e.target.value))}
+                  onFocus={() => handleParamFocus(key)}
+                  onBlur={() => handleParamBlur(key)}
                   className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
                 />
               ) : (
@@ -432,6 +464,8 @@ function PropertyPanelWithHistory({
                   type="text"
                   value={String(value)}
                   onChange={(e) => handleParamChange(key, e.target.value)}
+                  onFocus={() => handleParamFocus(key)}
+                  onBlur={() => handleParamBlur(key)}
                   className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
                 />
               )}

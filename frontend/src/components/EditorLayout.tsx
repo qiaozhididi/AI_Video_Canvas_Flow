@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
@@ -61,6 +61,8 @@ export default function EditorLayout() {
   });
   const [showAiModal, setShowAiModal] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  // 标记刚退出编辑态，避免 Escape 取消重命名后同时取消节点选中
+  const justExitedEditingRef = useRef(false);
 
   const handleExecuteWorkflow = async () => {
     if (workflowStatus.state === 'running') return;
@@ -176,10 +178,18 @@ export default function EditorLayout() {
 
       // Escape：优先级 链 —— 编辑态 > 帮助面板 > 选中
       if (e.key === 'Escape') {
+        // 如果刚退出编辑态（CanvasNode 的 onKeyDown 先于 window keydown 触发），
+        // 跳过取消选中，避免 Escape 取消重命名的同时意外清除选中状态
+        if (justExitedEditingRef.current) {
+          justExitedEditingRef.current = false;
+          e.preventDefault();
+          return;
+        }
         const { editingNodeId, selectedNodeIds } = useCanvasStore.getState();
         if (editingNodeId !== null) {
           e.preventDefault();
           useCanvasStore.getState().setEditingNodeId(null);
+          justExitedEditingRef.current = true;
           return;
         }
         if (showShortcutHelp) {
@@ -197,8 +207,11 @@ export default function EditorLayout() {
 
       if (isInputFocused) return;
 
-      // F2：重命名选中节点（仅单选时）
-      if (e.key === 'F2') {
+      // 模态框打开时，只保留 Ctrl+S/Ctrl+Z 等通用快捷键，跳过画布操作
+      const modalOpen = showAiModal || showShortcutHelp;
+
+      // F2：重命名选中节点（仅单选时；模态框中不触发）
+      if (e.key === 'F2' && !modalOpen) {
         const { selectedNodeIds } = useCanvasStore.getState();
         if (selectedNodeIds.length === 1) {
           e.preventDefault();
@@ -207,9 +220,10 @@ export default function EditorLayout() {
         return;
       }
 
-      // F5：执行选中节点（仅单选且 isExecutable 时）；一律阻止浏览器刷新
+      // F5：执行选中节点（仅单选且 isExecutable 时；模态框中只阻止刷新）
       if (e.key === 'F5') {
         e.preventDefault();
+        if (modalOpen) return;
         const { selectedNodeIds, nodes } = useCanvasStore.getState();
         if (selectedNodeIds.length === 1) {
           const node = nodes.find((n) => n.id === selectedNodeIds[0]);
@@ -239,8 +253,8 @@ export default function EditorLayout() {
         e.preventDefault();
         redo();
       }
-      // Ctrl/Cmd+C 复制选中节点
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey) {
+      // Ctrl/Cmd+C 复制选中节点（模态框中不触发）
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.shiftKey && !modalOpen) {
         const { nodes, edges, selectedNodeIds } = useCanvasStore.getState();
         if (selectedNodeIds.length > 0) {
           const selectedNodes = nodes.filter((n) => selectedNodeIds.includes(n.id));
@@ -252,8 +266,8 @@ export default function EditorLayout() {
         }
       }
 
-      // Ctrl/Cmd+V 粘贴
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey) {
+      // Ctrl/Cmd+V 粘贴（模态框中不触发）
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v' && !e.shiftKey && !modalOpen) {
         const pasted = useClipboardStore.getState().paste();
         if (pasted) {
           useCanvasStore.getState().addPastedNodes(pasted.nodes, pasted.edges);
@@ -261,8 +275,8 @@ export default function EditorLayout() {
         }
       }
 
-      // Ctrl/Cmd+A 全选
-      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+      // Ctrl/Cmd+A 全选（模态框中不触发）
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !modalOpen) {
         useCanvasStore.getState().selectAll();
         e.preventDefault();
       }
