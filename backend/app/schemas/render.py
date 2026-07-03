@@ -6,12 +6,6 @@ from uuid import UUID
 from pydantic import BaseModel
 
 
-class RenderTaskCreate(BaseModel):
-    """创建渲染任务请求"""
-    project_id: UUID
-    task_type: str  # text2img / img2video / tts / render
-
-
 class RenderTaskResponse(BaseModel):
     """渲染任务响应"""
     id: UUID
@@ -19,10 +13,13 @@ class RenderTaskResponse(BaseModel):
     owner_id: UUID
     task_type: str
     status: str
-    progress: float
+    progress: int  # 0-100 整数百分比
     celery_task_id: str | None
     result_url: str | None
     error_message: str | None
+    node_id: str | None
+    node_label: str | None
+    project_name: str | None
     created_at: datetime
     updated_at: datetime
 
