@@ -112,7 +112,7 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
         "model": model.model_id,
         "prompt": prompt,
         "n": params.get("n", 1) if params else 1,
-        "size": params.get("size", "1024x1024") if params else "1024x1024",
+        "size": params.get("size", "2k") if params else "2k",
     }
     # 火山引擎 / OpenAI 兼容格式
     if params and "response_format" in params:

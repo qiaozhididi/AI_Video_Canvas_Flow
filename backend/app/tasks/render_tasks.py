@@ -225,7 +225,8 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
     """文生图：调用 image_gen API 或模拟"""
     from app.services.ai_service import call_image_gen
 
-    size = (node_params or {}).get("size", "2048x2048")
+    # 火山引擎 SeedReam 要求 size 为 1k/2k/4k 或 WIDTHxHEIGHT 格式
+    size = (node_params or {}).get("size", "2k")
 
     sf = _get_celery_session_factory()
     async with sf() as db:
