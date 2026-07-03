@@ -3,13 +3,15 @@
 支持的 AI 类型：
 - LLM（call_llm）：OpenAI Chat Completions 兼容 API
 - 文生图（call_image_gen）：OpenAI Images API 兼容格式
-- 图生视频（call_video_gen）：预留
-- TTS（call_tts）：预留
+- 图生视频（call_video_gen）：Ark 异步内容生成 API
+- TTS（call_audio_gen）：Ark 异步内容生成 API
 """
 
 import logging
+import uuid
 import httpx
 from uuid import UUID
+from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.models.ai_provider import AiProvider
@@ -141,22 +143,283 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
             raise RuntimeError(f"文生图 API 返回格式异常: {str(data)[:300]}")
 
 
-async def call_video_gen(db, model_id: str | UUID, image_url: str, params: dict | None = None) -> str:
-    """图生视频（预留接口）
+async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0) -> dict:
+    """轮询 Ark 异步任务直到完成
+
+    Args:
+        base_url: Provider base_url
+        api_key: Provider api_key
+        task_id: 异步任务 ID
+        timeout: 最大等待秒数
+        interval: 轮询间隔秒数
 
     Returns:
-        生成视频的 URL
+        succeeded 时返回完整响应体
+
+    Raises:
+        RuntimeError: 任务 failed/expired/cancelled 或超时
     """
-    raise NotImplementedError("图生视频功能待实现，请接入 Kling / Runway 等")
+    import asyncio
+
+    url = f"{base_url.rstrip('/')}/contents/generations/tasks/{task_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    elapsed = 0.0
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        while elapsed < timeout:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                raise RuntimeError(f"轮询任务状态失败: HTTP {resp.status_code}: {resp.text[:300]}")
+
+            data = resp.json()
+            status = data.get("status", "")
+
+            if status == "succeeded":
+                return data
+            if status in ("failed", "expired", "cancelled"):
+                raise RuntimeError(f"任务 {task_id} 状态异常: {status}, 响应: {str(data)[:500]}")
+
+            await asyncio.sleep(interval)
+            elapsed += interval
+
+    raise RuntimeError(f"任务 {task_id} 轮询超时({timeout}s)")
 
 
-async def call_tts(db, model_id: str | UUID, text: str, params: dict | None = None) -> str:
-    """TTS（预留接口）
+async def _download_to_minio(db, url: str, filename: str, content_type: str, owner_id: str | None = None) -> tuple[str, str]:
+    """下载外部 URL 文件到 MinIO 并创建 MediaAsset 记录
+
+    Args:
+        db: 数据库 session
+        url: 外部文件 URL
+        filename: 存储文件名
+        content_type: MIME 类型
+        owner_id: 所有者用户 ID（字符串）
 
     Returns:
-        生成音频的 URL
+        (asset_id, persistent_url) persistent_url 格式为 /api/v1/media/{asset_id}/download
     """
-    raise NotImplementedError("TTS 功能待实现，请接入 CosyVoice 等")
+    from app.models.media_asset import MediaAsset
+    from app.services.media_service import upload_file
+    from app.config import settings
+
+    # 下载文件
+    async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            raise RuntimeError(f"下载文件失败: HTTP {resp.status_code}, url={url[:200]}")
+        file_data = resp.content
+
+    # 上传到 MinIO
+    asset_id = uuid.uuid4()
+    storage_key = f"ai_gen/{owner_id or 'system'}/{asset_id}/{filename}"
+    await upload_file(
+        bucket=settings.MINIO_BUCKET,
+        object_name=storage_key,
+        file_data=file_data,
+        content_type=content_type,
+    )
+
+    # 创建 MediaAsset 记录
+    now = datetime.now(timezone.utc)
+    asset = MediaAsset(
+        id=asset_id,
+        owner_id=uuid.UUID(owner_id) if owner_id else uuid.UUID(int=0),
+        project_id=None,
+        file_name=filename,
+        file_type=content_type,
+        file_size=len(file_data),
+        storage_key=storage_key,
+        thumbnail_key=None,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+
+    persistent_url = f"/api/v1/media/{asset_id}/download"
+    return str(asset_id), persistent_url
+
+
+async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str | None = None, params: dict | None = None) -> dict:
+    """图生视频：调用 Ark 异步内容生成 API
+
+    Args:
+        db: 数据库 session
+        model_id: AI Model UUID（model_type 应为 video_gen）
+        prompt: 视频描述提示词
+        image_url: 可选参考图片 URL
+        params: 额外参数
+
+    Returns:
+        {"video_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
+    """
+    provider, model = await _get_provider_and_model(db, model_id, expected_type="video_gen")
+
+    base_url = provider.base_url.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {provider.api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # 构建请求体
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    if image_url:
+        content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+    body: dict = {
+        "model": model.model_id,
+        "content": content,
+    }
+
+    logger.info(f"[AI:VideoGen] 创建任务 {provider.name}/{model.display_name}, prompt={prompt[:50]}")
+
+    # 创建异步任务
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(f"{base_url}/contents/generations/tasks", json=body, headers=headers)
+        if resp.status_code != 200:
+            error_text = resp.text[:500]
+            logger.error(f"[AI:VideoGen] 创建任务失败: HTTP {resp.status_code}: {error_text}")
+            raise RuntimeError(f"视频生成 API 调用失败: HTTP {resp.status_code}: {error_text}")
+
+        task_data = resp.json()
+        remote_task_id = task_data.get("id")
+        if not remote_task_id:
+            raise RuntimeError(f"视频生成 API 未返回任务 ID: {str(task_data)[:300]}")
+
+    logger.info(f"[AI:VideoGen] 任务已创建: {remote_task_id}, 开始轮询")
+
+    # 轮询任务状态
+    result_data = await _poll_ark_task(base_url, provider.api_key, remote_task_id)
+
+    # 提取视频 URL
+    video_url = None
+    choices = result_data.get("choices", [])
+    if choices:
+        for choice in choices:
+            message = choice.get("message", {})
+            # 尝试从 content 中提取视频 URL
+            msg_content = message.get("content", "")
+            if isinstance(msg_content, str) and msg_content.startswith("http"):
+                video_url = msg_content
+                break
+            # content 可能是列表
+            if isinstance(msg_content, list):
+                for item in msg_content:
+                    if isinstance(item, dict) and item.get("type") == "video_url":
+                        video_url = item.get("video_url", {}).get("url")
+                    elif isinstance(item, dict) and item.get("type") == "file_url":
+                        video_url = item.get("file_url", {}).get("url")
+                    if video_url:
+                        break
+            if video_url:
+                break
+
+    # 也尝试从 data 字段提取
+    if not video_url:
+        data_items = result_data.get("data", [])
+        if data_items:
+            video_url = data_items[0].get("url") or data_items[0].get("video_url")
+
+    if not video_url:
+        raise RuntimeError(f"视频生成任务成功但未找到视频 URL: {str(result_data)[:500]}")
+
+    logger.info(f"[AI:VideoGen] 视频生成成功, 下载到 MinIO: {video_url[:100]}")
+
+    # 下载到 MinIO 持久化
+    owner_id = params.get("_owner_id") if params else None
+    _, persistent_url = await _download_to_minio(
+        db, video_url, f"{remote_task_id}.mp4", "video/mp4", owner_id=owner_id,
+    )
+
+    return {"video_url": persistent_url, "remote_task_id": remote_task_id}
+
+
+async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | None = None) -> dict:
+    """TTS：调用 Ark 异步内容生成 API
+
+    Args:
+        db: 数据库 session
+        model_id: AI Model UUID（model_type 应为 tts）
+        text: 待合成文本
+        params: 额外参数
+
+    Returns:
+        {"audio_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
+    """
+    provider, model = await _get_provider_and_model(db, model_id, expected_type="tts")
+
+    base_url = provider.base_url.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {provider.api_key}",
+        "Content-Type": "application/json",
+    }
+
+    content: list[dict] = [{"type": "text", "text": text}]
+
+    body: dict = {
+        "model": model.model_id,
+        "content": content,
+    }
+
+    logger.info(f"[AI:AudioGen] 创建任务 {provider.name}/{model.display_name}, text={text[:50]}")
+
+    # 创建异步任务
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(f"{base_url}/contents/generations/tasks", json=body, headers=headers)
+        if resp.status_code != 200:
+            error_text = resp.text[:500]
+            logger.error(f"[AI:AudioGen] 创建任务失败: HTTP {resp.status_code}: {error_text}")
+            raise RuntimeError(f"音频生成 API 调用失败: HTTP {resp.status_code}: {error_text}")
+
+        task_data = resp.json()
+        remote_task_id = task_data.get("id")
+        if not remote_task_id:
+            raise RuntimeError(f"音频生成 API 未返回任务 ID: {str(task_data)[:300]}")
+
+    logger.info(f"[AI:AudioGen] 任务已创建: {remote_task_id}, 开始轮询")
+
+    # 轮询任务状态
+    result_data = await _poll_ark_task(base_url, provider.api_key, remote_task_id)
+
+    # 提取音频 URL
+    audio_url = None
+    choices = result_data.get("choices", [])
+    if choices:
+        for choice in choices:
+            message = choice.get("message", {})
+            msg_content = message.get("content", "")
+            if isinstance(msg_content, str) and msg_content.startswith("http"):
+                audio_url = msg_content
+                break
+            if isinstance(msg_content, list):
+                for item in msg_content:
+                    if isinstance(item, dict) and item.get("type") == "audio_url":
+                        audio_url = item.get("audio_url", {}).get("url")
+                    elif isinstance(item, dict) and item.get("type") == "file_url":
+                        audio_url = item.get("file_url", {}).get("url")
+                    if audio_url:
+                        break
+            if audio_url:
+                break
+
+    if not audio_url:
+        data_items = result_data.get("data", [])
+        if data_items:
+            audio_url = data_items[0].get("url") or data_items[0].get("audio_url")
+
+    if not audio_url:
+        raise RuntimeError(f"音频生成任务成功但未找到音频 URL: {str(result_data)[:500]}")
+
+    logger.info(f"[AI:AudioGen] 音频生成成功, 下载到 MinIO: {audio_url[:100]}")
+
+    # 下载到 MinIO 持久化
+    owner_id = params.get("_owner_id") if params else None
+    _, persistent_url = await _download_to_minio(
+        db, audio_url, f"{remote_task_id}.mp3", "audio/mpeg", owner_id=owner_id,
+    )
+
+    return {"audio_url": persistent_url, "remote_task_id": remote_task_id}
 
 
 import json
@@ -176,6 +439,7 @@ NODE_WHITELIST: dict[str, str] = {
     "text_to_image": "ai_inference",
     "image_to_video": "ai_inference",
     "text_to_speech": "ai_inference",
+    "text_to_video": "ai_inference",
     "upscale": "processing",
     "style_transfer": "processing",
     "remove_bg": "processing",
@@ -196,6 +460,7 @@ NODE_DEFAULT_LABELS: dict[str, str] = {
     "text_to_image": "文生图",
     "image_to_video": "图生视频",
     "text_to_speech": "文生语音",
+    "text_to_video": "文生视频",
     "upscale": "高清放大",
     "style_transfer": "风格化",
     "remove_bg": "抠图",
@@ -217,6 +482,7 @@ NODE_DEFAULT_PARAMS: dict[str, dict] = {
     "text_to_image": {"prompt": "", "size": "1024x1024"},
     "image_to_video": {"prompt": "", "duration": 5},
     "text_to_speech": {"text": "", "voice": "default"},
+    "text_to_video": {"prompt": "", "duration": 5},
     "upscale": {"scale": 2},
     "style_transfer": {"style": ""},
     "remove_bg": {},
@@ -234,6 +500,7 @@ AI_INFERENCE_MODEL_TYPE: dict[str, str] = {
     "text_to_image": "image_gen",
     "image_to_video": "video_gen",
     "text_to_speech": "tts",
+    "text_to_video": "video_gen",
 }
 
 
@@ -241,7 +508,7 @@ SYSTEM_PROMPT = """你是 AI 视频工作流编排助手。根据用户描述生
 
 合法节点类型(仅可使用以下 subtype):
 - 输入:text_input(文本输入), image_input(图片输入), audio_input(音频输入)
-- AI 推理:text_to_image(文生图), image_to_video(图生视频), text_to_speech(文生语音)
+- AI 推理:text_to_image(文生图), image_to_video(图生视频), text_to_speech(文生语音), text_to_video(文生视频)
 - 处理:upscale(高清放大), style_transfer(风格化), remove_bg(抠图), extend_image(扩图)
 - 控制:if_else(条件分支), loop(循环), merge(合并)
 - 输出:video_output(视频输出), image_output(图片输出), audio_output(音频输出)

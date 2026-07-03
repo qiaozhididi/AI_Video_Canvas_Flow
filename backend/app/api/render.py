@@ -18,7 +18,7 @@ router = APIRouter()
 
 class RenderTaskCreate(BaseModel):
     project_id: str
-    task_type: str = "render"  # render / ai_text2img / ai_img2video / ai_tts
+    task_type: str = "render"  # render / ai_text2img / ai_text2video / ai_img2video / ai_tts
     model_id: str | None = None  # AI Model UUID
     prompt: str | None = None  # 用户提示词
     node_id: str | None = None  # 关联的画布节点 ID

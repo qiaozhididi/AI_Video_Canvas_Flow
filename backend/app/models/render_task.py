@@ -17,7 +17,7 @@ class RenderTask(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
-    task_type: Mapped[str] = mapped_column(String(64))  # render / ai_text2img / ai_img2video / ai_tts
+    task_type: Mapped[str] = mapped_column(String(64))  # render / ai_text2img / ai_text2video / ai_img2video / ai_tts
     status: Mapped[str] = mapped_column(String(32), default="pending")  # pending / running / completed / failed / cancelled
     progress: Mapped[int] = mapped_column(Integer, default=0)  # 0~100 整数百分比
     celery_task_id: Mapped[str | None] = mapped_column(String(256))
