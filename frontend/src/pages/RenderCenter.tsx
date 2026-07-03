@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Monitor, Download, Clock, CheckCircle2, XCircle, Loader2, Plus, Pause, AlertCircle } from 'lucide-react';
+import { Monitor, Download, Clock, CheckCircle2, XCircle, Loader2, Plus, Pause, AlertCircle, RotateCw } from 'lucide-react';
 import { renderApi, projectApi } from '@/utils/apiClient';
 import type { RenderTaskResponse, ProjectResponse } from '@/utils/apiClient';
 import { toast } from 'sonner';
@@ -111,6 +111,17 @@ export default function RenderCenter() {
       await loadTasks();
     } catch {
       toast.error('取消失败');
+    }
+  };
+
+  // 重试任务
+  const handleRetry = async (id: string) => {
+    try {
+      await renderApi.retry(id);
+      toast.success('任务已重新提交');
+      await loadTasks();
+    } catch {
+      toast.error('重试失败');
     }
   };
 
@@ -296,6 +307,15 @@ export default function RenderCenter() {
                             >
                               <Pause className="w-3.5 h-3.5" />
                               取消
+                            </button>
+                          )}
+                          {(task.status === 'failed' || task.status === 'cancelled') && (
+                            <button
+                              onClick={() => handleRetry(task.id)}
+                              className="flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-status-running hover:bg-blue-400/10 rounded transition-colors"
+                            >
+                              <RotateCw className="w-3.5 h-3.5" />
+                              重试
                             </button>
                           )}
                           {task.status === 'completed' && (

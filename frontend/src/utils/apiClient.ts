@@ -202,6 +202,7 @@ export interface RenderTaskCreateRequest {
   model_id?: string;
   prompt?: string;
   input_artifacts?: { type: string; url: string; filename?: string; text?: string }[];
+  node_params?: Record<string, unknown>;
 }
 
 export interface RenderTaskResponse {
@@ -478,6 +479,9 @@ export const renderApi = {
 
   cancel: (taskId: string) =>
     request<RenderTaskResponse>(`/render/${taskId}/cancel`, { method: 'POST' }),
+
+  retry: (taskId: string) =>
+    request<RenderTaskResponse>(`/render/${taskId}/retry`, { method: 'POST' }),
 
   /**
    * 轮询渲染任务直到完成/失败

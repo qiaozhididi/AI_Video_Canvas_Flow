@@ -3,12 +3,13 @@ import { Handle, Position, type Node } from '@xyflow/react';
 import type { CanvasNodeData } from '@/types/canvas';
 import { NODE_CATEGORIES } from '@/types/canvas';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { executeNode } from '@/utils/workflowExecutor';
 import {
   Type, Image, Music, Wand2, Video, Mic,
   Maximize, Palette, Scissors, Expand,
   GitBranch, Repeat, GitMerge,
   Film, ImageDown, Volume2,
-  Loader2, CheckCircle2, XCircle, AlertCircle,
+  Loader2, CheckCircle2, XCircle, AlertCircle, RotateCw,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -155,9 +156,21 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
       {/* 节点内容 */}
       <div className="px-3 py-2 space-y-1">
         {data.error && (
-          <p className="text-xs text-status-error truncate" title={data.error}>
-            {data.error}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-status-error truncate flex-1" title={data.error}>
+              {data.error}
+            </p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                executeNode(id).catch(() => {});
+              }}
+              className="p-0.5 rounded hover:bg-canvas-hover text-status-error hover:text-status-running transition-colors flex-shrink-0"
+              title="重试"
+            >
+              <RotateCw className="w-3 h-3" />
+            </button>
+          </div>
         )}
         {data.outputArtifacts.length > 0 && (
           <div className="flex gap-1 flex-wrap">
