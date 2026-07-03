@@ -24,6 +24,7 @@ class RenderTaskCreate(BaseModel):
     prompt: str | None = None  # 用户提示词
     node_id: str | None = None  # 关联的画布节点 ID
     input_artifacts: list[dict] | None = None  # 上游输出资产
+    node_params: dict | None = None  # 节点完整 params（按 task_type 读取对应字段）
 
 
 def _task_to_dict(
@@ -105,7 +106,7 @@ async def create_render_task(body: RenderTaskCreate, db: DBSession, user: Curren
         owner_id=uuid.UUID(user),
         task_type=body.task_type,
         status="pending",
-        progress=0.0,
+        progress=0,
         node_id=body.node_id,
     )
     db.add(task)
@@ -119,6 +120,7 @@ async def create_render_task(body: RenderTaskCreate, db: DBSession, user: Curren
         model_id=body.model_id,
         prompt=body.prompt,
         input_artifacts=body.input_artifacts,
+        node_params=body.node_params,
     )
 
     # 回写 celery_task_id
@@ -164,3 +166,73 @@ async def cancel_render_task(task_id: str, db: DBSession, user: CurrentUser):
 
     logger.info(f"[Render:Cancel] id={task_id}")
     return _task_to_dict(task)
+
+
+@router.post("/{task_id}/retry", summary="重试渲染任务")
+async def retry_render_task(task_id: str, db: DBSession, user: CurrentUser):
+    """重试失败/取消的任务：创建新任务，复制原任务参数"""
+    result = await db.execute(select(RenderTask).where(RenderTask.id == uuid.UUID(task_id)))
+    original = result.scalar_one_or_none()
+    if not original:
+        raise HTTPException(status_code=404, detail="渲染任务不存在")
+    if original.status not in ("failed", "cancelled"):
+        raise HTTPException(status_code=409, detail="只能重试失败或已取消的任务")
+
+    # 从关联节点读取最新 node_params
+    node_params: dict | None = None
+    if original.node_id:
+        from app.models.workflow import WorkflowNode
+        node_result = await db.execute(
+            select(WorkflowNode.config).where(WorkflowNode.id == original.node_id)
+        )
+        config = node_result.scalar_one_or_none()
+        if config and isinstance(config, dict):
+            node_params = config.get("params")
+
+    # 创建新任务
+    new_task = RenderTask(
+        project_id=original.project_id,
+        owner_id=original.owner_id,
+        task_type=original.task_type,
+        status="pending",
+        progress=0,
+        node_id=original.node_id,
+    )
+    db.add(new_task)
+    await db.commit()
+    await db.refresh(new_task)
+
+    # 触发 Celery 任务（从节点读取最新 node_params）
+    from app.tasks.render_tasks import run_render_task
+    celery_result = run_render_task.delay(
+        str(new_task.id),
+        model_id=None,
+        prompt=None,
+        input_artifacts=None,
+        node_params=node_params,
+    )
+
+    new_task.celery_task_id = celery_result.id
+    new_task.status = "running"
+    new_task.updated_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(new_task)
+
+    logger.info(f"[Render:Retry] original={task_id} new={new_task.id} type={original.task_type}")
+
+    # 查询 node_label 和 project_name
+    node_label = None
+    project_name = None
+    if new_task.node_id:
+        from app.models.workflow import WorkflowNode
+        nr = await db.execute(
+            select(WorkflowNode.config).where(WorkflowNode.id == new_task.node_id)
+        )
+        cfg = nr.scalar_one_or_none()
+        if cfg and isinstance(cfg, dict):
+            node_label = cfg.get("label") or new_task.node_id
+    from app.models.project import Project
+    pr = await db.execute(select(Project.name).where(Project.id == new_task.project_id))
+    project_name = pr.scalar_one_or_none()
+
+    return _task_to_dict(new_task, node_label=node_label, project_name=project_name)
