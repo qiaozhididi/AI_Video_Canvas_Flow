@@ -8,6 +8,7 @@
 
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
+import type { NodeStatus } from '@/types/canvas';
 import { renderApi, aiApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge, NodeSubtype, Artifact } from '@/types/canvas';
 import type { RenderTaskResponse } from '@/utils/apiClient';
@@ -155,7 +156,11 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
 
   try {
     const result = await renderApi.poll(task.id, 2000, (progress, status) => {
-      useCanvasStore.getState().setNodeStatus(nodeId, status as any, Math.round(progress));
+      // 只接受合法的 NodeStatus 值，其他一律视为 running
+      const validStatus: NodeStatus = ['idle', 'pending', 'running', 'completed', 'failed'].includes(status)
+        ? (status as NodeStatus)
+        : 'running';
+      useCanvasStore.getState().setNodeStatus(nodeId, validStatus, Math.round(progress));
     });
 
     const artifacts: Artifact[] = result.result_url

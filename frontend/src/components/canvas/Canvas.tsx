@@ -25,9 +25,8 @@ import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useCollabStore } from '@/stores/collabStore';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import {
-  alignLeft, alignRight, alignTop, alignBottom,
+  alignLeft, alignTop,
   alignHorizontalCenter, alignVerticalCenter,
-  distributeHorizontal, distributeVertical,
 } from '@/utils/alignment';
 import CanvasNodeComponent from './CanvasNode';
 import RemoteCursors from './RemoteCursors';
@@ -36,9 +35,8 @@ import ContextMenu, { type MenuItem } from './ContextMenu';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import {
   Copy, ClipboardPaste, Pencil, Play, Trash2,
-  AlignStartVertical, AlignEndVertical, AlignCenterVertical,
-  AlignStartHorizontal, AlignEndHorizontal, AlignCenterHorizontal,
-  AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
+  AlignStartVertical, AlignStartHorizontal,
+  AlignCenterVertical, AlignCenterHorizontal,
   Type, Image as ImageIcon, Music, Wand2, Video, Mic,
   Maximize, Palette, Scissors, Expand,
   GitBranch, Repeat, GitMerge, Film, ImageDown, Volume2,
@@ -169,7 +167,8 @@ export default function Canvas() {
 
   const onPaneClick = useCallback(() => {
     setSelectedNode(null);
-  }, [setSelectedNode]);
+    closeMenu();
+  }, [setSelectedNode, closeMenu]);
 
   // 鼠标移动 → 转换为画布坐标 → 广播本地光标（50ms 节流已在 collabStore.emitCursorMove 内实现）
   const onMouseMove = useCallback((e: React.MouseEvent) => {
@@ -248,23 +247,9 @@ export default function Canvas() {
     const alignSubmenu: MenuItem[] | null = selectedNodeIds.length >= 2
       ? [
           { icon: AlignStartVertical, label: '左对齐', onClick: () => handleAlign(alignLeft) },
-          { icon: AlignEndVertical, label: '右对齐', onClick: () => handleAlign(alignRight) },
-          { icon: AlignStartHorizontal, label: '顶对齐', onClick: () => handleAlign(alignTop) },
-          { icon: AlignEndHorizontal, label: '底对齐', onClick: () => handleAlign(alignBottom) },
           { icon: AlignCenterVertical, label: '垂直居中', onClick: () => handleAlign(alignVerticalCenter) },
+          { icon: AlignStartHorizontal, label: '顶对齐', onClick: () => handleAlign(alignTop) },
           { icon: AlignCenterHorizontal, label: '水平居中', onClick: () => handleAlign(alignHorizontalCenter) },
-          {
-            icon: AlignHorizontalDistributeCenter,
-            label: '水平等距',
-            disabled: selectedNodeIds.length < 3,
-            onClick: () => handleAlign(distributeHorizontal),
-          },
-          {
-            icon: AlignVerticalDistributeCenter,
-            label: '垂直等距',
-            disabled: selectedNodeIds.length < 3,
-            onClick: () => handleAlign(distributeVertical),
-          },
         ]
       : null;
 
@@ -340,19 +325,23 @@ export default function Canvas() {
       { separator: true },
     ];
 
-    // 新建节点子菜单（按类别分组）
-    const newNodesSubmenu: MenuItem[] = NODE_CATEGORIES
-      ? Object.entries(NODE_CATEGORIES).map(([typeKey, cat]) => {
-          const subItems: MenuItem[] = NODE_TEMPLATES
-            .filter((t) => t.type === typeKey)
-            .map((t) => ({
+    // 新建节点子菜单（按类别分组，用分隔符分隔）
+    const newNodesSubmenu: MenuItem[] = [];
+    if (NODE_CATEGORIES) {
+      const entries = Object.entries(NODE_CATEGORIES);
+      entries.forEach(([typeKey, cat], catIdx) => {
+        if (catIdx > 0) newNodesSubmenu.push({ separator: true });
+        NODE_TEMPLATES
+          .filter((t) => t.type === typeKey)
+          .forEach((t) => {
+            newNodesSubmenu.push({
               icon: ICON_MAP_LUCIDE[t.icon] || Type,
               label: t.label,
               onClick: () => handleAddNodeAtMenu(t.subtype),
-            }));
-          return { label: cat.label, submenu: subItems };
-        })
-      : [];
+            });
+          });
+      });
+    }
 
     items.push({ icon: Type, label: '新建节点', submenu: newNodesSubmenu });
 

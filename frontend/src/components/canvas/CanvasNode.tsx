@@ -1,5 +1,5 @@
 import { memo, useState, useEffect, useRef } from 'react';
-import { Handle, Position, type Node } from '@xyflow/react';
+import { Handle, Position } from '@xyflow/react';
 import type { CanvasNodeData } from '@/types/canvas';
 import { NODE_CATEGORIES } from '@/types/canvas';
 import { useCanvasStore } from '@/stores/canvasStore';

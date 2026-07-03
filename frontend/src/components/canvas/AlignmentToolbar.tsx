@@ -1,24 +1,16 @@
 import { useStore, useViewport } from '@xyflow/react';
 import {
   AlignStartVertical,
-  AlignEndVertical,
   AlignStartHorizontal,
-  AlignEndHorizontal,
   AlignCenterVertical,
   AlignCenterHorizontal,
-  AlignHorizontalDistributeCenter,
-  AlignVerticalDistributeCenter,
 } from 'lucide-react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import {
   alignLeft,
-  alignRight,
   alignTop,
-  alignBottom,
   alignHorizontalCenter,
   alignVerticalCenter,
-  distributeHorizontal,
-  distributeVertical,
 } from '@/utils/alignment';
 
 type AlignFn = typeof alignLeft;
@@ -27,18 +19,13 @@ interface AlignButton {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   fn: AlignFn;
-  minNodes: number;
 }
 
 const ALIGN_BUTTONS: AlignButton[] = [
-  { icon: AlignStartVertical, title: '左对齐', fn: alignLeft, minNodes: 2 },
-  { icon: AlignEndVertical, title: '右对齐', fn: alignRight, minNodes: 2 },
-  { icon: AlignCenterVertical, title: '垂直居中', fn: alignVerticalCenter, minNodes: 2 },
-  { icon: AlignStartHorizontal, title: '顶对齐', fn: alignTop, minNodes: 2 },
-  { icon: AlignEndHorizontal, title: '底对齐', fn: alignBottom, minNodes: 2 },
-  { icon: AlignCenterHorizontal, title: '水平居中', fn: alignHorizontalCenter, minNodes: 2 },
-  { icon: AlignHorizontalDistributeCenter, title: '水平等距', fn: distributeHorizontal, minNodes: 3 },
-  { icon: AlignVerticalDistributeCenter, title: '垂直等距', fn: distributeVertical, minNodes: 3 },
+  { icon: AlignStartVertical, title: '左对齐', fn: alignLeft },
+  { icon: AlignCenterVertical, title: '垂直居中', fn: alignVerticalCenter },
+  { icon: AlignStartHorizontal, title: '顶对齐', fn: alignTop },
+  { icon: AlignCenterHorizontal, title: '水平居中', fn: alignHorizontalCenter },
 ];
 
 export default function AlignmentToolbar() {
@@ -80,14 +67,12 @@ export default function AlignmentToolbar() {
     >
       {ALIGN_BUTTONS.map((btn, idx) => {
         const Icon = btn.icon;
-        const isDisabled = selectedNodes.length < btn.minNodes;
         return (
           <button
             key={idx}
-            onClick={() => !isDisabled && handleAlign(btn.fn)}
-            disabled={isDisabled}
+            onClick={() => handleAlign(btn.fn)}
             title={btn.title}
-            className="p-1.5 rounded hover:bg-canvas-hover text-slate-300 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            className="p-1.5 rounded hover:bg-canvas-hover text-slate-300 hover:text-white transition-colors"
           >
             <Icon className="w-3.5 h-3.5" />
           </button>

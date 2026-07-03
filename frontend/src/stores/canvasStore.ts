@@ -297,6 +297,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
                 ...n.data,
                 status,
                 progress: progress !== undefined ? progress : n.data.progress,
+                // 非 failed 状态清除 error，避免重试后残留旧错误信息
+                error: status !== 'failed' ? undefined : n.data.error,
               },
             }
           : n

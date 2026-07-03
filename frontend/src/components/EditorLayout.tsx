@@ -50,6 +50,10 @@ export default function EditorLayout() {
   const { startAutoSave, stopAutoSave, checkRecovery, restoreSnapshot, discardRecovery, lastSavedAt, isDirty } = useAutoSaveStore();
   const onlineUsers = useCollabStore((s) => s.onlineUsers);
   const currentUser = useAuthStore((s) => s.user);
+  // 响应式订阅：是否存在可重试的节点（失败或未执行）
+  const hasRetryableNodes = useCanvasStore((s) =>
+    s.nodes.some((n) => isExecutable(n.data.subtype) && (n.data.status === 'failed' || n.data.status === 'idle'))
+  );
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [recoveryInfo, setRecoveryInfo] = useState<{ timestamp: number; actionCount: number } | null>(null);
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowExecutionStatus>({
@@ -422,9 +426,7 @@ export default function EditorLayout() {
               <Play className="w-3.5 h-3.5" />
               执行工作流
             </button>
-            {useCanvasStore.getState().nodes.some(
-              (n) => isExecutable(n.data.subtype) && (n.data.status === 'failed' || n.data.status === 'idle')
-            ) && (
+            {hasRetryableNodes && (
               <button
                 onClick={handleResumeWorkflow}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-canvas-hover border border-canvas-border rounded-md hover:border-neon-purple hover:text-white transition-colors"
