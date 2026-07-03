@@ -358,56 +358,45 @@ async def _do_text2video(task_id: str, model_id: str | None, prompt: str, input_
     from app.services.ai_service import call_video_gen
 
     sf = _get_celery_session_factory()
-
-    # 获取 owner_id
-    owner_id = ""
     async with sf() as db:
-        from sqlalchemy import select
-        from app.models.render_task import RenderTask
-        result = await db.execute(select(RenderTask.owner_id).where(RenderTask.id == uuid.UUID(task_id)))
-        row = result.one_or_none()
-        if row:
-            owner_id = str(row[0])
         await _update_task(db, task_id, status="running", progress=10)
 
-    if not prompt:
-        prompt = "一段优美的视频"
+        if not prompt:
+            prompt = "一段优美的视频"
 
-    params_with_owner = dict(node_params or {})
-    params_with_owner["_owner_id"] = owner_id
+        await _update_task(db, task_id, progress=20)
 
-    result_url = ""
-    try:
-        if model_id:
-            async with sf() as db:
-                await _update_task(db, task_id, progress=30)
+        result_url = ""
+        try:
+            if model_id:
+                # 获取 owner_id 用于 MinIO 持久化
+                render_task = await db.get(RenderTask, uuid.UUID(task_id))
+                owner_id = str(render_task.owner_id) if render_task else None
 
-            result = await call_video_gen(db, model_id, prompt, image_url=None, params=params_with_owner)
-            result_url = result["video_url"]
+                result = await call_video_gen(
+                    db, model_id, prompt, image_url=None,
+                    params={**(node_params or {}), "_owner_id": owner_id},
+                )
+                result_url = result["video_url"]
+        except ValueError as e:
+            logger.warning(f"[AI:Text2Video] 模型不匹配，回退模拟: {e}")
+            await _update_task(db, task_id, progress=40)
+        except RuntimeError as e:
+            logger.error(f"[AI:Text2Video] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+        except Exception as e:
+            logger.error(f"[AI:Text2Video] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
 
-            async with sf() as db:
-                await _update_task(db, task_id, progress=90)
-        else:
-            logger.warning(f"[AI:Text2Video] 无 model_id，回退模拟生成")
-            async with sf() as db:
-                for p in [30, 60, 90]:
-                    await asyncio.sleep(2)
-                    await _update_task(db, task_id, progress=p)
-                result_url = f"ai_result/{task_id}/video.mp4"
-    except ValueError as e:
-        logger.warning(f"[AI:Text2Video] 模型不匹配，回退模拟: {e}")
-        async with sf() as db:
-            for p in [30, 60, 90]:
+        if not result_url:
+            # 模拟生成（无模型或模型不匹配时）
+            for p in [40, 60, 80]:
                 await asyncio.sleep(2)
                 await _update_task(db, task_id, progress=p)
             result_url = f"ai_result/{task_id}/video.mp4"
-    except Exception as e:
-        logger.error(f"[AI:Text2Video] 调用失败: {e}", exc_info=True)
-        async with sf() as db:
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-        return {"task_id": task_id, "status": "failed", "error": str(e)}
 
-    async with sf() as db:
         await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
 
     return {"task_id": task_id, "status": "completed", "result_url": result_url}

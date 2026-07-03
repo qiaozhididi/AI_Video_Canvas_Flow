@@ -220,10 +220,16 @@ async def _download_to_minio(db, url: str, filename: str, content_type: str, own
     )
 
     # 创建 MediaAsset 记录
+    # owner_id 为空时无法创建 MediaAsset（owner_id 有外键约束指向 users 表）
+    # 此时只能返回临时 URL（24h 过期）
+    if not owner_id:
+        logger.warning(f"[MinIO] 无 owner_id，无法持久化到 MediaAsset，使用临时 URL: {url[:100]}")
+        return str(asset_id), url
+
     now = datetime.now(timezone.utc)
     asset = MediaAsset(
         id=asset_id,
-        owner_id=uuid.UUID(owner_id) if owner_id else uuid.UUID(int=0),
+        owner_id=uuid.UUID(owner_id),
         project_id=None,
         file_name=filename,
         file_type=content_type,
