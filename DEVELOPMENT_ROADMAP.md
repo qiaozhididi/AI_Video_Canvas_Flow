@@ -9,7 +9,7 @@
 | 前端 | 画布编辑器 | ✅ 完成 | 节点拖放、连线、属性编辑、撤销重做 |
 | 前端 | 媒体库 | ✅ 完成 | MinIO 上传/下载/缩略图懒加载/分页/拖拽上传 |
 | 前端 | 渲染中心 | ✅ 完成 | 真实 API 对接，任务创建/列表/轮询/取消/下载，显示 node_label/project_name |
-| 前端 | 执行工作流 | ✅ 完成 | 单节点执行 + 全工作流拓扑编排（Kahn 算法按层并行） |
+| 前端 | 执行工作流 | ✅ 完成 | 单节点执行 + 全工作流拓扑编排（Kahn 算法按层并行），支持文生图/图生视频/文生视频/文生语音真实 API |
 | 前端 | 模板市场 | ✅ 完成 | 列表搜索/分类筛选/克隆/发布/取消发布，已对接 PostgreSQL |
 | 前端 | 设置页 | ✅ 完成 | AI 配置面板 + 用户资料持久化（username/email/avatar_url） |
 | 前端 | 时间轴 | ✅ 完成 | rAF 播放循环 + 加入时间轴按钮 + 双向联动 + 片段 resize 拖拽（吸附/tooltip/视觉反馈） |
@@ -24,7 +24,7 @@
 | 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消，返回 node_label/project_name |
 | 后端 | AI 可配置系统 | ✅ 完成 | Provider/Model CRUD + 默认配置 + LLM 调用封装 |
 | 后端 | AI 工作流生成 | ✅ 完成 | POST /ai/generate-workflow，LLM 解析描述生成节点/边 + 自动布局 |
-| 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务，RabbitMQ 4.x 兼容 |
+| 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务（文生图/图生视频/文生视频/语音），RabbitMQ 4.x 兼容 |
 | 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI + JWT 鉴权 + 房间成员管理 + 远端光标同步 |
 | 后端 | 模板市场 | ✅ 完成 | 列表/克隆/发布/取消发布 4 端点 |
 | 后端 | 快照系统 | ✅ 完成 | project_snapshots 表 + CRUD + 单事务恢复 + 5 auto 上限 |
@@ -245,6 +245,18 @@
 - MCP 端到端验证：复制粘贴（9→18 节点，内部边重映射）+ 对齐（左对齐/顶对齐/水平等距分布）
 - 合并: merge commit 1234e14（--no-ff）
 - 涉及文件: alignment.ts, clipboardStore.ts, canvasStore.ts, AlignmentToolbar.tsx, Canvas.tsx, EditorLayout.tsx, verify_node_quick_actions.md
+
+### 13. AI 任务真实 API 实现（图生视频 + 文生视频 + 语音）
+- **后端**: ai_service.py 新增 `call_video_gen` / `call_audio_gen`（Ark contents/generations/tasks 异步 API + 轮询 + MinIO 持久化）
+- **后端**: ai_service.py 新增 `_poll_ark_task` 通用轮询函数（5s 间隔，300s 超时）
+- **后端**: ai_service.py 新增 `_download_to_minio` 下载临时 URL 到 MinIO + 创建 MediaAsset 记录
+- **后端**: render_tasks.py `_do_img2video` / `_do_tts` 从模拟升级为真实 API 调用（无 model_id 时回退模拟）
+- **后端**: render_tasks.py 新增 `_do_text2video` 函数 + `ai_text2video` task_type 路由
+- **后端**: ai_service.py 新增 `text_to_video` 节点配置（NODE_WHITELIST / NODE_DEFAULT_PARAMS / AI_INFERENCE_MODEL_TYPE）
+- **前端**: canvas.ts 新增 `text_to_video` 子类型和 NODE_TEMPLATES 条目
+- **前端**: workflowExecutor.ts 新增 `ai_text2video` task_type 映射和 EXECUTABLE_SUBTYPES / AI_SUBTYPES
+- **前端**: image_to_video / text_to_speech 节点 defaultParams 补充 model_id 字段
+- **涉及文件**: ai_service.py, render_tasks.py, canvas.ts, workflowExecutor.ts, render.py, render_task.py
 
 ### 14. 右键菜单 + 快捷键体系
 - **前端**: 新增 ContextMenu 通用浮层组件（MenuItem 接口、边界检测、键盘导航、子菜单）
