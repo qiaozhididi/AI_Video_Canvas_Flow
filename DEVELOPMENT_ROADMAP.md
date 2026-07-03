@@ -169,7 +169,21 @@
 - **前端**: AI 生成的 text_to_image 节点统一使用 `prompt`/`size`/`model_id`；image_to_video 使用 `prompt`/`duration`
 - **修复**: ai.py 第 318 行 `user.id` → `user`（CurrentUser 返回 user_id 字符串）
 - **涉及文件**: ai.py, canvas.ts, Editor.tsx
-- **后续待办**: 第 2 步执行链 params 读取（workflowExecutor.ts + RenderTaskCreate schema + render_tasks.py）
+- **后续待办**: ~~第 2 步执行链 params 读取~~ → 已在 #12 完成
+
+### 12. 执行链完善（节点字段统一第2步 + 重试 + 断点续执行）
+- **后端**: schemas/render.py RenderTaskResponse 补齐 node_label/project_name，删除冗余 RenderTaskCreate
+- **后端**: RenderTask ORM progress 类型 Float→Integer（0-100 整数百分比）
+- **后端**: api/render.py RenderTaskCreate 新增 node_params 字段，创建任务时传递到 Celery
+- **后端**: api/render.py 新增 POST /render/{task_id}/retry 端点（复制原任务参数+从节点读取最新 node_params）
+- **后端**: render_tasks.py 各执行函数从 node_params 读取参数（size/duration/voice/style/scale 等）
+- **前端**: workflowExecutor.ts executeNode 传递完整 node_params
+- **前端**: workflowExecutor.ts 新增 resumeWorkflow()（跳过已完成节点，仅执行失败/未执行节点）
+- **前端**: CanvasNode.tsx 失败状态增加重试按钮
+- **前端**: RenderCenter.tsx 失败/取消任务增加重试操作
+- **前端**: EditorLayout.tsx 新增断点续执行按钮
+- **前端**: renderMock.ts progress 改为 0-100 整数，补齐 node_label/project_name 字段
+- **修复**: 节点字段统一第2步——执行链 params 读取统一
 
 ---
 
