@@ -7,9 +7,9 @@ import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
-import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles } from 'lucide-react';
+import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable } from '@/utils/workflowExecutor';
+import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
 import ShortcutHelpModal from './canvas/ShortcutHelpModal';
@@ -78,6 +78,23 @@ export default function EditorLayout() {
   const handleCancelWorkflow = () => {
     cancelWorkflowExecution();
     setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: '用户取消' });
+  };
+
+  const handleResumeWorkflow = async () => {
+    if (workflowStatus.state === 'running') return;
+    setWorkflowStatus({ ...getExecutionStatus(), state: 'running' });
+    try {
+      const result = await resumeWorkflow();
+      setWorkflowStatus(result);
+      if (result.state === 'completed') {
+        toast.success('断点续执行完成');
+      } else if (result.state === 'failed') {
+        toast.error(`断点续执行失败: ${result.error}`);
+      }
+    } catch (err: any) {
+      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: err.message });
+      toast.error('断点续执行出错');
+    }
   };
 
   const handleAiGenerated = (
@@ -397,13 +414,27 @@ export default function EditorLayout() {
             停止 {workflowStatus.completedNodes}/{workflowStatus.totalNodes}
           </button>
         ) : (
-          <button
-            onClick={handleExecuteWorkflow}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
-          >
-            <Play className="w-3.5 h-3.5" />
-            执行工作流
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleExecuteWorkflow}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
+            >
+              <Play className="w-3.5 h-3.5" />
+              执行工作流
+            </button>
+            {useCanvasStore.getState().nodes.some(
+              (n) => isExecutable(n.data.subtype) && (n.data.status === 'failed' || n.data.status === 'idle')
+            ) && (
+              <button
+                onClick={handleResumeWorkflow}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 bg-canvas-hover border border-canvas-border rounded-md hover:border-neon-purple hover:text-white transition-colors"
+                title="跳过已完成节点，仅执行失败/未执行的节点"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                断点续执行
+              </button>
+            )}
+          </div>
         )}
       </div>
 
