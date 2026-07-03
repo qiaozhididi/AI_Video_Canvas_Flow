@@ -19,7 +19,6 @@ router = APIRouter()
 class RenderTaskCreate(BaseModel):
     project_id: str
     task_type: str = "render"  # render / ai_text2img / ai_img2video / ai_tts
-    output_format: str = "mp4"
     model_id: str | None = None  # AI Model UUID
     prompt: str | None = None  # 用户提示词
     node_id: str | None = None  # 关联的画布节点 ID
@@ -140,6 +139,8 @@ async def get_render_task(task_id: str, db: DBSession, user: CurrentUser):
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="渲染任务不存在")
+    if str(task.owner_id) != user:
+        raise HTTPException(status_code=403, detail="无权访问此任务")
     return _task_to_dict(task)
 
 
@@ -149,6 +150,8 @@ async def cancel_render_task(task_id: str, db: DBSession, user: CurrentUser):
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="渲染任务不存在")
+    if str(task.owner_id) != user:
+        raise HTTPException(status_code=403, detail="无权操作此任务")
     if task.status not in ("pending", "running"):
         raise HTTPException(status_code=409, detail="任务已完成，无法取消")
 
@@ -175,6 +178,8 @@ async def retry_render_task(task_id: str, db: DBSession, user: CurrentUser):
     original = result.scalar_one_or_none()
     if not original:
         raise HTTPException(status_code=404, detail="渲染任务不存在")
+    if str(original.owner_id) != user:
+        raise HTTPException(status_code=403, detail="无权操作此任务")
     if original.status not in ("failed", "cancelled"):
         raise HTTPException(status_code=409, detail="只能重试失败或已取消的任务")
 
