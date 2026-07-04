@@ -478,12 +478,16 @@ async def _call_ark_async(
     media_url = await _extract_ark_media_url(result_data, media_type)
     logger.info(f"[{log_tag}] {media_type}生成成功, 下载到 MinIO: {media_url[:100]}")
 
-    # 下载到 MinIO 持久化
+    # 下载到 MinIO 持久化（失败时 fallback 到原始 URL）
     owner_id = params.get("_owner_id") if params else None
     content_type, ext = _ARK_MEDIA_CONFIG[media_type]
-    _, persistent_url = await _download_to_minio(
-        db, media_url, f"{remote_task_id}{ext}", content_type, owner_id=owner_id,
-    )
+    try:
+        _, persistent_url = await _download_to_minio(
+            db, media_url, f"{remote_task_id}{ext}", content_type, owner_id=owner_id,
+        )
+    except Exception as e:
+        logger.warning(f"[{log_tag}] MinIO 持久化失败，使用原始 URL: {e}")
+        persistent_url = media_url
 
     return {f"{media_type}_url": persistent_url, "remote_task_id": remote_task_id}
 

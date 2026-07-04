@@ -322,10 +322,10 @@ async def _do_ai_call(
 
         try:
             if model_id:
-                # 图生图需要 image_url
-                if task_type == "ai_img2img" and not image_url:
-                    logger.warning(f"[AI:Img2Img] 无上游图片 URL，回退模拟")
-                    await _update_task(db, task_id, progress=40)
+                # 图生图需要 image_url，无图片时跳过 AI 调用走模拟路径
+                skip_ai = task_type == "ai_img2img" and not image_url
+                if skip_ai:
+                    logger.warning(f"[AI:Img2Img] 无上游图片 URL，跳过 AI 调用走模拟")
                 else:
                     # 调用对应的 AI 服务
                     if task_type == "ai_text2img":
