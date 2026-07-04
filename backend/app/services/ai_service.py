@@ -226,7 +226,7 @@ async def _download_to_minio(db, url: str, filename: str, content_type: str, own
         logger.warning(f"[MinIO] 无 owner_id，无法持久化到 MediaAsset，使用临时 URL: {url[:100]}")
         return str(asset_id), url
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     asset = MediaAsset(
         id=asset_id,
         owner_id=uuid.UUID(owner_id),
@@ -298,30 +298,36 @@ async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str |
     # 轮询任务状态
     result_data = await _poll_ark_task(base_url, provider.api_key, remote_task_id)
 
-    # 提取视频 URL
+    # 提取视频 URL（Ark API 返回格式：content.video_url）
     video_url = None
-    choices = result_data.get("choices", [])
-    if choices:
-        for choice in choices:
-            message = choice.get("message", {})
-            # 尝试从 content 中提取视频 URL
-            msg_content = message.get("content", "")
-            if isinstance(msg_content, str) and msg_content.startswith("http"):
-                video_url = msg_content
-                break
-            # content 可能是列表
-            if isinstance(msg_content, list):
-                for item in msg_content:
-                    if isinstance(item, dict) and item.get("type") == "video_url":
-                        video_url = item.get("video_url", {}).get("url")
-                    elif isinstance(item, dict) and item.get("type") == "file_url":
-                        video_url = item.get("file_url", {}).get("url")
-                    if video_url:
-                        break
-            if video_url:
-                break
 
-    # 也尝试从 data 字段提取
+    # 格式1：content.video_url（Ark 异步内容生成 API 标准格式）
+    content = result_data.get("content", {})
+    if isinstance(content, dict):
+        video_url = content.get("video_url")
+
+    # 格式2：choices[].message.content
+    if not video_url:
+        choices = result_data.get("choices", [])
+        if choices:
+            for choice in choices:
+                message = choice.get("message", {})
+                msg_content = message.get("content", "")
+                if isinstance(msg_content, str) and msg_content.startswith("http"):
+                    video_url = msg_content
+                    break
+                if isinstance(msg_content, list):
+                    for item in msg_content:
+                        if isinstance(item, dict) and item.get("type") == "video_url":
+                            video_url = item.get("video_url", {}).get("url")
+                        elif isinstance(item, dict) and item.get("type") == "file_url":
+                            video_url = item.get("file_url", {}).get("url")
+                        if video_url:
+                            break
+                if video_url:
+                    break
+
+    # 格式3：data[].url
     if not video_url:
         data_items = result_data.get("data", [])
         if data_items:
@@ -388,27 +394,36 @@ async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | Non
     # 轮询任务状态
     result_data = await _poll_ark_task(base_url, provider.api_key, remote_task_id)
 
-    # 提取音频 URL
+    # 提取音频 URL（Ark API 返回格式：content.audio_url）
     audio_url = None
-    choices = result_data.get("choices", [])
-    if choices:
-        for choice in choices:
-            message = choice.get("message", {})
-            msg_content = message.get("content", "")
-            if isinstance(msg_content, str) and msg_content.startswith("http"):
-                audio_url = msg_content
-                break
-            if isinstance(msg_content, list):
-                for item in msg_content:
-                    if isinstance(item, dict) and item.get("type") == "audio_url":
-                        audio_url = item.get("audio_url", {}).get("url")
-                    elif isinstance(item, dict) and item.get("type") == "file_url":
-                        audio_url = item.get("file_url", {}).get("url")
-                    if audio_url:
-                        break
-            if audio_url:
-                break
 
+    # 格式1：content.audio_url（Ark 异步内容生成 API 标准格式）
+    content = result_data.get("content", {})
+    if isinstance(content, dict):
+        audio_url = content.get("audio_url")
+
+    # 格式2：choices[].message.content
+    if not audio_url:
+        choices = result_data.get("choices", [])
+        if choices:
+            for choice in choices:
+                message = choice.get("message", {})
+                msg_content = message.get("content", "")
+                if isinstance(msg_content, str) and msg_content.startswith("http"):
+                    audio_url = msg_content
+                    break
+                if isinstance(msg_content, list):
+                    for item in msg_content:
+                        if isinstance(item, dict) and item.get("type") == "audio_url":
+                            audio_url = item.get("audio_url", {}).get("url")
+                        elif isinstance(item, dict) and item.get("type") == "file_url":
+                            audio_url = item.get("file_url", {}).get("url")
+                        if audio_url:
+                            break
+                if audio_url:
+                    break
+
+    # 格式3：data[].url
     if not audio_url:
         data_items = result_data.get("data", [])
         if data_items:
