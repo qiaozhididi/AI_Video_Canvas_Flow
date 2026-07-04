@@ -92,6 +92,34 @@ async def call_llm(db, model_id: str | UUID, messages: list[dict], temperature: 
         return content
 
 
+async def _handle_image_response(db, data: dict, owner_id: str | None) -> dict:
+    """处理图片生成 API 响应：提取图片 URL 并持久化到 MinIO
+
+    支持 OpenAI Images API 格式: {"data": [{"url": "...", "revised_prompt": "..."}]}
+
+    Returns:
+        {"url": "/api/v1/media/{id}/download" 或原始 URL, "revised_prompt": "..."}
+    """
+    if "data" not in data or not data["data"]:
+        raise RuntimeError(f"图片生成 API 返回格式异常: {str(data)[:300]}")
+
+    image_data = data["data"][0]
+    remote_url = image_data.get("url", "")
+    revised_prompt = image_data.get("revised_prompt", "")
+
+    if remote_url:
+        try:
+            _, persistent_url = await _download_to_minio(
+                db, remote_url, f"{uuid.uuid4()}.png", "image/png", owner_id=owner_id,
+            )
+            return {"url": persistent_url, "revised_prompt": revised_prompt}
+        except Exception as e:
+            logger.warning(f"[AI:Image] MinIO 持久化失败，使用原始 URL: {e}")
+            return {"url": remote_url, "revised_prompt": revised_prompt}
+
+    return {"url": remote_url, "revised_prompt": revised_prompt}
+
+
 async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | None = None) -> dict:
     """文生图：调用兼容 OpenAI Images API 的端点
 
@@ -131,28 +159,9 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
             raise RuntimeError(f"文生图 API 调用失败: HTTP {response.status_code}: {error_text}")
 
         data = response.json()
-        # OpenAI 格式: {"data": [{"url": "...", "revised_prompt": "..."}]}
-        if "data" in data and len(data["data"]) > 0:
-            image_data = data["data"][0]
-            remote_url = image_data.get("url", "")
-            revised_prompt = image_data.get("revised_prompt", "")
-            logger.info(f"[AI:ImageGen] 生成成功: {remote_url[:80]}")
-
-            # 下载到 MinIO 持久化，避免第三方临时 URL 过期
-            if remote_url:
-                owner_id = params.get("_owner_id") if params else None
-                try:
-                    _, persistent_url = await _download_to_minio(
-                        db, remote_url, f"{uuid.uuid4()}.png", "image/png", owner_id=owner_id,
-                    )
-                    return {"url": persistent_url, "revised_prompt": revised_prompt}
-                except Exception as e:
-                    logger.warning(f"[AI:ImageGen] MinIO 持久化失败，使用原始 URL: {e}")
-                    return {"url": remote_url, "revised_prompt": revised_prompt}
-
-            return {"url": remote_url, "revised_prompt": revised_prompt}
-        else:
-            raise RuntimeError(f"文生图 API 返回格式异常: {str(data)[:300]}")
+        logger.info(f"[AI:ImageGen] 生成成功")
+        owner_id = params.get("_owner_id") if params else None
+        return await _handle_image_response(db, data, owner_id)
 
 
 async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None) -> dict:
@@ -230,28 +239,9 @@ async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, pa
             raise RuntimeError(f"图生图 API 调用失败: HTTP {response.status_code}: {error_text}")
 
         data = response.json()
-        # OpenAI 格式: {"data": [{"url": "...", "revised_prompt": "..."}]}
-        if "data" in data and len(data["data"]) > 0:
-            image_data = data["data"][0]
-            remote_url = image_data.get("url", "")
-            revised_prompt = image_data.get("revised_prompt", "")
-            logger.info(f"[AI:Img2Img] 生成成功: {remote_url[:80]}")
-
-            # 下载到 MinIO 持久化
-            if remote_url:
-                owner_id = params.get("_owner_id") if params else None
-                try:
-                    _, persistent_url = await _download_to_minio(
-                        db, remote_url, f"{uuid.uuid4()}.png", "image/png", owner_id=owner_id,
-                    )
-                    return {"url": persistent_url, "revised_prompt": revised_prompt}
-                except Exception as e:
-                    logger.warning(f"[AI:Img2Img] MinIO 持久化失败，使用原始 URL: {e}")
-                    return {"url": remote_url, "revised_prompt": revised_prompt}
-
-            return {"url": remote_url, "revised_prompt": revised_prompt}
-        else:
-            raise RuntimeError(f"图生图 API 返回格式异常: {str(data)[:300]}")
+        logger.info(f"[AI:Img2Img] 生成成功")
+        owner_id = params.get("_owner_id") if params else None
+        return await _handle_image_response(db, data, owner_id)
 
 
 async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0) -> dict:
@@ -358,20 +348,95 @@ async def _download_to_minio(db, url: str, filename: str, content_type: str, own
     return str(asset_id), persistent_url
 
 
-async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str | None = None, params: dict | None = None) -> dict:
-    """图生视频：调用 Ark 异步内容生成 API
+async def _extract_ark_media_url(result_data: dict, media_type: str) -> str:
+    """从 Ark 异步任务结果中提取媒体 URL
+
+    支持三种响应格式：
+    1. content.{media_type}_url（Ark 标准格式）
+    2. choices[].message.content（Chat Completions 兼容格式）
+    3. data[].url（OpenAI Images API 兼容格式）
+
+    Args:
+        result_data: _poll_ark_task 返回的完整响应体
+        media_type: "video" 或 "audio"
+
+    Returns:
+        媒体文件 URL
+
+    Raises:
+        RuntimeError: 未找到媒体 URL
+    """
+    url_field = f"{media_type}_url"  # video_url / audio_url
+    media_url = None
+
+    # 格式1：content.{media_type}_url（Ark 异步内容生成 API 标准格式）
+    content = result_data.get("content", {})
+    if isinstance(content, dict):
+        media_url = content.get(url_field)
+
+    # 格式2：choices[].message.content
+    if not media_url:
+        choices = result_data.get("choices", [])
+        if choices:
+            for choice in choices:
+                message = choice.get("message", {})
+                msg_content = message.get("content", "")
+                if isinstance(msg_content, str) and msg_content.startswith("http"):
+                    media_url = msg_content
+                    break
+                if isinstance(msg_content, list):
+                    for item in msg_content:
+                        if isinstance(item, dict) and item.get("type") == url_field:
+                            media_url = item.get(url_field, {}).get("url")
+                        elif isinstance(item, dict) and item.get("type") == "file_url":
+                            media_url = item.get("file_url", {}).get("url")
+                        if media_url:
+                            break
+                if media_url:
+                    break
+
+    # 格式3：data[].url
+    if not media_url:
+        data_items = result_data.get("data", [])
+        if data_items:
+            media_url = data_items[0].get("url") or data_items[0].get(url_field)
+
+    if not media_url:
+        raise RuntimeError(f"{media_type}生成任务成功但未找到{media_type} URL: {str(result_data)[:500]}")
+
+    return media_url
+
+
+# media_type → (MIME 类型, 文件后缀)
+_ARK_MEDIA_CONFIG: dict[str, tuple[str, str]] = {
+    "video": ("video/mp4", ".mp4"),
+    "audio": ("audio/mpeg", ".mp3"),
+}
+
+
+async def _call_ark_async(
+    db, model_id: str | UUID, prompt: str,
+    media_type: str,  # "video" 或 "audio"
+    image_url: str | None = None,
+    params: dict | None = None,
+) -> dict:
+    """通用 Ark 异步任务调用（视频/音频生成）
 
     Args:
         db: 数据库 session
-        model_id: AI Model UUID（model_type 应为 video_gen）
-        prompt: 视频描述提示词
-        image_url: 可选参考图片 URL
+        model_id: AI Model UUID
+        prompt: 提示词
+        media_type: "video" 或 "audio"
+        image_url: 可选参考图片 URL（仅 video 使用）
         params: 额外参数
 
     Returns:
-        {"video_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
+        {"{media_type}_url": persistent_url, "remote_task_id": "..."}
     """
-    provider, model = await _get_provider_and_model(db, model_id, expected_type="video_gen")
+    expected_type = "video_gen" if media_type == "video" else "tts"
+    log_tag = f"AI:{media_type.capitalize()}Gen"
+
+    provider, model = await _get_provider_and_model(db, model_id, expected_type=expected_type)
 
     base_url = provider.base_url.rstrip("/")
     headers = {
@@ -389,73 +454,54 @@ async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str |
         "content": content,
     }
 
-    logger.info(f"[AI:VideoGen] 创建任务 {provider.name}/{model.display_name}, prompt={prompt[:50]}")
+    logger.info(f"[{log_tag}] 创建任务 {provider.name}/{model.display_name}, prompt={prompt[:50]}")
 
     # 创建异步任务
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{base_url}/contents/generations/tasks", json=body, headers=headers)
         if resp.status_code != 200:
             error_text = resp.text[:500]
-            logger.error(f"[AI:VideoGen] 创建任务失败: HTTP {resp.status_code}: {error_text}")
-            raise RuntimeError(f"视频生成 API 调用失败: HTTP {resp.status_code}: {error_text}")
+            logger.error(f"[{log_tag}] 创建任务失败: HTTP {resp.status_code}: {error_text}")
+            raise RuntimeError(f"{media_type}生成 API 调用失败: HTTP {resp.status_code}: {error_text}")
 
         task_data = resp.json()
         remote_task_id = task_data.get("id")
         if not remote_task_id:
-            raise RuntimeError(f"视频生成 API 未返回任务 ID: {str(task_data)[:300]}")
+            raise RuntimeError(f"{media_type}生成 API 未返回任务 ID: {str(task_data)[:300]}")
 
-    logger.info(f"[AI:VideoGen] 任务已创建: {remote_task_id}, 开始轮询")
+    logger.info(f"[{log_tag}] 任务已创建: {remote_task_id}, 开始轮询")
 
     # 轮询任务状态
     result_data = await _poll_ark_task(base_url, provider.api_key, remote_task_id)
 
-    # 提取视频 URL（Ark API 返回格式：content.video_url）
-    video_url = None
-
-    # 格式1：content.video_url（Ark 异步内容生成 API 标准格式）
-    content = result_data.get("content", {})
-    if isinstance(content, dict):
-        video_url = content.get("video_url")
-
-    # 格式2：choices[].message.content
-    if not video_url:
-        choices = result_data.get("choices", [])
-        if choices:
-            for choice in choices:
-                message = choice.get("message", {})
-                msg_content = message.get("content", "")
-                if isinstance(msg_content, str) and msg_content.startswith("http"):
-                    video_url = msg_content
-                    break
-                if isinstance(msg_content, list):
-                    for item in msg_content:
-                        if isinstance(item, dict) and item.get("type") == "video_url":
-                            video_url = item.get("video_url", {}).get("url")
-                        elif isinstance(item, dict) and item.get("type") == "file_url":
-                            video_url = item.get("file_url", {}).get("url")
-                        if video_url:
-                            break
-                if video_url:
-                    break
-
-    # 格式3：data[].url
-    if not video_url:
-        data_items = result_data.get("data", [])
-        if data_items:
-            video_url = data_items[0].get("url") or data_items[0].get("video_url")
-
-    if not video_url:
-        raise RuntimeError(f"视频生成任务成功但未找到视频 URL: {str(result_data)[:500]}")
-
-    logger.info(f"[AI:VideoGen] 视频生成成功, 下载到 MinIO: {video_url[:100]}")
+    # 提取媒体 URL
+    media_url = await _extract_ark_media_url(result_data, media_type)
+    logger.info(f"[{log_tag}] {media_type}生成成功, 下载到 MinIO: {media_url[:100]}")
 
     # 下载到 MinIO 持久化
     owner_id = params.get("_owner_id") if params else None
+    content_type, ext = _ARK_MEDIA_CONFIG[media_type]
     _, persistent_url = await _download_to_minio(
-        db, video_url, f"{remote_task_id}.mp4", "video/mp4", owner_id=owner_id,
+        db, media_url, f"{remote_task_id}{ext}", content_type, owner_id=owner_id,
     )
 
-    return {"video_url": persistent_url, "remote_task_id": remote_task_id}
+    return {f"{media_type}_url": persistent_url, "remote_task_id": remote_task_id}
+
+
+async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str | None = None, params: dict | None = None) -> dict:
+    """图生视频：调用 Ark 异步内容生成 API
+
+    Args:
+        db: 数据库 session
+        model_id: AI Model UUID（model_type 应为 video_gen）
+        prompt: 视频描述提示词
+        image_url: 可选参考图片 URL
+        params: 额外参数
+
+    Returns:
+        {"video_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
+    """
+    return await _call_ark_async(db, model_id, prompt, "video", image_url=image_url, params=params)
 
 
 async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | None = None) -> dict:
@@ -470,88 +516,7 @@ async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | Non
     Returns:
         {"audio_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
     """
-    provider, model = await _get_provider_and_model(db, model_id, expected_type="tts")
-
-    base_url = provider.base_url.rstrip("/")
-    headers = {
-        "Authorization": f"Bearer {provider.api_key}",
-        "Content-Type": "application/json",
-    }
-
-    content: list[dict] = [{"type": "text", "text": text}]
-
-    body: dict = {
-        "model": model.model_id,
-        "content": content,
-    }
-
-    logger.info(f"[AI:AudioGen] 创建任务 {provider.name}/{model.display_name}, text={text[:50]}")
-
-    # 创建异步任务
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{base_url}/contents/generations/tasks", json=body, headers=headers)
-        if resp.status_code != 200:
-            error_text = resp.text[:500]
-            logger.error(f"[AI:AudioGen] 创建任务失败: HTTP {resp.status_code}: {error_text}")
-            raise RuntimeError(f"音频生成 API 调用失败: HTTP {resp.status_code}: {error_text}")
-
-        task_data = resp.json()
-        remote_task_id = task_data.get("id")
-        if not remote_task_id:
-            raise RuntimeError(f"音频生成 API 未返回任务 ID: {str(task_data)[:300]}")
-
-    logger.info(f"[AI:AudioGen] 任务已创建: {remote_task_id}, 开始轮询")
-
-    # 轮询任务状态
-    result_data = await _poll_ark_task(base_url, provider.api_key, remote_task_id)
-
-    # 提取音频 URL（Ark API 返回格式：content.audio_url）
-    audio_url = None
-
-    # 格式1：content.audio_url（Ark 异步内容生成 API 标准格式）
-    content = result_data.get("content", {})
-    if isinstance(content, dict):
-        audio_url = content.get("audio_url")
-
-    # 格式2：choices[].message.content
-    if not audio_url:
-        choices = result_data.get("choices", [])
-        if choices:
-            for choice in choices:
-                message = choice.get("message", {})
-                msg_content = message.get("content", "")
-                if isinstance(msg_content, str) and msg_content.startswith("http"):
-                    audio_url = msg_content
-                    break
-                if isinstance(msg_content, list):
-                    for item in msg_content:
-                        if isinstance(item, dict) and item.get("type") == "audio_url":
-                            audio_url = item.get("audio_url", {}).get("url")
-                        elif isinstance(item, dict) and item.get("type") == "file_url":
-                            audio_url = item.get("file_url", {}).get("url")
-                        if audio_url:
-                            break
-                if audio_url:
-                    break
-
-    # 格式3：data[].url
-    if not audio_url:
-        data_items = result_data.get("data", [])
-        if data_items:
-            audio_url = data_items[0].get("url") or data_items[0].get("audio_url")
-
-    if not audio_url:
-        raise RuntimeError(f"音频生成任务成功但未找到音频 URL: {str(result_data)[:500]}")
-
-    logger.info(f"[AI:AudioGen] 音频生成成功, 下载到 MinIO: {audio_url[:100]}")
-
-    # 下载到 MinIO 持久化
-    owner_id = params.get("_owner_id") if params else None
-    _, persistent_url = await _download_to_minio(
-        db, audio_url, f"{remote_task_id}.mp3", "audio/mpeg", owner_id=owner_id,
-    )
-
-    return {"audio_url": persistent_url, "remote_task_id": remote_task_id}
+    return await _call_ark_async(db, model_id, text, "audio", params=params)
 
 
 import json

@@ -177,6 +177,63 @@ def _extract_text_from_artifacts(artifacts: list[dict] | None) -> str:
     return " ".join(texts)
 
 
+def _extract_image_url(artifacts: list[dict] | None) -> str | None:
+    """从 input_artifacts 中提取图片 URL"""
+    if not artifacts:
+        return None
+    for artifact in artifacts:
+        url = artifact.get("url", "")
+        if url and ("/image" in url or "/media" in url or url.startswith("http")):
+            return url
+    return None
+
+
+# ── AI 任务配置（配置驱动，替代 _do_text2img 等5个重复函数） ──
+
+AI_TASK_CONFIG = {
+    "ai_text2img": {
+        "default_prompt": "一张美丽的风景图",
+        "needs_image": False,
+        "result_key": "url",
+        "fallback_msg": "未配置文生图模型",
+        "has_size_param": True,
+        "has_size_retry": True,
+    },
+    "ai_img2img": {
+        "default_prompt": "在原图基础上进行编辑",
+        "needs_image": True,
+        "result_key": "url",
+        "fallback_msg": "未配置图生图模型或无上游图片",
+        "has_size_param": True,
+        "has_size_retry": True,
+    },
+    "ai_img2video": {
+        "default_prompt": "一段流畅的视频",
+        "needs_image": True,
+        "result_key": "video_url",
+        "fallback_msg": "未配置图生视频模型",
+        "has_size_param": False,
+        "has_size_retry": False,
+    },
+    "ai_text2video": {
+        "default_prompt": "一段优美的视频",
+        "needs_image": False,
+        "result_key": "video_url",
+        "fallback_msg": "未配置文生视频模型",
+        "has_size_param": False,
+        "has_size_retry": False,
+    },
+    "ai_tts": {
+        "default_prompt": "这是一段语音合成示例。",
+        "needs_image": False,
+        "result_key": "audio_url",
+        "fallback_msg": "未配置TTS模型",
+        "has_size_param": False,
+        "has_size_retry": False,
+    },
+}
+
+
 async def _execute_ai_task(
     task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None = None, node_params: dict | None = None
 ) -> dict:
@@ -212,349 +269,124 @@ async def _execute_ai_task(
         user_content = _extract_text_from_artifacts(input_artifacts)
 
     # 按 task_type 路由
-    if task_type == "ai_text2img":
-        return await _do_text2img(task_id, model_id, user_content, input_artifacts, node_params)
-    elif task_type == "ai_img2img":
-        return await _do_img2img(task_id, model_id, user_content, input_artifacts, node_params)
-    elif task_type == "ai_text2video":
-        return await _do_text2video(task_id, model_id, user_content, input_artifacts, node_params)
-    elif task_type == "ai_img2video":
-        return await _do_img2video(task_id, model_id, user_content, input_artifacts, node_params)
-    elif task_type == "ai_tts":
-        return await _do_tts(task_id, model_id, user_content, node_params)
+    if task_type in AI_TASK_CONFIG:
+        return await _do_ai_call(task_id, task_type, model_id, user_content, input_artifacts, node_params)
     else:
         return await _do_llm(task_id, model_id, user_content)
 
 
-async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
-    """文生图：调用 image_gen API 或模拟"""
-    from app.services.ai_service import call_image_gen
-    from app.models.render_task import RenderTask
+async def _do_ai_call(
+    task_id: str, task_type: str, model_id: str | None,
+    prompt: str | None, input_artifacts: list[dict] | None, node_params: dict | None
+) -> dict:
+    """配置驱动的通用 AI 调用函数，替代 _do_text2img 等5个重复函数
 
-    # 火山引擎 SeedReam 要求 size 为 1k/2k/4k 或 WIDTHxHEIGHT 格式
-    # 用户可能输入 1920*1080 或 1920x1080 等格式，需规范化
-    size = (node_params or {}).get("size", "2k") or "2k"
-    if "*" in str(size):
-        size = str(size).replace("*", "x")
+    根据 AI_TASK_CONFIG 中的配置路由到不同的 AI 服务，
+    统一处理 owner_id 获取、size 规范化、InvalidParameter 重试和模拟 fallback。
+    """
+    config = AI_TASK_CONFIG.get(task_type)
+    if not config:
+        raise ValueError(f"未知的 AI 任务类型: {task_type}")
 
     sf = _get_celery_session_factory()
     async with sf() as db:
+        from app.models.render_task import RenderTask
+        from app.services.ai_service import call_image_gen, call_img2img, call_video_gen, call_audio_gen
+
         await _update_task(db, task_id, status="running", progress=10)
 
+        # 填充默认 prompt
         if not prompt:
-            prompt = "一张美丽的风景图"
+            prompt = config["default_prompt"]
+
+        # 提取图片 URL（needs_image 时）
+        image_url = None
+        if config["needs_image"] and input_artifacts:
+            image_url = _extract_image_url(input_artifacts)
+
+        await _update_task(db, task_id, progress=20)
 
         # 获取 owner_id 用于 MinIO 持久化
         render_task = await db.get(RenderTask, uuid.UUID(task_id))
         owner_id = str(render_task.owner_id) if render_task else None
 
-        await _update_task(db, task_id, progress=30)
+        # 规范化 size 参数（文生图/图生图）
+        size = None
+        if config["has_size_param"]:
+            size = (node_params or {}).get("size", "2k") or "2k"
+            if "*" in str(size):
+                size = str(size).replace("*", "x")
 
         result_url = ""
         revised_prompt = ""
 
         try:
             if model_id:
-                result = await call_image_gen(db, model_id, prompt, params={"size": size, "_owner_id": owner_id})
-                result_url = result["url"]
-                revised_prompt = result.get("revised_prompt", "")
+                # 图生图需要 image_url
+                if task_type == "ai_img2img" and not image_url:
+                    logger.warning(f"[AI:Img2Img] 无上游图片 URL，回退模拟")
+                    await _update_task(db, task_id, progress=40)
+                else:
+                    # 调用对应的 AI 服务
+                    if task_type == "ai_text2img":
+                        result = await call_image_gen(db, model_id, prompt, params={"size": size, "_owner_id": owner_id})
+                    elif task_type == "ai_img2img":
+                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": size, "_owner_id": owner_id})
+                    elif task_type in ("ai_img2video", "ai_text2video"):
+                        result = await call_video_gen(db, model_id, prompt, image_url=image_url, params={**(node_params or {}), "_owner_id": owner_id})
+                    elif task_type == "ai_tts":
+                        result = await call_audio_gen(db, model_id, prompt, params={**(node_params or {}), "_owner_id": owner_id})
+
+                    result_url = result.get(config["result_key"], "")
+                    if config["result_key"] == "url":
+                        revised_prompt = result.get("revised_prompt", "")
         except ValueError as e:
-            # 模型类型不匹配（如传入了 LLM 模型），回退到模拟生成
-            logger.warning(f"[AI:Text2Img] 模型不匹配，回退模拟: {e}")
-            await _update_task(db, task_id, progress=50)
-        except RuntimeError as e:
-            err_msg = str(e)
-            # size 参数不合法时，回退到 2k 重试
-            if "InvalidParameter" in err_msg and "size" in err_msg and size != "2k":
-                logger.warning(f"[AI:Text2Img] size={size} 不合法，回退到 2k 重试")
-                size = "2k"
-                try:
-                    result = await call_image_gen(db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id})
-                    result_url = result["url"]
-                    revised_prompt = result.get("revised_prompt", "")
-                except Exception as retry_err:
-                    logger.error(f"[AI:Text2Img] 重试也失败: {retry_err}", exc_info=True)
-                    await _update_task(db, task_id, status="failed", error_message=str(retry_err)[:500], progress=0)
-                    return {"task_id": task_id, "status": "failed", "error": str(retry_err)}
-            else:
-                logger.error(f"[AI:Text2Img] 调用失败: {e}", exc_info=True)
-                await _update_task(db, task_id, status="failed", error_message=err_msg[:500], progress=0)
-                return {"task_id": task_id, "status": "failed", "error": err_msg}
-        except Exception as e:
-            logger.error(f"[AI:Text2Img] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-
-        if not result_url:
-            # 模拟生成（无模型或模型不匹配时）
-            for p in [50, 70, 90]:
-                await asyncio.sleep(1)
-                await _update_task(db, task_id, progress=p)
-            result_url = f"ai_result/{task_id}/image.png"
-            revised_prompt = "模拟生成（未配置文生图模型）"
-
-        await _update_task(
-            db, task_id, progress=100, status="completed", result_url=result_url,
-        )
-
-        return {
-            "task_id": task_id, "status": "completed",
-            "result_url": result_url, "revised_prompt": revised_prompt[:200],
-        }
-
-
-async def _do_img2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
-    """图生图：从上游提取图片 URL + 调用 img2img API 或模拟"""
-    from app.services.ai_service import call_img2img
-    from app.models.render_task import RenderTask
-
-    # 火山引擎 SeedReam 要求 size 为 1k/2k/4k 或 WIDTHxHEIGHT 格式
-    size = (node_params or {}).get("size", "2k") or "2k"
-    if "*" in str(size):
-        size = str(size).replace("*", "x")
-
-    sf = _get_celery_session_factory()
-    async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=10)
-
-        if not prompt:
-            prompt = "在原图基础上进行编辑"
-
-        # 从 input_artifacts 提取图片 URL
-        image_url = None
-        if input_artifacts:
-            for artifact in input_artifacts:
-                url = artifact.get("url", "")
-                if url and ("/image" in url or "/media" in url or url.startswith("http")):
-                    image_url = url
-                    break
-
-        await _update_task(db, task_id, progress=20)
-
-        result_url = ""
-        revised_prompt = ""
-
-        try:
-            if model_id and image_url:
-                # 获取 owner_id 用于 MinIO 持久化
-                render_task = await db.get(RenderTask, uuid.UUID(task_id))
-                owner_id = str(render_task.owner_id) if render_task else None
-
-                result = await call_img2img(
-                    db, model_id, prompt, image_url,
-                    params={"size": size, "_owner_id": owner_id},
-                )
-                result_url = result["url"]
-                revised_prompt = result.get("revised_prompt", "")
-            elif model_id and not image_url:
-                logger.warning(f"[AI:Img2Img] 无上游图片 URL，回退模拟")
-                await _update_task(db, task_id, progress=40)
-        except ValueError as e:
-            logger.warning(f"[AI:Img2Img] 模型不匹配，回退模拟: {e}")
+            # 模型类型不匹配，回退到模拟生成
+            logger.warning(f"[AI:{task_type}] 模型不匹配，回退模拟: {e}")
             await _update_task(db, task_id, progress=40)
         except RuntimeError as e:
             err_msg = str(e)
             # size 参数不合法时，回退到 2k 重试
-            if "InvalidParameter" in err_msg and "size" in err_msg and size != "2k":
-                logger.warning(f"[AI:Img2Img] size={size} 不合法，回退到 2k 重试")
-                size = "2k"
+            if config["has_size_retry"] and "InvalidParameter" in err_msg and "size" in err_msg and size != "2k":
+                logger.warning(f"[AI:{task_type}] size={size} 不合法，回退到 2k 重试")
                 try:
-                    render_task = await db.get(RenderTask, uuid.UUID(task_id))
-                    owner_id = str(render_task.owner_id) if render_task else None
-                    result = await call_img2img(
-                        db, model_id, prompt, image_url,
-                        params={"size": "2k", "_owner_id": owner_id},
-                    )
-                    result_url = result["url"]
-                    revised_prompt = result.get("revised_prompt", "")
+                    if task_type == "ai_text2img":
+                        result = await call_image_gen(db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id})
+                    elif task_type == "ai_img2img":
+                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": "2k", "_owner_id": owner_id})
+                    result_url = result.get(config["result_key"], "")
+                    if config["result_key"] == "url":
+                        revised_prompt = result.get("revised_prompt", "")
                 except Exception as retry_err:
-                    logger.error(f"[AI:Img2Img] 重试也失败: {retry_err}", exc_info=True)
+                    logger.error(f"[AI:{task_type}] 重试也失败: {retry_err}", exc_info=True)
                     await _update_task(db, task_id, status="failed", error_message=str(retry_err)[:500], progress=0)
                     return {"task_id": task_id, "status": "failed", "error": str(retry_err)}
             else:
-                logger.error(f"[AI:Img2Img] 调用失败: {e}", exc_info=True)
+                logger.error(f"[AI:{task_type}] 调用失败: {e}", exc_info=True)
                 await _update_task(db, task_id, status="failed", error_message=err_msg[:500], progress=0)
                 return {"task_id": task_id, "status": "failed", "error": err_msg}
         except Exception as e:
-            logger.error(f"[AI:Img2Img] 调用失败: {e}", exc_info=True)
+            logger.error(f"[AI:{task_type}] 调用失败: {e}", exc_info=True)
             await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
             return {"task_id": task_id, "status": "failed", "error": str(e)}
 
         if not result_url:
-            # 模拟生成（无模型或模型不匹配时）
+            # TD-07: 模拟生成时不设 result_url，仅标记 completed + error_message
             for p in [40, 60, 80]:
-                await asyncio.sleep(1)
+                await asyncio.sleep(2 if task_type in ("ai_img2video", "ai_text2video") else 1)
                 await _update_task(db, task_id, progress=p)
-            result_url = f"ai_result/{task_id}/image.png"
-            revised_prompt = "模拟生成（未配置图生图模型或无上游图片）"
-
-        await _update_task(
-            db, task_id, progress=100, status="completed", result_url=result_url,
-        )
-
-        return {
-            "task_id": task_id, "status": "completed",
-            "result_url": result_url, "revised_prompt": revised_prompt[:200],
-        }
-
-
-async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
-    """图生视频：调用 video_gen API 或模拟"""
-    from app.services.ai_service import call_video_gen
-    from app.models.render_task import RenderTask
-
-    sf = _get_celery_session_factory()
-    async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=10)
-
-        if not prompt:
-            prompt = "一段流畅的视频"
-
-        # 从 input_artifacts 提取图片 URL
-        image_url = None
-        if input_artifacts:
-            for artifact in input_artifacts:
-                url = artifact.get("url", "")
-                if url and ("/image" in url or "/media" in url or url.startswith("http")):
-                    image_url = url
-                    break
-
-        await _update_task(db, task_id, progress=20)
-
-        result_url = ""
-        try:
-            if model_id:
-                # 获取 owner_id 用于 MinIO 持久化
-                render_task = await db.get(RenderTask, uuid.UUID(task_id))
-                owner_id = str(render_task.owner_id) if render_task else None
-
-                result = await call_video_gen(
-                    db, model_id, prompt, image_url=image_url,
-                    params={**(node_params or {}), "_owner_id": owner_id},
-                )
-                result_url = result["video_url"]
-        except ValueError as e:
-            logger.warning(f"[AI:Img2Video] 模型不匹配，回退模拟: {e}")
-            await _update_task(db, task_id, progress=40)
-        except RuntimeError as e:
-            logger.error(f"[AI:Img2Video] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-        except Exception as e:
-            logger.error(f"[AI:Img2Video] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-
-        if not result_url:
-            # 模拟生成（无模型或模型不匹配时）
-            for p in [40, 60, 80]:
-                await asyncio.sleep(2)
-                await _update_task(db, task_id, progress=p)
-            result_url = f"ai_result/{task_id}/video.mp4"
+            await _update_task(
+                db, task_id, progress=100, status="completed",
+                error_message=f"AI 模拟完成: {config['fallback_msg']}",
+            )
+            return {"task_id": task_id, "status": "completed"}
 
         await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
 
-    return {"task_id": task_id, "status": "completed", "result_url": result_url}
-
-
-async def _do_text2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
-    """文生视频：仅文本输入，调用 call_video_gen(image_url=None)"""
-    from app.services.ai_service import call_video_gen
-    from app.models.render_task import RenderTask
-
-    sf = _get_celery_session_factory()
-    async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=10)
-
-        if not prompt:
-            prompt = "一段优美的视频"
-
-        await _update_task(db, task_id, progress=20)
-
-        result_url = ""
-        try:
-            if model_id:
-                # 获取 owner_id 用于 MinIO 持久化
-                render_task = await db.get(RenderTask, uuid.UUID(task_id))
-                owner_id = str(render_task.owner_id) if render_task else None
-
-                result = await call_video_gen(
-                    db, model_id, prompt, image_url=None,
-                    params={**(node_params or {}), "_owner_id": owner_id},
-                )
-                result_url = result["video_url"]
-        except ValueError as e:
-            logger.warning(f"[AI:Text2Video] 模型不匹配，回退模拟: {e}")
-            await _update_task(db, task_id, progress=40)
-        except RuntimeError as e:
-            logger.error(f"[AI:Text2Video] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-        except Exception as e:
-            logger.error(f"[AI:Text2Video] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-
-        if not result_url:
-            # 模拟生成（无模型或模型不匹配时）
-            for p in [40, 60, 80]:
-                await asyncio.sleep(2)
-                await _update_task(db, task_id, progress=p)
-            result_url = f"ai_result/{task_id}/video.mp4"
-
-        await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
-
-    return {"task_id": task_id, "status": "completed", "result_url": result_url}
-
-
-async def _do_tts(task_id: str, model_id: str | None, prompt: str, node_params: dict | None = None) -> dict:
-    """文生语音：调用 audio_gen API 或模拟"""
-    from app.services.ai_service import call_audio_gen
-    from app.models.render_task import RenderTask
-
-    sf = _get_celery_session_factory()
-    async with sf() as db:
-        await _update_task(db, task_id, status="running", progress=10)
-
-        if not prompt:
-            prompt = "这是一段语音合成示例。"
-
-        await _update_task(db, task_id, progress=20)
-
-        result_url = ""
-        try:
-            if model_id:
-                # 获取 owner_id 用于 MinIO 持久化
-                render_task = await db.get(RenderTask, uuid.UUID(task_id))
-                owner_id = str(render_task.owner_id) if render_task else None
-
-                result = await call_audio_gen(
-                    db, model_id, prompt,
-                    params={**(node_params or {}), "_owner_id": owner_id},
-                )
-                result_url = result["audio_url"]
-        except ValueError as e:
-            logger.warning(f"[AI:TTS] 模型不匹配，回退模拟: {e}")
-            await _update_task(db, task_id, progress=40)
-        except RuntimeError as e:
-            logger.error(f"[AI:TTS] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-        except Exception as e:
-            logger.error(f"[AI:TTS] 调用失败: {e}", exc_info=True)
-            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
-            return {"task_id": task_id, "status": "failed", "error": str(e)}
-
-        if not result_url:
-            # 模拟生成（无模型或模型不匹配时）
-            for p in [40, 60, 80]:
-                await asyncio.sleep(1)
-                await _update_task(db, task_id, progress=p)
-            result_url = f"ai_result/{task_id}/audio.mp3"
-
-        await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
-
-    return {"task_id": task_id, "status": "completed", "result_url": result_url}
+        ret: dict = {"task_id": task_id, "status": "completed", "result_url": result_url}
+        if revised_prompt:
+            ret["revised_prompt"] = revised_prompt[:200]
+        return ret
 
 
 async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict:

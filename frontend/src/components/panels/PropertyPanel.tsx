@@ -1,9 +1,10 @@
 import { useCanvasStore } from '@/stores/canvasStore';
 import { NODE_CATEGORIES, type CanvasNodeData } from '@/types/canvas';
 import { X, Trash2, Play } from 'lucide-react';
+import { executeNode } from '../../utils/workflowExecutor';
 
 export default function PropertyPanel() {
-  const { nodes, selectedNodeId, updateNodeData, removeNode, setNodeStatus } = useCanvasStore();
+  const { nodes, selectedNodeId, updateNodeData, removeNode, setNodeStatus, setNodeError } = useCanvasStore();
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   if (!selectedNode) {
@@ -164,20 +165,14 @@ export default function PropertyPanel() {
       {/* 底部操作 */}
       <div className="p-3 border-t border-canvas-border space-y-2">
         <button
-          onClick={() => {
-            setNodeStatus(selectedNode.id, 'running', 0);
-            // 模拟进度
-            let progress = 0;
-            const interval = setInterval(() => {
-              progress += Math.random() * 15;
-              if (progress >= 100) {
-                progress = 100;
-                setNodeStatus(selectedNode.id, 'completed', 100);
-                clearInterval(interval);
-              } else {
-                setNodeStatus(selectedNode.id, 'running', Math.round(progress));
-              }
-            }, 500);
+          onClick={async () => {
+            try {
+              setNodeStatus(selectedNode.id, 'pending', 0);
+              await executeNode(selectedNode.id);
+            } catch (err: any) {
+              setNodeStatus(selectedNode.id, 'failed', 0);
+              setNodeError(selectedNode.id, err.message || '执行失败');
+            }
           }}
           className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
         >

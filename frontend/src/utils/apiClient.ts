@@ -462,29 +462,25 @@ export const renderApi = {
   /**
    * 轮询渲染任务直到完成/失败
    */
-  poll: (
+  poll: async (
     taskId: string,
     intervalMs: number = 2000,
     onProgress?: (progress: number, status: string) => void,
-  ) =>
-    new Promise<RenderTaskResponse>((resolve, reject) => {
-      const poll = async () => {
-        try {
-          const task = await renderApi.get(taskId);
-          onProgress?.(task.progress, task.status);
-          if (task.status === 'completed') {
-            resolve(task);
-          } else if (task.status === 'failed') {
-            reject(new ApiError(500, 'RENDER_FAILED', task.error_message || '渲染失败'));
-          } else {
-            setTimeout(poll, intervalMs);
-          }
-        } catch (err) {
-          reject(err);
-        }
-      };
-      poll();
-    }),
+    attempt: number = 0,
+  ): Promise<RenderTaskResponse> => {
+    const MAX_POLL_ATTEMPTS = 120; // 约 4 分钟 (120 * 2s)
+    const task = await renderApi.get(taskId);
+    onProgress?.(task.progress, task.status);
+    if (task.status === 'completed') return task;
+    if (task.status === 'failed') {
+      throw new ApiError(500, 'RENDER_FAILED', task.error_message || '渲染失败');
+    }
+    if (attempt >= MAX_POLL_ATTEMPTS) {
+      throw new ApiError(408, 'POLL_TIMEOUT', '轮询超时：任务长时间未完成');
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+    return renderApi.poll(taskId, intervalMs, onProgress, attempt + 1);
+  },
 };
 
 // ── AI Provider / Model ──

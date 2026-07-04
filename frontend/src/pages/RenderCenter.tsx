@@ -22,7 +22,9 @@ function getStatusConfig(status: string) {
 
 const TASK_TYPES = [
   { value: 'ai_text2img', label: '文生图' },
+  { value: 'ai_img2img', label: '图生图' },
   { value: 'ai_img2video', label: '图生视频' },
+  { value: 'ai_text2video', label: '文生视频' },
   { value: 'ai_tts', label: '文生语音' },
   { value: 'render', label: '渲染' },
 ];
@@ -30,12 +32,11 @@ const TASK_TYPES = [
 // 任务类型友好显示
 const TASK_TYPE_LABELS: Record<string, string> = {
   ai_text2img: '文生图',
+  ai_img2img: '图生图',
   ai_img2video: '图生视频',
+  ai_text2video: '文生视频',
   ai_tts: '文生语音',
   render: '渲染',
-  video_render: '视频渲染',
-  image_render: '图片渲染',
-  audio_render: '音频渲染',
 };
 
 function getTaskTypeLabel(taskType: string): string {
@@ -65,7 +66,7 @@ export default function RenderCenter() {
   const [showCreate, setShowCreate] = useState(false);
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
-  const [selectedTaskType, setSelectedTaskType] = useState('video_render');
+  const [selectedTaskType, setSelectedTaskType] = useState('ai_text2img');
   const [creating, setCreating] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
