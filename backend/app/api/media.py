@@ -3,7 +3,8 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from urllib.request import urlopen
+
+import httpx
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -114,7 +115,9 @@ async def download_media(asset_id: str, user: CurrentUserWithToken, db: DBSessio
         raise HTTPException(status_code=500, detail="生成下载链接失败")
 
     try:
-        resp = urlopen(url)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
     except Exception as e:
         logger.error(f"[Media:Download] 从 MinIO 获取文件失败: {e}")
         raise HTTPException(status_code=500, detail="文件获取失败")
@@ -125,7 +128,7 @@ async def download_media(asset_id: str, user: CurrentUserWithToken, db: DBSessio
     disposition = "attachment" if download else "inline"
 
     return StreamingResponse(
-        resp,
+        iter([resp.content]),
         media_type=asset.file_type,
         headers={
             "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded_filename}",
