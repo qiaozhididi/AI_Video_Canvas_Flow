@@ -128,13 +128,26 @@ export default function RenderCenter() {
   // 下载结果
   const handleDownload = async (task: RenderTaskResponse) => {
     if (!task.result_url) return;
+
+    // 根据 task_type 推断文件扩展名
+    const getExtension = (taskType: string): string => {
+      if (taskType === 'ai_text2img' || taskType === 'ai_img2img') return '.png';
+      if (taskType === 'ai_img2video' || taskType === 'ai_text2video') return '.mp4';
+      if (taskType === 'ai_tts') return '.mp3';
+      // 默认：从 result_url 推断
+      const urlPath = task.result_url?.split('?')[0] || '';
+      const ext = urlPath.split('.').pop();
+      if (ext && ['png', 'jpg', 'jpeg', 'webp', 'mp4', 'mp3', 'wav', 'gif'].includes(ext)) return `.${ext}`;
+      return '.mp4';
+    };
+
     try {
       // 外部 URL（如火山引擎返回的图片链接）直接打开下载
       if (task.result_url.startsWith('http://') || task.result_url.startsWith('https://')) {
         const a = document.createElement('a');
         a.href = task.result_url;
         a.target = '_blank';
-        a.download = `render-${task.id}`;
+        a.download = `render-${task.id}${getExtension(task.task_type)}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -150,11 +163,22 @@ export default function RenderCenter() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // 优先从 Content-Disposition 解析文件名
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = `render-${task.id}${getExtension(task.task_type)}`;
+      if (disposition) {
+        const utf8Match = disposition.match(/filename\*=UTF-8''(.+)/);
+        const asciiMatch = disposition.match(/filename="?([^";]+)"?/);
+        if (utf8Match) filename = decodeURIComponent(utf8Match[1]);
+        else if (asciiMatch) filename = asciiMatch[1];
+      }
+
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = blobUrl;
-      a.download = `render-${task.id}.mp4`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

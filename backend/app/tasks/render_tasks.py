@@ -596,15 +596,39 @@ async def _execute_render_task(
     """执行默认渲染任务
 
     image_output 节点：透传上游图片 URL 作为 result_url
-    其他节点：模拟渲染进度
+    audio_output 节点：透传上游音频 URL 作为 result_url
+    其他节点：模拟渲染进度（根据节点类型输出正确扩展名）
     """
     sf = _get_celery_session_factory()
+
+    # 根据节点 subtype 确定输出扩展名
+    subtype_ext_map = {
+        "image_output": ".png",
+        "video_output": ".mp4",
+        "audio_output": ".mp3",
+        "upscale": ".png",
+        "remove_bg": ".png",
+        "style_transfer": ".png",
+        "extend_image": ".png",
+    }
+    ext = subtype_ext_map.get(subtype, ".mp4")
 
     # image_output / upscale 节点：从上游 artifacts 提取图片 URL 透传
     if subtype in ("image_output", "upscale") and input_artifacts:
         image_art = next((a for a in input_artifacts if a.get("type") == "image" and a.get("url")), None)
         if image_art:
             result_url = image_art["url"]
+            async with sf() as db:
+                await _update_task(db, task_id, status="running", progress=50)
+                await asyncio.sleep(0.5)
+                await _update_task(db, task_id, progress=100, status="completed", result_url=result_url)
+            return {"task_id": task_id, "status": "completed", "result_url": result_url}
+
+    # audio_output 节点：从上游 artifacts 提取音频 URL 透传
+    if subtype == "audio_output" and input_artifacts:
+        audio_art = next((a for a in input_artifacts if a.get("type") == "audio" and a.get("url")), None)
+        if audio_art:
+            result_url = audio_art["url"]
             async with sf() as db:
                 await _update_task(db, task_id, status="running", progress=50)
                 await asyncio.sleep(0.5)
@@ -619,7 +643,7 @@ async def _execute_render_task(
             await asyncio.sleep(2)
             status = "completed" if progress >= 100 else "running"
             result_url = (
-                f"render_result/{task_id}/output.mp4" if progress >= 100 else None
+                f"render_result/{task_id}/output{ext}" if progress >= 100 else None
             )
             await _update_task(
                 db,
@@ -632,5 +656,5 @@ async def _execute_render_task(
     return {
         "task_id": task_id,
         "status": "completed",
-        "result_url": f"render_result/{task_id}/output.mp4",
+        "result_url": f"render_result/{task_id}/output{ext}",
     }
