@@ -525,8 +525,8 @@ export const aiApi = {
       }),
     delete: (id: string) =>
       request<void>(`/ai/models/${id}`, { method: 'DELETE' }),
-    getDefault: () =>
-      request<AiModelResponse>('/ai/models/default'),
+    getDefault: (modelType?: string) =>
+      request<AiModelResponse>(`/ai/models/default${modelType ? `?model_type=${modelType}` : ''}`),
   },
 
   /** AI 快速生成工作流 */

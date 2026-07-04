@@ -3,6 +3,7 @@
 支持的 AI 类型：
 - LLM（call_llm）：OpenAI Chat Completions 兼容 API
 - 文生图（call_image_gen）：OpenAI Images API 兼容格式
+- 图生图（call_img2img）：OpenAI Images Edits API 兼容格式
 - 图生视频（call_video_gen）：Ark 异步内容生成 API
 - TTS（call_audio_gen）：Ark 异步内容生成 API
 """
@@ -101,7 +102,7 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
         params: 额外参数（size, n 等）
 
     Returns:
-        {"url": "https://...", "revised_prompt": "..."} 生成图片信息
+        {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
     provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
 
@@ -133,14 +134,95 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
         # OpenAI 格式: {"data": [{"url": "...", "revised_prompt": "..."}]}
         if "data" in data and len(data["data"]) > 0:
             image_data = data["data"][0]
-            result = {
-                "url": image_data.get("url", ""),
-                "revised_prompt": image_data.get("revised_prompt", ""),
-            }
-            logger.info(f"[AI:ImageGen] 生成成功: {result['url'][:80]}")
-            return result
+            remote_url = image_data.get("url", "")
+            revised_prompt = image_data.get("revised_prompt", "")
+            logger.info(f"[AI:ImageGen] 生成成功: {remote_url[:80]}")
+
+            # 下载到 MinIO 持久化，避免第三方临时 URL 过期
+            if remote_url:
+                owner_id = params.get("_owner_id") if params else None
+                try:
+                    _, persistent_url = await _download_to_minio(
+                        db, remote_url, f"{uuid.uuid4()}.png", "image/png", owner_id=owner_id,
+                    )
+                    return {"url": persistent_url, "revised_prompt": revised_prompt}
+                except Exception as e:
+                    logger.warning(f"[AI:ImageGen] MinIO 持久化失败，使用原始 URL: {e}")
+                    return {"url": remote_url, "revised_prompt": revised_prompt}
+
+            return {"url": remote_url, "revised_prompt": revised_prompt}
         else:
             raise RuntimeError(f"文生图 API 返回格式异常: {str(data)[:300]}")
+
+
+async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None) -> dict:
+    """图生图：调用兼容 OpenAI Images API 的端点，通过 image 参数传入参考图片
+
+    火山引擎 SeedReam 使用 /images/generations + image 参数实现图生图/图改图
+
+    Args:
+        db: 数据库 session
+        model_id: AI Model UUID（model_type 应为 image_gen）
+        prompt: 图片编辑描述提示词
+        image_url: 参考图片 URL（公网可访问或内部 MinIO 路径）
+        params: 额外参数（size, n 等）
+
+    Returns:
+        {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
+    """
+    provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
+
+    # 内部相对路径转为完整 URL
+    api_image_url = image_url
+    if image_url.startswith("/api/v1/media/"):
+        from app.config import settings
+        api_image_url = f"http://localhost:{settings.PORT}{image_url}"
+
+    url = f"{provider.base_url.rstrip('/')}/images/generations"
+    headers = {
+        "Authorization": f"Bearer {provider.api_key}",
+        "Content-Type": "application/json",
+    }
+    body: dict = {
+        "model": model.model_id,
+        "prompt": prompt,
+        "image": api_image_url,
+        "n": params.get("n", 1) if params else 1,
+        "size": params.get("size", "2k") if params else "2k",
+    }
+
+    logger.info(f"[AI:Img2Img] 调用 {provider.name}/{model.display_name}, prompt={prompt[:50]}, image_url={api_image_url[:80]}")
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(url, json=body, headers=headers)
+        if response.status_code != 200:
+            error_text = response.text[:500]
+            logger.error(f"[AI:Img2Img] 调用失败: HTTP {response.status_code}: {error_text}")
+            raise RuntimeError(f"图生图 API 调用失败: HTTP {response.status_code}: {error_text}")
+
+        data = response.json()
+        # OpenAI 格式: {"data": [{"url": "...", "revised_prompt": "..."}]}
+        if "data" in data and len(data["data"]) > 0:
+            image_data = data["data"][0]
+            remote_url = image_data.get("url", "")
+            revised_prompt = image_data.get("revised_prompt", "")
+            logger.info(f"[AI:Img2Img] 生成成功: {remote_url[:80]}")
+
+            # 下载到 MinIO 持久化
+            if remote_url:
+                owner_id = params.get("_owner_id") if params else None
+                try:
+                    _, persistent_url = await _download_to_minio(
+                        db, remote_url, f"{uuid.uuid4()}.png", "image/png", owner_id=owner_id,
+                    )
+                    return {"url": persistent_url, "revised_prompt": revised_prompt}
+                except Exception as e:
+                    logger.warning(f"[AI:Img2Img] MinIO 持久化失败，使用原始 URL: {e}")
+                    return {"url": remote_url, "revised_prompt": revised_prompt}
+
+            return {"url": remote_url, "revised_prompt": revised_prompt}
+        else:
+            raise RuntimeError(f"图生图 API 返回格式异常: {str(data)[:300]}")
 
 
 async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0) -> dict:
@@ -458,6 +540,7 @@ NODE_WHITELIST: dict[str, str] = {
     "image_input": "input",
     "audio_input": "input",
     "text_to_image": "ai_inference",
+    "image_to_image": "ai_inference",
     "image_to_video": "ai_inference",
     "text_to_speech": "ai_inference",
     "text_to_video": "ai_inference",
@@ -479,6 +562,7 @@ NODE_DEFAULT_LABELS: dict[str, str] = {
     "image_input": "图片输入",
     "audio_input": "音频输入",
     "text_to_image": "文生图",
+    "image_to_image": "图生图",
     "image_to_video": "图生视频",
     "text_to_speech": "文生语音",
     "text_to_video": "文生视频",
@@ -501,6 +585,7 @@ NODE_DEFAULT_PARAMS: dict[str, dict] = {
     "image_input": {"url": ""},
     "audio_input": {"url": ""},
     "text_to_image": {"prompt": "", "size": "1024x1024"},
+    "image_to_image": {"prompt": "", "size": "1024x1024"},
     "image_to_video": {"prompt": "", "duration": 5},
     "text_to_speech": {"text": "", "voice": "default"},
     "text_to_video": {"prompt": "", "duration": 5},
@@ -519,6 +604,7 @@ NODE_DEFAULT_PARAMS: dict[str, dict] = {
 # AI 推理节点 model_type 映射(用于查找默认模型)
 AI_INFERENCE_MODEL_TYPE: dict[str, str] = {
     "text_to_image": "image_gen",
+    "image_to_image": "image_gen",
     "image_to_video": "video_gen",
     "text_to_speech": "tts",
     "text_to_video": "video_gen",
@@ -529,7 +615,7 @@ SYSTEM_PROMPT = """你是 AI 视频工作流编排助手。根据用户描述生
 
 合法节点类型(仅可使用以下 subtype):
 - 输入:text_input(文本输入), image_input(图片输入), audio_input(音频输入)
-- AI 推理:text_to_image(文生图), image_to_video(图生视频), text_to_speech(文生语音), text_to_video(文生视频)
+- AI 推理:text_to_image(文生图), image_to_image(图生图), image_to_video(图生视频), text_to_speech(文生语音), text_to_video(文生视频)
 - 处理:upscale(高清放大), style_transfer(风格化), remove_bg(抠图), extend_image(扩图)
 - 控制:if_else(条件分支), loop(循环), merge(合并)
 - 输出:video_output(视频输出), image_output(图片输出), audio_output(音频输出)
@@ -758,7 +844,7 @@ async def generate_workflow(db, description: str, model_id: str | None = None) -
         if subtype == "text_input":
             params["text"] = description
         # 预填: AI 推理节点 params.prompt = description + model_id
-        elif subtype in ("text_to_image", "image_to_video", "text_to_speech"):
+        elif subtype in ("text_to_image", "image_to_image", "image_to_video", "text_to_speech"):
             params["prompt"] = description
             model_type = AI_INFERENCE_MODEL_TYPE.get(subtype)
             if model_type:

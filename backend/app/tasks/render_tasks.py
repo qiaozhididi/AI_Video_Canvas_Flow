@@ -184,6 +184,7 @@ async def _execute_ai_task(
 
     task_type 路由规则：
     - ai_text2img → call_image_gen（文生图）
+    - ai_img2img → call_img2img（图生图）
     - ai_img2video → call_video_gen（图生视频）
     - ai_tts → call_audio_gen（文生语音）
     - ai_llm / 其他 → call_llm（文本生成）
@@ -213,6 +214,8 @@ async def _execute_ai_task(
     # 按 task_type 路由
     if task_type == "ai_text2img":
         return await _do_text2img(task_id, model_id, user_content, input_artifacts, node_params)
+    elif task_type == "ai_img2img":
+        return await _do_img2img(task_id, model_id, user_content, input_artifacts, node_params)
     elif task_type == "ai_text2video":
         return await _do_text2video(task_id, model_id, user_content, input_artifacts, node_params)
     elif task_type == "ai_img2video":
@@ -226,6 +229,7 @@ async def _execute_ai_task(
 async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
     """文生图：调用 image_gen API 或模拟"""
     from app.services.ai_service import call_image_gen
+    from app.models.render_task import RenderTask
 
     # 火山引擎 SeedReam 要求 size 为 1k/2k/4k 或 WIDTHxHEIGHT 格式
     # 用户可能输入 1920*1080 或 1920x1080 等格式，需规范化
@@ -240,6 +244,10 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
         if not prompt:
             prompt = "一张美丽的风景图"
 
+        # 获取 owner_id 用于 MinIO 持久化
+        render_task = await db.get(RenderTask, uuid.UUID(task_id))
+        owner_id = str(render_task.owner_id) if render_task else None
+
         await _update_task(db, task_id, progress=30)
 
         result_url = ""
@@ -247,7 +255,7 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
 
         try:
             if model_id:
-                result = await call_image_gen(db, model_id, prompt, params={"size": size})
+                result = await call_image_gen(db, model_id, prompt, params={"size": size, "_owner_id": owner_id})
                 result_url = result["url"]
                 revised_prompt = result.get("revised_prompt", "")
         except ValueError as e:
@@ -261,7 +269,7 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
                 logger.warning(f"[AI:Text2Img] size={size} 不合法，回退到 2k 重试")
                 size = "2k"
                 try:
-                    result = await call_image_gen(db, model_id, prompt, params={"size": "2k"})
+                    result = await call_image_gen(db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id})
                     result_url = result["url"]
                     revised_prompt = result.get("revised_prompt", "")
                 except Exception as retry_err:
@@ -284,6 +292,101 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
                 await _update_task(db, task_id, progress=p)
             result_url = f"ai_result/{task_id}/image.png"
             revised_prompt = "模拟生成（未配置文生图模型）"
+
+        await _update_task(
+            db, task_id, progress=100, status="completed", result_url=result_url,
+        )
+
+        return {
+            "task_id": task_id, "status": "completed",
+            "result_url": result_url, "revised_prompt": revised_prompt[:200],
+        }
+
+
+async def _do_img2img(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
+    """图生图：从上游提取图片 URL + 调用 img2img API 或模拟"""
+    from app.services.ai_service import call_img2img
+    from app.models.render_task import RenderTask
+
+    # 火山引擎 SeedReam 要求 size 为 1k/2k/4k 或 WIDTHxHEIGHT 格式
+    size = (node_params or {}).get("size", "2k") or "2k"
+    if "*" in str(size):
+        size = str(size).replace("*", "x")
+
+    sf = _get_celery_session_factory()
+    async with sf() as db:
+        await _update_task(db, task_id, status="running", progress=10)
+
+        if not prompt:
+            prompt = "在原图基础上进行编辑"
+
+        # 从 input_artifacts 提取图片 URL
+        image_url = None
+        if input_artifacts:
+            for artifact in input_artifacts:
+                url = artifact.get("url", "")
+                if url and ("/image" in url or "/media" in url or url.startswith("http")):
+                    image_url = url
+                    break
+
+        await _update_task(db, task_id, progress=20)
+
+        result_url = ""
+        revised_prompt = ""
+
+        try:
+            if model_id and image_url:
+                # 获取 owner_id 用于 MinIO 持久化
+                render_task = await db.get(RenderTask, uuid.UUID(task_id))
+                owner_id = str(render_task.owner_id) if render_task else None
+
+                result = await call_img2img(
+                    db, model_id, prompt, image_url,
+                    params={"size": size, "_owner_id": owner_id},
+                )
+                result_url = result["url"]
+                revised_prompt = result.get("revised_prompt", "")
+            elif model_id and not image_url:
+                logger.warning(f"[AI:Img2Img] 无上游图片 URL，回退模拟")
+                await _update_task(db, task_id, progress=40)
+        except ValueError as e:
+            logger.warning(f"[AI:Img2Img] 模型不匹配，回退模拟: {e}")
+            await _update_task(db, task_id, progress=40)
+        except RuntimeError as e:
+            err_msg = str(e)
+            # size 参数不合法时，回退到 2k 重试
+            if "InvalidParameter" in err_msg and "size" in err_msg and size != "2k":
+                logger.warning(f"[AI:Img2Img] size={size} 不合法，回退到 2k 重试")
+                size = "2k"
+                try:
+                    render_task = await db.get(RenderTask, uuid.UUID(task_id))
+                    owner_id = str(render_task.owner_id) if render_task else None
+                    result = await call_img2img(
+                        db, model_id, prompt, image_url,
+                        params={"size": "2k", "_owner_id": owner_id},
+                    )
+                    result_url = result["url"]
+                    revised_prompt = result.get("revised_prompt", "")
+                except Exception as retry_err:
+                    logger.error(f"[AI:Img2Img] 重试也失败: {retry_err}", exc_info=True)
+                    await _update_task(db, task_id, status="failed", error_message=str(retry_err)[:500], progress=0)
+                    return {"task_id": task_id, "status": "failed", "error": str(retry_err)}
+            else:
+                logger.error(f"[AI:Img2Img] 调用失败: {e}", exc_info=True)
+                await _update_task(db, task_id, status="failed", error_message=err_msg[:500], progress=0)
+                return {"task_id": task_id, "status": "failed", "error": err_msg}
+        except Exception as e:
+            logger.error(f"[AI:Img2Img] 调用失败: {e}", exc_info=True)
+            await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
+            return {"task_id": task_id, "status": "failed", "error": str(e)}
+
+        if not result_url:
+            # 模拟生成（无模型或模型不匹配时）
+            for p in [40, 60, 80]:
+                await asyncio.sleep(1)
+                await _update_task(db, task_id, progress=p)
+            result_url = f"ai_result/{task_id}/image.png"
+            revised_prompt = "模拟生成（未配置图生图模型或无上游图片）"
 
         await _update_task(
             db, task_id, progress=100, status="completed", result_url=result_url,

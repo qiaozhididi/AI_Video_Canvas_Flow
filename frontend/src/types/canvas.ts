@@ -8,7 +8,7 @@ export type NodeStatus = 'idle' | 'pending' | 'running' | 'completed' | 'failed'
 export type InputSubtype = 'text_input' | 'image_input' | 'audio_input';
 
 // AI 推理节点子类型
-export type AIInferenceSubtype = 'text_to_image' | 'image_to_video' | 'text_to_video' | 'text_to_speech';
+export type AIInferenceSubtype = 'text_to_image' | 'image_to_image' | 'image_to_video' | 'text_to_video' | 'text_to_speech';
 
 // 处理节点子类型
 export type ProcessingSubtype = 'upscale' | 'style_transfer' | 'remove_bg' | 'extend_image';
@@ -96,6 +96,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
   { type: 'input', subtype: 'audio_input', label: '音频输入', icon: 'Music', category: '输入', defaultParams: { url: '' } },
   // AI 推理节点(params 字段与后端 NODE_DEFAULT_PARAMS 保持一致)
   { type: 'ai_inference', subtype: 'text_to_image', label: '文生图', icon: 'Wand2', category: 'AI 推理', defaultParams: { prompt: '', size: '2k' } },
+  { type: 'ai_inference', subtype: 'image_to_image', label: '图生图', icon: 'ImagePlus', category: 'AI 推理', defaultParams: { prompt: '', size: '2k', model_id: '' } },
   { type: 'ai_inference', subtype: 'image_to_video', label: '图生视频', icon: 'Video', category: 'AI 推理', defaultParams: { prompt: '', duration: 5, model_id: '' } },
   { type: 'ai_inference', subtype: 'text_to_video', label: '文生视频', icon: 'Video', category: 'AI 推理', defaultParams: { prompt: '', duration: 5, model_id: '' } },
   { type: 'ai_inference', subtype: 'text_to_speech', label: '文生语音', icon: 'Mic', category: 'AI 推理', defaultParams: { text: '', voice: 'default', model_id: '' } },

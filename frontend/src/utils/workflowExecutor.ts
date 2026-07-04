@@ -16,18 +16,19 @@ import type { RenderTaskResponse } from '@/utils/apiClient';
 // ── 节点可执行性判定 ──
 
 const EXECUTABLE_SUBTYPES: Set<string> = new Set([
-  'text_to_image', 'image_to_video', 'text_to_video', 'text_to_speech',
+  'text_to_image', 'image_to_image', 'image_to_video', 'text_to_video', 'text_to_speech',
   'upscale', 'style_transfer', 'remove_bg', 'extend_image',
   'video_output', 'image_output', 'audio_output',
 ]);
 
 const AI_SUBTYPES: Set<string> = new Set([
-  'text_to_image', 'image_to_video', 'text_to_video', 'text_to_speech',
+  'text_to_image', 'image_to_image', 'image_to_video', 'text_to_video', 'text_to_speech',
 ]);
 
 /** 节点 subtype → 后端 task_type 映射 */
 function getTaskType(subtype: NodeSubtype): string {
   if (subtype === 'text_to_image') return 'ai_text2img';
+  if (subtype === 'image_to_image') return 'ai_img2img';
   if (subtype === 'image_to_video') return 'ai_img2video';
   if (subtype === 'text_to_video') return 'ai_text2video';
   if (subtype === 'text_to_speech') return 'ai_tts';
@@ -114,7 +115,16 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
     modelId = node.data.params.model_id as string | undefined;
     if (!modelId) {
       try {
-        const defaultModel = await aiApi.models.getDefault();
+        // 根据节点类型推断 model_type，获取对应类型的默认模型
+        const modelTypeMap: Record<string, string> = {
+          text_to_image: 'image_gen',
+          image_to_image: 'image_gen',
+          image_to_video: 'video_gen',
+          text_to_video: 'video_gen',
+          text_to_speech: 'tts',
+        };
+        const modelType = modelTypeMap[node.data.subtype];
+        const defaultModel = await aiApi.models.getDefault(modelType);
         modelId = defaultModel.id;
       } catch {
         throw new Error('请先在设置页配置 AI 模型');
@@ -168,7 +178,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
       ? [{
           id: `artifact-${Date.now()}`,
           type: (node.data.subtype === 'image_output' || node.data.subtype === 'upscale') ? 'image'
-            : taskType.startsWith('ai_text2img') ? 'image'
+            : taskType.startsWith('ai_text2img') || taskType.startsWith('ai_img2img') ? 'image'
             : taskType.startsWith('ai_img2video') ? 'video'
             : taskType.startsWith('ai_text2video') ? 'video'
             : taskType.startsWith('ai_tts') ? 'audio'
