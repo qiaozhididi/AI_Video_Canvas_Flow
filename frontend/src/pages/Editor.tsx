@@ -307,6 +307,7 @@ function PropertyPanelWithHistory({
   const [executing, setExecuting] = useState(false);
   const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const paramSnapshotRef = useRef<Record<string, unknown> | null>(null);
 
   // 时间轴：加入片段所需
   const addClip = useTimelineStore((s) => s.addClip);
@@ -349,9 +350,6 @@ function PropertyPanelWithHistory({
   const handleParamChange = (key: string, value: unknown) => {
     onUpdateData(selectedNode.id, { params: { ...data.params, [key]: value } });
   };
-
-  // 记录参数编辑前的快照，用于 blur 时一次性写入历史
-  const paramSnapshotRef = useRef<Record<string, unknown> | null>(null);
 
   const handleParamFocus = (key: string) => {
     if (!paramSnapshotRef.current) {

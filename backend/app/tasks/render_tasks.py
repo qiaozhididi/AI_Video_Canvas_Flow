@@ -298,6 +298,7 @@ async def _do_text2img(task_id: str, model_id: str | None, prompt: str, input_ar
 async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
     """图生视频：调用 video_gen API 或模拟"""
     from app.services.ai_service import call_video_gen
+    from app.models.render_task import RenderTask
 
     sf = _get_celery_session_factory()
     async with sf() as db:
@@ -356,6 +357,7 @@ async def _do_img2video(task_id: str, model_id: str | None, prompt: str, input_a
 async def _do_text2video(task_id: str, model_id: str | None, prompt: str, input_artifacts: list[dict] | None = None, node_params: dict | None = None) -> dict:
     """文生视频：仅文本输入，调用 call_video_gen(image_url=None)"""
     from app.services.ai_service import call_video_gen
+    from app.models.render_task import RenderTask
 
     sf = _get_celery_session_factory()
     async with sf() as db:
@@ -405,6 +407,7 @@ async def _do_text2video(task_id: str, model_id: str | None, prompt: str, input_
 async def _do_tts(task_id: str, model_id: str | None, prompt: str, node_params: dict | None = None) -> dict:
     """文生语音：调用 audio_gen API 或模拟"""
     from app.services.ai_service import call_audio_gen
+    from app.models.render_task import RenderTask
 
     sf = _get_celery_session_factory()
     async with sf() as db:
