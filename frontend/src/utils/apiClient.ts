@@ -29,6 +29,41 @@ export class ApiError extends Error {
   }
 }
 
+// ── Token 刷新 ──
+
+let isRefreshing = false;
+let pendingRequests: Array<() => void> = [];
+
+async function refreshToken(): Promise<string> {
+  if (isRefreshing) {
+    return new Promise((resolve) => pendingRequests.push(() => resolve(localStorage.getItem('access_token')!)));
+  }
+  isRefreshing = true;
+  try {
+    const rt = localStorage.getItem('refresh_token');
+    if (!rt) throw new Error('No refresh token');
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: rt }),
+    });
+    if (!res.ok) throw new Error('Refresh failed');
+    const data = await res.json();
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    pendingRequests.forEach(cb => cb());
+    pendingRequests = [];
+    return data.access_token;
+  } catch {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    window.location.href = '/login';
+    throw new ApiError(401, 'UNAUTHORIZED', '登录已过期');
+  } finally {
+    isRefreshing = false;
+  }
+}
+
 /** 统一请求封装 */
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('access_token');
@@ -49,9 +84,27 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 401) {
-      localStorage.removeItem('access_token');
-      window.location.href = '/login';
-      throw new ApiError(401, 'UNAUTHORIZED', '登录已过期');
+      try {
+        const newToken = await refreshToken();
+        // 用新 token 重试原请求
+        headers['Authorization'] = `Bearer ${newToken}`;
+        const retryRes = await fetch(`${API_BASE}${path}`, { ...options, headers });
+        if (!retryRes.ok) {
+          if (retryRes.status === 401) {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            window.location.href = '/login';
+            throw new ApiError(401, 'UNAUTHORIZED', '登录已过期');
+          }
+          const retryBody = await retryRes.json().catch(() => ({}));
+          throw new ApiError(retryRes.status, retryBody.detail || 'UNKNOWN', retryBody.detail || `请求失败: ${retryRes.status}`);
+        }
+        if (retryRes.status === 204) return undefined as T;
+        return retryRes.json();
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        throw new ApiError(401, 'UNAUTHORIZED', '登录已过期');
+      }
     }
     const body = await res.json().catch(() => ({}));
     throw new ApiError(

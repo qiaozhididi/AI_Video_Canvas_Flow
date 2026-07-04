@@ -559,6 +559,18 @@ function PropertyPanelWithHistory({
       </div>
 
       <div className="p-3 border-t border-canvas-border space-y-2">
+        {/* 处理节点：演示模式提示 */}
+        {['upscale', 'style_transfer', 'remove_bg', 'extend_image'].includes(data.subtype) && (
+          <div className="px-2 py-1.5 text-xs text-amber-400 bg-amber-400/10 rounded-md border border-amber-400/20">
+            演示模式：后端暂无真实 AI API，将以模拟方式执行
+          </div>
+        )}
+        {/* 控制节点：不可执行提示 */}
+        {['if_else', 'loop', 'merge'].includes(data.subtype) && (
+          <div className="px-2 py-1.5 text-xs text-slate-400 bg-slate-400/10 rounded-md border border-slate-400/20">
+            控制节点暂不支持执行，仅用于工作流可视化编排
+          </div>
+        )}
         {isExecutable(data.subtype) && (
           <button
             onClick={handleExecute}

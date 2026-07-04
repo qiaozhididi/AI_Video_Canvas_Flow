@@ -30,9 +30,6 @@ celery[rabbitmq]==5.4.0
 # Socket.IO 协作
 python-socketio==5.12.1
 
-# LangGraph 工作流引擎
-langgraph==0.2.60
-
 # HTTP 客户端（调用 AI 服务）
 httpx==0.28.1
 

@@ -3,10 +3,13 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
+import uuid
+
 import bcrypt
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from jose import jwt
+from jose.exceptions import JWTError
 from sqlalchemy import select
 
 from app.config import settings
@@ -27,6 +30,10 @@ class RegisterRequest(BaseModel):
     username: str
     email: str
     password: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class TokenResponse(BaseModel):
@@ -105,10 +112,31 @@ async def login(body: LoginRequest, db: DBSession):
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
+@router.post("/refresh", response_model=TokenResponse, summary="刷新访问令牌")
+async def refresh_token_endpoint(body: RefreshRequest, db: DBSession):
+    """使用 refresh_token 刷新 access_token"""
+    try:
+        payload = jwt.decode(body.refresh_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="无效的 refresh token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="refresh token 已过期")
+
+    # 验证用户存在
+    stmt = select(User).where(User.id == uuid.UUID(user_id))
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=401, detail="用户不存在")
+
+    new_access = _create_token(user_id, settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_refresh = _create_token(user_id, 60 * 24 * 7)
+    return TokenResponse(access_token=new_access, refresh_token=new_refresh)
+
+
 @router.get("/me", response_model=UserResponse, summary="获取当前用户信息")
 async def get_me(db: DBSession, current_user_id: CurrentUser):
     """获取当前用户信息"""
-    import uuid
     stmt = select(User).where(User.id == uuid.UUID(current_user_id))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -122,7 +150,6 @@ async def get_me(db: DBSession, current_user_id: CurrentUser):
 @router.put("/me", response_model=UserResponse, summary="更新当前用户信息")
 async def update_me(body: UserUpdateRequest, db: DBSession, current_user_id: CurrentUser):
     """更新当前用户信息（用户名/邮箱/头像 URL）"""
-    import uuid
     stmt = select(User).where(User.id == uuid.UUID(current_user_id))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()

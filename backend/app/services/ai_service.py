@@ -120,6 +120,83 @@ async def _handle_image_response(db, data: dict, owner_id: str | None) -> dict:
     return {"url": remote_url, "revised_prompt": revised_prompt}
 
 
+async def _resolve_image_url(db, image_url: str) -> str:
+    """解析图片URL：内部 MinIO 路径转为 base64，外部 URL 原样返回"""
+    from app.config import settings
+
+    if not image_url.startswith("/api/v1/media/"):
+        return image_url
+
+    try:
+        from app.services.media_service import get_presigned_url
+        from app.models.media_asset import MediaAsset
+        asset_id = image_url.split("/api/v1/media/")[1].split("/")[0]
+        asset = await db.get(MediaAsset, uuid.UUID(asset_id))
+        if asset:
+            presigned = await get_presigned_url(
+                bucket=settings.MINIO_BUCKET,
+                object_name=asset.storage_key,
+                expires_hours=1,
+            )
+            async with httpx.AsyncClient(timeout=30.0) as dl_client:
+                dl_resp = await dl_client.get(presigned)
+                if dl_resp.status_code == 200:
+                    import base64
+                    b64 = base64.b64encode(dl_resp.content).decode("utf-8")
+                    mime = asset.file_type or "image/png"
+                    result = f"data:{mime};base64,{b64}"
+                    logger.info(f"[AI:Img2Img] 内部图片转 base64 成功, 大小={len(b64)} chars")
+                    return result
+                else:
+                    logger.warning(f"[AI:Img2Img] 下载图片失败: HTTP {dl_resp.status_code}")
+        else:
+            logger.warning(f"[AI:Img2Img] MediaAsset {asset_id} 不存在")
+    except Exception as e:
+        logger.warning(f"[AI:Img2Img] 图片转换失败: {e}")
+
+    return f"http://localhost:{settings.PORT}{image_url}"
+
+
+async def _call_image_api(
+    db, model_id: str | UUID, prompt: str,
+    body_extra: dict | None = None,
+    params: dict | None = None,
+) -> dict:
+    """通用图片 API 调用（文生图/图生图共用）"""
+    provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
+
+    url = f"{provider.base_url.rstrip('/')}/images/generations"
+    headers = {
+        "Authorization": f"Bearer {provider.api_key}",
+        "Content-Type": "application/json",
+    }
+    body: dict = {
+        "model": model.model_id,
+        "prompt": prompt,
+    }
+    if body_extra:
+        body.update(body_extra)
+    body.setdefault("n", params.get("n", 1) if params else 1)
+    body.setdefault("size", params.get("size", "2k") if params else "2k")
+    if params and "response_format" in params:
+        body["response_format"] = params["response_format"]
+
+    log_tag = "AI:ImageGen"
+    logger.info(f"[{log_tag}] 调用 {provider.name}/{model.display_name}, prompt={prompt[:50]}")
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(url, json=body, headers=headers)
+        if response.status_code != 200:
+            error_text = response.text[:500]
+            logger.error(f"[{log_tag}] 调用失败: HTTP {response.status_code}: {error_text}")
+            raise RuntimeError(f"图片 API 调用失败: HTTP {response.status_code}: {error_text}")
+
+        data = response.json()
+        logger.info(f"[{log_tag}] 生成成功")
+        owner_id = params.get("_owner_id") if params else None
+        return await _handle_image_response(db, data, owner_id)
+
+
 async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | None = None) -> dict:
     """文生图：调用兼容 OpenAI Images API 的端点
 
@@ -132,36 +209,7 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
     Returns:
         {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
-    provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
-
-    url = f"{provider.base_url.rstrip('/')}/images/generations"
-    headers = {
-        "Authorization": f"Bearer {provider.api_key}",
-        "Content-Type": "application/json",
-    }
-    body: dict = {
-        "model": model.model_id,
-        "prompt": prompt,
-        "n": params.get("n", 1) if params else 1,
-        "size": params.get("size", "2k") if params else "2k",
-    }
-    # 火山引擎 / OpenAI 兼容格式
-    if params and "response_format" in params:
-        body["response_format"] = params["response_format"]
-
-    logger.info(f"[AI:ImageGen] 调用 {provider.name}/{model.display_name}, prompt={prompt[:50]}")
-
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(url, json=body, headers=headers)
-        if response.status_code != 200:
-            error_text = response.text[:500]
-            logger.error(f"[AI:ImageGen] 调用失败: HTTP {response.status_code}: {error_text}")
-            raise RuntimeError(f"文生图 API 调用失败: HTTP {response.status_code}: {error_text}")
-
-        data = response.json()
-        logger.info(f"[AI:ImageGen] 生成成功")
-        owner_id = params.get("_owner_id") if params else None
-        return await _handle_image_response(db, data, owner_id)
+    return await _call_image_api(db, model_id, prompt, body_extra=None, params=params)
 
 
 async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None) -> dict:
@@ -179,69 +227,9 @@ async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, pa
     Returns:
         {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
-    from app.config import settings
-
-    provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
-
-    # 内部 MinIO 路径转为 base64（火山引擎 API 的 image 参数支持 base64）
-    api_image = image_url
-    if image_url.startswith("/api/v1/media/"):
-        try:
-            from app.services.media_service import get_presigned_url
-            from app.models.media_asset import MediaAsset
-            asset_id = image_url.split("/api/v1/media/")[1].split("/")[0]
-            asset = await db.get(MediaAsset, uuid.UUID(asset_id))
-            if asset:
-                # 下载图片并转 base64
-                presigned = await get_presigned_url(
-                    bucket=settings.MINIO_BUCKET,
-                    object_name=asset.storage_key,
-                    expires_hours=1,
-                )
-                async with httpx.AsyncClient(timeout=30.0) as dl_client:
-                    dl_resp = await dl_client.get(presigned)
-                    if dl_resp.status_code == 200:
-                        import base64
-                        b64 = base64.b64encode(dl_resp.content).decode("utf-8")
-                        mime = asset.file_type or "image/png"
-                        api_image = f"data:{mime};base64,{b64}"
-                        logger.info(f"[AI:Img2Img] 内部图片转 base64 成功, 大小={len(b64)} chars")
-                    else:
-                        logger.warning(f"[AI:Img2Img] 下载图片失败: HTTP {dl_resp.status_code}")
-                        api_image = f"http://localhost:{settings.PORT}{image_url}"
-            else:
-                logger.warning(f"[AI:Img2Img] MediaAsset {asset_id} 不存在")
-                api_image = f"http://localhost:{settings.PORT}{image_url}"
-        except Exception as e:
-            logger.warning(f"[AI:Img2Img] 图片转换失败: {e}")
-            api_image = f"http://localhost:{settings.PORT}{image_url}"
-
-    url = f"{provider.base_url.rstrip('/')}/images/generations"
-    headers = {
-        "Authorization": f"Bearer {provider.api_key}",
-        "Content-Type": "application/json",
-    }
-    body: dict = {
-        "model": model.model_id,
-        "prompt": prompt,
-        "image": api_image,
-        "n": params.get("n", 1) if params else 1,
-        "size": params.get("size", "2k") if params else "2k",
-    }
-
-    logger.info(f"[AI:Img2Img] 调用 {provider.name}/{model.display_name}, prompt={prompt[:50]}, image={'base64' if api_image.startswith('data:') else api_image[:80]}")
-
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(url, json=body, headers=headers)
-        if response.status_code != 200:
-            error_text = response.text[:500]
-            logger.error(f"[AI:Img2Img] 调用失败: HTTP {response.status_code}: {error_text}")
-            raise RuntimeError(f"图生图 API 调用失败: HTTP {response.status_code}: {error_text}")
-
-        data = response.json()
-        logger.info(f"[AI:Img2Img] 生成成功")
-        owner_id = params.get("_owner_id") if params else None
-        return await _handle_image_response(db, data, owner_id)
+    api_image = await _resolve_image_url(db, image_url)
+    logger.info(f"[AI:Img2Img] 调用, prompt={prompt[:50]}, image={'base64' if api_image.startswith('data:') else api_image[:80]}")
+    return await _call_image_api(db, model_id, prompt, body_extra={"image": api_image}, params=params)
 
 
 async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0) -> dict:

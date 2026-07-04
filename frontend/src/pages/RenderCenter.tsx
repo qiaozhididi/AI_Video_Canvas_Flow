@@ -347,7 +347,7 @@ export default function RenderCenter() {
                               重试
                             </button>
                           )}
-                          {task.status === 'completed' && (
+                          {task.status === 'completed' && task.result_url && (
                             <button
                               onClick={() => handleDownload(task)}
                               className="flex items-center gap-1 px-2 py-1 text-xs text-neon-purple hover:bg-neon-purple/10 rounded transition-colors"
@@ -355,6 +355,9 @@ export default function RenderCenter() {
                               <Download className="w-3.5 h-3.5" />
                               下载
                             </button>
+                          )}
+                          {task.status === 'completed' && !task.result_url && (
+                            <span className="text-xs text-slate-500">无产出</span>
                           )}
                         </div>
                       </td>

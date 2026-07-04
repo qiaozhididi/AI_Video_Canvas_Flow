@@ -33,6 +33,7 @@ export default function Login() {
 
       const tokens = await authApi.login(username, password);
       localStorage.setItem('access_token', tokens.access_token);
+      localStorage.setItem('refresh_token', tokens.refresh_token);
       toast.success('登录成功');
       navigate('/');
     } catch (err) {
