@@ -23,6 +23,6 @@ class RenderTask(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(256))
     result_url: Mapped[str | None] = mapped_column(String(512))
     error_message: Mapped[str | None] = mapped_column(Text)
-    node_id: Mapped[str | None] = mapped_column(String(36))
+    node_id: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
