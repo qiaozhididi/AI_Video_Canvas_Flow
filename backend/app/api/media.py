@@ -5,11 +5,11 @@ import uuid
 from datetime import datetime, timezone
 from urllib.request import urlopen
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
-from app.deps import CurrentUser, DBSession
+from app.deps import CurrentUser, CurrentUserWithToken, DBSession
 from app.models.media_asset import MediaAsset
 from app.services.media_service import upload_file, get_presigned_url, delete_file
 from app.config import settings
@@ -96,8 +96,12 @@ async def get_presigned_url_api(asset_id: str, user: CurrentUser, db: DBSession)
 
 
 @router.get("/{asset_id}/download", summary="直接下载媒体文件")
-async def download_media(asset_id: str, user: CurrentUser, db: DBSession):
-    """通过后端代理下载媒体文件，避免前端跨域问题"""
+async def download_media(asset_id: str, user: CurrentUserWithToken, db: DBSession, download: bool = Query(False)):
+    """通过后端代理下载媒体文件，避免前端跨域问题
+
+    Args:
+        download: True 时强制下载（attachment），False 时内联播放（inline，默认）
+    """
     asset = await _get_asset(asset_id, user, db)
     try:
         url = await get_presigned_url(
@@ -118,11 +122,13 @@ async def download_media(asset_id: str, user: CurrentUser, db: DBSession):
     from urllib.parse import quote
     encoded_filename = quote(asset.file_name)
 
+    disposition = "attachment" if download else "inline"
+
     return StreamingResponse(
         resp,
         media_type=asset.file_type,
         headers={
-            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded_filename}",
         },
     )
 

@@ -140,9 +140,13 @@ export default function RenderCenter() {
         document.body.removeChild(a);
         return;
       }
-      // 内部 media 路径走 API 下载
+      // 内部 media 路径走 API 下载（result_url 可能已经是完整 /api/ 路径）
       const token = localStorage.getItem('access_token');
-      const res = await fetch(`/api/v1/media/${task.result_url}`, {
+      const baseUrl = task.result_url.startsWith('/api/')
+        ? task.result_url
+        : `/api/v1/media/${task.result_url}`;
+      const downloadUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}download=true`;
+      const res = await fetch(downloadUrl, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

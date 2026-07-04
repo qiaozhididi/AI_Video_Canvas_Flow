@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
@@ -21,6 +21,29 @@ async def get_db():
         yield session
 
 
+def _verify_token(token: str) -> str:
+    """验证 JWT Token，返回用户 ID"""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        user_id: str | None = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token 中缺少用户标识",
+            )
+        return user_id
+    except JWTError as e:
+        logger.warning(f"[Dep] Token 验证失败: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效或过期的认证凭据",
+        )
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> str:
@@ -36,31 +59,30 @@ async def get_current_user(
             detail="未提供认证凭据",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    return _verify_token(credentials.credentials)
 
-    try:
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM],
-        )
-        user_id: str | None = payload.get("sub")
-        if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Token 中缺少用户标识",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        logger.debug(f"[Dep] Token 验证通过: user_id={user_id}")
-        return user_id
-    except JWTError as e:
-        logger.warning(f"[Dep] Token 验证失败: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效或过期的认证凭据",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+
+async def get_current_user_optional_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    token: str | None = Query(None, alias="token"),
+) -> str:
+    """获取当前用户 ID，支持 Header 或 Query 参数传 Token
+
+    用于 <video>/<img> 等无法设置自定义 Header 的场景：
+    - 优先使用 Authorization Header
+    - Header 不存在时使用 ?token=xxx 查询参数
+    """
+    if credentials is not None:
+        return _verify_token(credentials.credentials)
+    if token is not None:
+        return _verify_token(token)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="未提供认证凭据",
+    )
 
 
 # Annotated 类型别名，方便路由使用
 DBSession = Annotated[object, Depends(get_db)]
 CurrentUser = Annotated[str, Depends(get_current_user)]
+CurrentUserWithToken = Annotated[str, Depends(get_current_user_optional_token)]

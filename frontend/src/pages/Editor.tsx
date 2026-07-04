@@ -51,10 +51,19 @@ export default function Editor() {
     const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
     const artifact = videoArt || imageArt;
     if (!artifact) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
-    // 相对路径加 /api/v1/media/ 前缀；外部 URL 直接用
-    const url = (artifact.url.startsWith('http://') || artifact.url.startsWith('https://'))
-      ? artifact.url
-      : `/api/v1/media/${artifact.url.replace(/^\//, '')}`;
+    // URL 规范化：完整路径直接用；外部 URL 直接用；相对路径加 /api/v1/media/ 前缀
+    // 内部 /api/ 路径需要附带 token（<video>/<img> 无法设置自定义 Header）
+    const isInternal = artifact.url.startsWith('/api/');
+    const isExternal = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
+    const accessToken = localStorage.getItem('access_token') || '';
+    let url: string;
+    if (isInternal) {
+      url = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${accessToken}`;
+    } else if (isExternal) {
+      url = artifact.url;
+    } else {
+      url = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${accessToken}`;
+    }
     return { url, type: artifact.type as 'image' | 'video' };
   }, [selectedNodeId, nodes]);
 
@@ -340,7 +349,14 @@ function PropertyPanelWithHistory({
       trackId: targetTrack.id,
       start: timelineCurrentTime,
       end: timelineCurrentTime + duration,
-      mediaUrl: artifact.url.startsWith('http://') || artifact.url.startsWith('https://') ? artifact.url : `/api/v1/media/${artifact.url.replace(/^\//, '')}`,
+      mediaUrl: (() => {
+        const isInt = artifact.url.startsWith('/api/');
+        const isExt = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
+        const tk = localStorage.getItem('access_token') || '';
+        if (isInt) return `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${tk}`;
+        if (isExt) return artifact.url;
+        return `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${tk}`;
+      })(),
       label: data.label,
       color: undefined,
     };
