@@ -67,7 +67,7 @@ function collectUpstreamArtifacts(nodeId: string, nodes: CanvasNode[], edges: Ca
         if (text) {
           artifacts.push({
             id: `virtual-${sourceNode.id}`,
-            type: 'image', // 使用 image 类型以通过 URL 检查
+            type: 'text',
             url: '',
             filename: 'text_input',
             size: 0,
