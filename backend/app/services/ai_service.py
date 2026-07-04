@@ -170,13 +170,42 @@ async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, pa
     Returns:
         {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
+    from app.config import settings
+
     provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
 
-    # 内部相对路径转为完整 URL
-    api_image_url = image_url
+    # 内部 MinIO 路径转为 base64（火山引擎 API 的 image 参数支持 base64）
+    api_image = image_url
     if image_url.startswith("/api/v1/media/"):
-        from app.config import settings
-        api_image_url = f"http://localhost:{settings.PORT}{image_url}"
+        try:
+            from app.services.media_service import get_presigned_url
+            from app.models.media_asset import MediaAsset
+            asset_id = image_url.split("/api/v1/media/")[1].split("/")[0]
+            asset = await db.get(MediaAsset, uuid.UUID(asset_id))
+            if asset:
+                # 下载图片并转 base64
+                presigned = await get_presigned_url(
+                    bucket=settings.MINIO_BUCKET,
+                    object_name=asset.storage_key,
+                    expires_hours=1,
+                )
+                async with httpx.AsyncClient(timeout=30.0) as dl_client:
+                    dl_resp = await dl_client.get(presigned)
+                    if dl_resp.status_code == 200:
+                        import base64
+                        b64 = base64.b64encode(dl_resp.content).decode("utf-8")
+                        mime = asset.file_type or "image/png"
+                        api_image = f"data:{mime};base64,{b64}"
+                        logger.info(f"[AI:Img2Img] 内部图片转 base64 成功, 大小={len(b64)} chars")
+                    else:
+                        logger.warning(f"[AI:Img2Img] 下载图片失败: HTTP {dl_resp.status_code}")
+                        api_image = f"http://localhost:{settings.PORT}{image_url}"
+            else:
+                logger.warning(f"[AI:Img2Img] MediaAsset {asset_id} 不存在")
+                api_image = f"http://localhost:{settings.PORT}{image_url}"
+        except Exception as e:
+            logger.warning(f"[AI:Img2Img] 图片转换失败: {e}")
+            api_image = f"http://localhost:{settings.PORT}{image_url}"
 
     url = f"{provider.base_url.rstrip('/')}/images/generations"
     headers = {
@@ -186,12 +215,12 @@ async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, pa
     body: dict = {
         "model": model.model_id,
         "prompt": prompt,
-        "image": api_image_url,
+        "image": api_image,
         "n": params.get("n", 1) if params else 1,
         "size": params.get("size", "2k") if params else "2k",
     }
 
-    logger.info(f"[AI:Img2Img] 调用 {provider.name}/{model.display_name}, prompt={prompt[:50]}, image_url={api_image_url[:80]}")
+    logger.info(f"[AI:Img2Img] 调用 {provider.name}/{model.display_name}, prompt={prompt[:50]}, image={'base64' if api_image.startswith('data:') else api_image[:80]}")
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         response = await client.post(url, json=body, headers=headers)

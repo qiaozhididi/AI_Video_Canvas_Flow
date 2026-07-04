@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "ai-canvas-flow-backend"
     VERSION: str = "0.1.0"
     DEBUG: bool = False
+    PORT: int = 8000
 
     # 数据库（PostgreSQL + asyncpg）
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_canvas_flow"
