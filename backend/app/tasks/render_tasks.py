@@ -67,7 +67,7 @@ async def _update_task(db, task_id: str, **kwargs):
         return
     for key, value in kwargs.items():
         setattr(task, key, value)
-    task.updated_at = datetime.now(timezone.utc)
+    task.updated_at = datetime.utcnow()
     await db.commit()
 
 
