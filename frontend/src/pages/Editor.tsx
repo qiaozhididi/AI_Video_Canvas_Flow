@@ -532,7 +532,7 @@ function PropertyPanelWithHistory({
           })}
         </div>
 
-        {/* AI 模型选择器 — 仅 AI 推理节点显示 */}
+        {/* AI 模型选择器 — 仅 AI 推理节点显示，按模型类型分组 */}
         {data.type === 'ai_inference' && (
           <div className="space-y-1.5">
             <label className="text-xs text-slate-500 uppercase tracking-wider">AI 模型</label>
@@ -544,11 +544,54 @@ function PropertyPanelWithHistory({
             >
               <option value="">自动选择（默认模型）</option>
               {loadingModels && <option disabled>加载中...</option>}
-              {aiModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.display_name} ({m.model_id})
-                </option>
-              ))}
+              {(() => {
+                // subtype → model_type 映射
+                const subtypeToModelType: Record<string, string> = {
+                  text_to_image: 'image_gen',
+                  image_to_image: 'image_gen',
+                  image_to_video: 'video_gen',
+                  text_to_video: 'video_gen',
+                  text_to_speech: 'tts',
+                };
+                const recommendedType = subtypeToModelType[data.subtype] ?? '';
+
+                // 推荐类型模型
+                const recommended = aiModels.filter((m) => m.model_type === recommendedType);
+                // 其他类型模型
+                const otherTypes = [...new Set(aiModels.filter((m) => m.model_type !== recommendedType).map((m) => m.model_type))];
+                const modelTypeLabels: Record<string, string> = {
+                  llm: '文本生成',
+                  image_gen: '文生图',
+                  video_gen: '图生视频',
+                  tts: '语音合成',
+                };
+
+                return (
+                  <>
+                    {recommended.length > 0 && (
+                      <optgroup label={`推荐 · ${modelTypeLabels[recommendedType] ?? recommendedType}`}>
+                        {recommended.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.display_name}{m.is_default ? ' ★' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {otherTypes.map((type) => {
+                      const models = aiModels.filter((m) => m.model_type === type);
+                      return (
+                        <optgroup key={type} label={modelTypeLabels[type] ?? type}>
+                          {models.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.display_name}{m.is_default ? ' ★' : ''}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </>
+                );
+              })()}
             </select>
           </div>
         )}
