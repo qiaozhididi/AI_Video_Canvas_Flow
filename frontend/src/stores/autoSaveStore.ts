@@ -5,8 +5,42 @@ import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
 import { useProjectStore } from './projectStore';
 import { useHistoryStore } from './historyStore';
+import { toPng } from 'html-to-image';
 import { snapshotApi, projectApi, type SnapshotResponse } from '@/utils/apiClient';
 
+/** 截取画布预览图并上传为项目封面 */
+async function updateCanvasCover(projectId: string) {
+  try {
+    const canvasEl = document.querySelector('.react-flow') as HTMLElement;
+    if (!canvasEl) return;
+    const dataUrl = await toPng(canvasEl, {
+      quality: 0.6,
+      pixelRatio: 0.5,
+      filter: (node: HTMLElement) => {
+        return !node.classList?.contains('react-flow__controls') &&
+               !node.classList?.contains('react-flow__minimap') &&
+               !node.classList?.contains('react-flow__attribution');
+      },
+    });
+    const res = await fetch(dataUrl);
+    const blob = await res.blob();
+    const formData = new FormData();
+    formData.append('file', blob, `cover-${projectId}.png`);
+    const token = localStorage.getItem('access_token') || '';
+    const uploadRes = await fetch('/api/v1/media/upload', {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (uploadRes.ok) {
+      const asset = await uploadRes.json();
+      const coverUrl = `/api/v1/media/${asset.id}/download`;
+      await projectApi.update(projectId, { cover_url: coverUrl });
+    }
+  } catch {
+    // 封面截图/上传失败不影响主流程
+  }
+}
 const SNAPSHOT_LIMIT = 5;
 const AUTOSAVE_INTERVAL = 30_000; // 30秒
 const DEBOUNCE_DELAY = 2_000; // 操作后2秒防抖保存
@@ -127,18 +161,8 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
         isSaving: false,
       });
 
-      // 自动更新项目封面：从画布节点产出中提取第一张图片 URL
-      const canvasNodes = useCanvasStore.getState().nodes;
-      const firstImage = canvasNodes
-        .flatMap((n) => n.data.outputArtifacts)
-        .find((a) => a.type === 'image' && a.url);
-      if (firstImage?.url) {
-        try {
-          await projectApi.update(projectId, { cover_url: firstImage.url });
-        } catch {
-          // 封面更新失败不影响主流程
-        }
-      }
+      // 自动更新项目封面：截取画布预览图上传
+      void updateCanvasCover(projectId);
     } catch (err) {
       console.error(`${LOG} 保存失败:`, err);
       set({ isSaving: false });
@@ -163,6 +187,12 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
     }, AUTOSAVE_INTERVAL);
 
     set({ intervalId: id });
+
+    // 首次加载时立即截取画布封面（等画布渲染完成）
+    const projectId = useProjectStore.getState().currentProject?.id;
+    if (projectId) {
+      setTimeout(() => void updateCanvasCover(projectId), 3000);
+    }
   },
 
   stopAutoSave: () => {

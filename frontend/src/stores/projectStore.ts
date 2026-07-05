@@ -140,14 +140,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       edges: canvasStore.edges.map(toEdgeCreate),
     });
 
-    // 从画布节点产出中提取第一张图片作为封面
-    const firstImage = canvasStore.nodes
-      .flatMap((n) => n.data.outputArtifacts)
-      .find((a) => a.type === 'image' && a.url);
-    const coverUrl = firstImage?.url;
-
-    // 更新项目元数据（updatedAt + cover_url）
-    await projectApi.update(currentProject.id, { cover_url: coverUrl });
+    // 更新项目元数据（updatedAt）
+    await projectApi.update(currentProject.id, {});
 
     // 刷新项目列表
     await get().loadProjects();

@@ -449,7 +449,43 @@ function PropertyPanelWithHistory({
 
         <div className="space-y-2">
           <label className="text-xs text-slate-500 uppercase tracking-wider">参数</label>
-          {Object.entries(data.params).map(([key, value]) => (
+          {Object.entries(data.params).map(([key, value]) => {
+            // 隐藏 model_id（已有独立 AI 模型选择器）
+            if (key === 'model_id') return null;
+            // size 参数使用下拉框选择
+            if (key === 'size') {
+              const SIZE_OPTIONS = [
+                { value: '1k', label: '1K (1024×1024)' },
+                { value: '2k', label: '2K (2048×2048)' },
+                { value: '4k', label: '4K (3072×3072)' },
+                { value: '512x512', label: '512×512' },
+                { value: '768x768', label: '768×768' },
+                { value: '1024x1024', label: '1024×1024' },
+                { value: '1536x1536', label: '1536×1536' },
+                { value: '2048x2048', label: '2048×2048' },
+                { value: '1280x720', label: '1280×720 (横屏)' },
+                { value: '720x1280', label: '720×1280 (竖屏)' },
+                { value: '1024x1536', label: '1024×1536 (竖版)' },
+                { value: '1536x1024', label: '1536×1024 (横版)' },
+              ];
+              return (
+                <div key={key} className="space-y-1">
+                  <label className="text-xs text-slate-400">尺寸</label>
+                  <select
+                    value={String(value)}
+                    onChange={(e) => handleParamChange(key, e.target.value)}
+                    onFocus={() => handleParamFocus(key)}
+                    onBlur={() => handleParamBlur(key)}
+                    className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
+                  >
+                    {SIZE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            }
+            return (
             <div key={key} className="space-y-1">
               <label className="text-xs text-slate-400 capitalize">{key}</label>
               {typeof value === 'string' ? (
@@ -492,7 +528,8 @@ function PropertyPanelWithHistory({
                 />
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* AI 模型选择器 — 仅 AI 推理节点显示 */}

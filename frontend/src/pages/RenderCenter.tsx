@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Monitor, Download, Clock, CheckCircle2, XCircle, Loader2, Plus, Pause, AlertCircle, RotateCw } from 'lucide-react';
-import { renderApi, projectApi } from '@/utils/apiClient';
-import type { RenderTaskResponse, ProjectResponse } from '@/utils/apiClient';
+import { renderApi, projectApi, aiApi } from '@/utils/apiClient';
+import type { RenderTaskResponse, ProjectResponse, AiModelResponse } from '@/utils/apiClient';
 import { toast } from 'sonner';
 
 // ── 状态配置 ──
@@ -67,8 +67,20 @@ export default function RenderCenter() {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
   const [selectedTaskType, setSelectedTaskType] = useState('ai_text2img');
+  const [selectedModelId, setSelectedModelId] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
   const [creating, setCreating] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 任务类型 → AI 模型类型映射
+  const TASK_TYPE_TO_MODEL_TYPE: Record<string, string> = {
+    ai_text2img: 'image_gen',
+    ai_img2img: 'image_gen',
+    ai_img2video: 'video_gen',
+    ai_text2video: 'video_gen',
+    ai_tts: 'tts',
+  };
 
   // 加载任务列表
   const loadTasks = useCallback(async () => {
@@ -192,16 +204,29 @@ export default function RenderCenter() {
   // 打开创建对话框
   const openCreateDialog = async () => {
     setShowCreate(true);
+    setSelectedModelId('');
+    setPrompt('');
     try {
-      const data = await projectApi.list();
-      setProjects(data);
-      if (data.length > 0 && !selectedProject) {
-        setSelectedProject(data[0].id);
+      const [projData, modelData] = await Promise.all([
+        projectApi.list(),
+        aiApi.models.list(),
+      ]);
+      setProjects(projData);
+      setAiModels(modelData);
+      if (projData.length > 0 && !selectedProject) {
+        setSelectedProject(projData[0].id);
       }
     } catch {
-      toast.error('加载项目列表失败');
+      toast.error('加载数据失败');
     }
   };
+
+  // 根据任务类型筛选可用模型
+  const filteredModels = useMemo(() => {
+    const modelType = TASK_TYPE_TO_MODEL_TYPE[selectedTaskType];
+    if (!modelType) return [];
+    return aiModels.filter((m) => m.model_type === modelType && m.is_active);
+  }, [selectedTaskType, aiModels]);
 
   // 创建任务
   const handleCreate = async () => {
@@ -211,7 +236,12 @@ export default function RenderCenter() {
     }
     try {
       setCreating(true);
-      await renderApi.create({ project_id: selectedProject, task_type: selectedTaskType });
+      await renderApi.create({
+        project_id: selectedProject,
+        task_type: selectedTaskType,
+        model_id: selectedModelId || undefined,
+        prompt: prompt || undefined,
+      });
       toast.success('渲染任务已创建');
       setShowCreate(false);
       await loadTasks();
@@ -283,14 +313,11 @@ export default function RenderCenter() {
             <table className="w-full">
               <thead>
                 <tr className="bg-canvas-panel text-xs text-slate-500">
-                  <th className="text-left px-4 py-3 font-medium">任务 ID</th>
-                  <th className="text-left px-4 py-3 font-medium">项目</th>
-                  <th className="text-left px-4 py-3 font-medium">节点</th>
+                  <th className="text-left px-4 py-3 font-medium">任务</th>
                   <th className="text-left px-4 py-3 font-medium">类型</th>
                   <th className="text-left px-4 py-3 font-medium">状态</th>
                   <th className="text-left px-4 py-3 font-medium">进度</th>
                   <th className="text-left px-4 py-3 font-medium">创建时间</th>
-                  <th className="text-left px-4 py-3 font-medium">错误信息</th>
                   <th className="text-right px-4 py-3 font-medium">操作</th>
                 </tr>
               </thead>
@@ -300,9 +327,13 @@ export default function RenderCenter() {
                   const Icon = config.icon;
                   return (
                     <tr key={task.id} className="border-t border-canvas-border hover:bg-canvas-hover/50 transition-colors">
-                      <td className="px-4 py-3 text-sm text-slate-200 font-mono">{task.id.slice(0, 8)}</td>
-                      <td className="px-4 py-3 text-xs text-slate-400">{task.project_name ?? '-'}</td>
-                      <td className="px-4 py-3 text-xs text-slate-300">{task.node_label ?? '-'}</td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-slate-200 font-mono">{task.id.slice(0, 8)}</div>
+                        <div className="text-xs text-slate-500">{task.project_name ?? '-'}</div>
+                        {task.error_message && (
+                          <div className="text-xs text-red-400/80 mt-0.5 truncate max-w-[200px]" title={task.error_message}>{task.error_message}</div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-xs text-slate-400">{getTaskTypeLabel(task.task_type)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
@@ -326,7 +357,6 @@ export default function RenderCenter() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-slate-400">{formatDate(task.created_at)}</td>
-                      <td className="px-4 py-3 text-xs text-red-400 max-w-[200px] truncate">{task.error_message ?? '-'}</td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
                           {(task.status === 'pending' || task.status === 'running') && (
@@ -400,7 +430,7 @@ export default function RenderCenter() {
                 <label className="block text-xs text-slate-400 mb-1">任务类型</label>
                 <select
                   value={selectedTaskType}
-                  onChange={(e) => setSelectedTaskType(e.target.value)}
+                  onChange={(e) => { setSelectedTaskType(e.target.value); setSelectedModelId(''); }}
                   className="w-full px-3 py-2 text-sm bg-canvas-hover border border-canvas-border rounded-lg text-slate-200 focus:outline-none focus:border-neon-purple"
                 >
                   {TASK_TYPES.map((t) => (
@@ -408,6 +438,37 @@ export default function RenderCenter() {
                   ))}
                 </select>
               </div>
+
+              {/* AI 模型选择 */}
+              {TASK_TYPE_TO_MODEL_TYPE[selectedTaskType] && (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">AI 模型</label>
+                  <select
+                    value={selectedModelId}
+                    onChange={(e) => setSelectedModelId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-canvas-hover border border-canvas-border rounded-lg text-slate-200 focus:outline-none focus:border-neon-purple"
+                  >
+                    <option value="">自动选择（默认模型）</option>
+                    {filteredModels.map((m) => (
+                      <option key={m.id} value={m.id}>{m.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 提示词 */}
+              {TASK_TYPE_TO_MODEL_TYPE[selectedTaskType] && (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">提示词</label>
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    rows={3}
+                    placeholder="输入生成提示词..."
+                    className="w-full px-3 py-2 text-sm bg-canvas-hover border border-canvas-border rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-neon-purple resize-none"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
