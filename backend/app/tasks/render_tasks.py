@@ -322,8 +322,8 @@ async def _do_ai_call(
 
         try:
             if model_id:
-                # 图生图需要 image_url，无图片时跳过 AI 调用走模拟路径
-                skip_ai = task_type == "ai_img2img" and not image_url
+                # 图生图/图生视频需要 image_url，无图片时跳过 AI 调用走模拟路径
+                skip_ai = config["needs_image"] and not image_url
                 if skip_ai:
                     logger.warning(f"[AI:Img2Img] 无上游图片 URL，跳过 AI 调用走模拟")
                 else:

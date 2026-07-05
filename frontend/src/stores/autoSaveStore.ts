@@ -5,7 +5,7 @@ import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
 import { useProjectStore } from './projectStore';
 import { useHistoryStore } from './historyStore';
-import { snapshotApi, type SnapshotResponse } from '@/utils/apiClient';
+import { snapshotApi, projectApi, type SnapshotResponse } from '@/utils/apiClient';
 
 const SNAPSHOT_LIMIT = 5;
 const AUTOSAVE_INTERVAL = 30_000; // 30秒
@@ -126,6 +126,19 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
         lastSavedAt: Date.now(),
         isSaving: false,
       });
+
+      // 自动更新项目封面：从画布节点产出中提取第一张图片 URL
+      const canvasNodes = useCanvasStore.getState().nodes;
+      const firstImage = canvasNodes
+        .flatMap((n) => n.data.outputArtifacts)
+        .find((a) => a.type === 'image' && a.url);
+      if (firstImage?.url) {
+        try {
+          await projectApi.update(projectId, { cover_url: firstImage.url });
+        } catch {
+          // 封面更新失败不影响主流程
+        }
+      }
     } catch (err) {
       console.error(`${LOG} 保存失败:`, err);
       set({ isSaving: false });

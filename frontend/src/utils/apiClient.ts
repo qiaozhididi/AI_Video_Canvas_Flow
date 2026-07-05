@@ -522,7 +522,7 @@ export const renderApi = {
     onProgress?: (progress: number, status: string) => void,
     attempt: number = 0,
   ): Promise<RenderTaskResponse> => {
-    const MAX_POLL_ATTEMPTS = 120; // 约 4 分钟 (120 * 2s)
+    const MAX_POLL_ATTEMPTS = 300; // 约 10 分钟 (300 * 2s)，覆盖视频生成等长时间任务
     const task = await renderApi.get(taskId);
     onProgress?.(task.progress, task.status);
     if (task.status === 'completed') return task;

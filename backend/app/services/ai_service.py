@@ -177,7 +177,13 @@ async def _call_image_api(
     if body_extra:
         body.update(body_extra)
     body.setdefault("n", params.get("n", 1) if params else 1)
-    body.setdefault("size", params.get("size", "2k") if params else "2k")
+    # 规范化 size 参数：仅接受 API 合法值(1k/2k/4k/特定 WxH)，其他一律回退到 2k
+    raw_size = params.get("size", "2k") if params else "2k"
+    valid_sizes = {"1k", "2k", "4k",
+                   "512x512", "768x768", "1024x1024", "1280x720", "720x1280",
+                   "1536x1536", "2048x2048", "1024x1536", "1536x1024"}
+    size = raw_size if str(raw_size) in valid_sizes else "2k"
+    body.setdefault("size", size)
     if params and "response_format" in params:
         body["response_format"] = params["response_format"]
 
