@@ -4,14 +4,19 @@ import logging
 import uuid
 from datetime import datetime
 
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from app.deps import CurrentUser, DBSession
 from app.models.ai_provider import AiProvider
 from app.models.ai_model import AiModel
 from app.config import settings
+
+# 合法模型类型
+MODEL_TYPES = Literal["llm", "image_gen", "video_gen", "tts"]
 
 logger = logging.getLogger("app.api.ai")
 
@@ -38,15 +43,17 @@ class ModelCreate(BaseModel):
     provider_id: str
     model_id: str
     display_name: str
-    model_type: str
+    model_type: MODEL_TYPES
     is_active: bool = True
+    is_default: bool = False
 
 class ModelUpdate(BaseModel):
     provider_id: str | None = None
     model_id: str | None = None
     display_name: str | None = None
-    model_type: str | None = None
+    model_type: MODEL_TYPES | None = None
     is_active: bool | None = None
+    is_default: bool | None = None
 
 
 def _provider_to_dict(p: AiProvider) -> dict:
@@ -69,6 +76,7 @@ def _model_to_dict(m: AiModel) -> dict:
         "display_name": m.display_name,
         "model_type": m.model_type,
         "is_active": m.is_active,
+        "is_default": m.is_default,
         "created_at": m.created_at.isoformat() if m.created_at else None,
         "updated_at": m.updated_at.isoformat() if m.updated_at else None,
     }
@@ -153,8 +161,16 @@ async def create_model(body: ModelCreate, db: DBSession, user: CurrentUser):
         display_name=body.display_name,
         model_type=body.model_type,
         is_active=body.is_active,
+        is_default=body.is_default,
     )
     db.add(model)
+    # 如果设为默认，清除同类型其他默认
+    if body.is_default:
+        await db.execute(
+            update(AiModel)
+            .where(AiModel.model_type == body.model_type, AiModel.id != model.id)
+            .values(is_default=False)
+        )
     await db.commit()
     await db.refresh(model)
     logger.info(f"[AI:Model:Create] id={model.id} model_id={body.model_id}")
@@ -196,6 +212,15 @@ async def update_model(model_id: str, body: ModelUpdate, db: DBSession, user: Cu
         model.model_type = body.model_type
     if body.is_active is not None:
         model.is_active = body.is_active
+    if body.is_default is not None:
+        model.is_default = body.is_default
+        # 如果设为默认，清除同类型其他默认
+        if body.is_default:
+            await db.execute(
+                update(AiModel)
+                .where(AiModel.model_type == model.model_type, AiModel.id != model.id)
+                .values(is_default=False)
+            )
     model.updated_at = datetime.utcnow()
 
     await db.commit()
@@ -217,21 +242,36 @@ async def delete_model(model_id: str, db: DBSession, user: CurrentUser):
 
 @router.get("/models/default", summary="获取默认 AI 模型")
 async def get_default_model(db: DBSession, user: CurrentUser, model_type: str | None = None):
-    """返回第一个 active 的 AI Model（关联的 Provider 也必须是 active）
+    """返回默认 AI Model（is_default=True 优先），否则第一个 active 模型
 
     可通过 model_type 参数过滤模型类型（如 image_gen, video_gen, llm, tts）
     """
+    # 优先查找 is_default=True 的模型
     stmt = (
         select(AiModel)
-        .where(AiModel.is_active == True)
+        .where(AiModel.is_active == True, AiModel.is_default == True)
         .join(AiProvider, AiModel.provider_id == AiProvider.id)
         .where(AiProvider.is_active == True)
     )
     if model_type:
         stmt = stmt.where(AiModel.model_type == model_type)
-    stmt = stmt.order_by(AiModel.created_at.desc()).limit(1)
-    result = await db.execute(stmt)
+    result = await db.execute(stmt.limit(1))
     model = result.scalar_one_or_none()
+
+    # 没有默认模型则回退到第一个 active 模型
+    if not model:
+        stmt = (
+            select(AiModel)
+            .where(AiModel.is_active == True)
+            .join(AiProvider, AiModel.provider_id == AiProvider.id)
+            .where(AiProvider.is_active == True)
+        )
+        if model_type:
+            stmt = stmt.where(AiModel.model_type == model_type)
+        stmt = stmt.order_by(AiModel.created_at.desc()).limit(1)
+        result = await db.execute(stmt)
+        model = result.scalar_one_or_none()
+
     if not model:
         type_hint = f"（类型: {model_type}）" if model_type else ""
         raise HTTPException(status_code=404, detail=f"未找到可用的 AI 模型{type_hint}，请先在设置页配置")

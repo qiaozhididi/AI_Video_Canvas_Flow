@@ -15,10 +15,11 @@ class AiModel(Base):
     __tablename__ = "ai_models"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_providers.id"))
+    provider_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_providers.id", ondelete="CASCADE"))
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)  # 平台模型标识
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)  # 前端显示名
     model_type: Mapped[str] = mapped_column(String(32), nullable=False)  # llm/image_gen/video_gen/tts
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)

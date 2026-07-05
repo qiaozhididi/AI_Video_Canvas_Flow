@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  User, Key, HardDrive, CreditCard, Save,
-  Server, Cpu, Plus, Edit2, Trash2, X,
+  User, HardDrive, CreditCard, Save,
+  Server, Cpu, Plus, Edit2, Trash2, X, Star, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -26,11 +26,19 @@ const PLATFORM_OPTIONS = [
 ] as const;
 
 const MODEL_TYPE_OPTIONS = [
-  { value: 'llm', label: '文本生成' },
-  { value: 'image_gen', label: '文生图' },
-  { value: 'video_gen', label: '图生视频' },
-  { value: 'tts', label: '语音合成' },
+  { value: 'llm', label: '文本生成', color: 'bg-blue-500/20 text-blue-400' },
+  { value: 'image_gen', label: '文生图', color: 'bg-purple-500/20 text-purple-400' },
+  { value: 'video_gen', label: '图生视频', color: 'bg-emerald-500/20 text-emerald-400' },
+  { value: 'tts', label: '语音合成', color: 'bg-amber-500/20 text-amber-400' },
 ] as const;
+
+function modelTypeMeta(t: string) {
+  return MODEL_TYPE_OPTIONS.find((o) => o.value === t) ?? { value: t, label: t, color: 'bg-slate-500/20 text-slate-400' };
+}
+
+function platformLabel(t: string) {
+  return PLATFORM_OPTIONS.find((o) => o.value === t)?.label ?? t;
+}
 
 // ── 通用组件 ──
 
@@ -191,14 +199,15 @@ function ModelForm({
   const [displayName, setDisplayName] = useState(initial?.display_name ?? '');
   const [modelType, setModelType] = useState(initial?.model_type ?? 'llm');
   const [isActive, setIsActive] = useState(initial?.is_active ?? true);
+  const [isDefault, setIsDefault] = useState(initial?.is_default ?? false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (initial) {
-      const data: AiModelUpdateRequest = { provider_id: providerId, model_id: modelId, display_name: displayName, model_type: modelType, is_active: isActive };
+      const data: AiModelUpdateRequest = { provider_id: providerId, model_id: modelId, display_name: displayName, model_type: modelType, is_active: isActive, is_default: isDefault };
       onSubmit(data);
     } else {
-      onSubmit({ provider_id: providerId, model_id: modelId, display_name: displayName, model_type: modelType, is_active: isActive });
+      onSubmit({ provider_id: providerId, model_id: modelId, display_name: displayName, model_type: modelType, is_active: isActive, is_default: isDefault });
     }
   };
 
@@ -251,6 +260,12 @@ function ModelForm({
         <label className="text-xs text-slate-500 uppercase tracking-wider">启用</label>
         <Toggle checked={isActive} onChange={setIsActive} />
       </div>
+      <div className="flex items-center justify-between">
+        <label className="text-xs text-slate-500 uppercase tracking-wider flex items-center gap-1">
+          <Star className="w-3 h-3 text-amber-400" /> 设为默认
+        </label>
+        <Toggle checked={isDefault} onChange={setIsDefault} />
+      </div>
       <div className="flex justify-end gap-2 pt-2">
         <button
           type="button"
@@ -270,12 +285,13 @@ function ModelForm({
   );
 }
 
-// ── AI 配置标签页 ──
+// ── AI 配置标签页（左右分栏） ──
 
 function AiConfigTab() {
   const [providers, setProviders] = useState<AiProviderResponse[]>([]);
   const [models, setModels] = useState<AiModelResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
 
   // Provider 模态框
   const [providerModal, setProviderModal] = useState<{ open: boolean; editing?: AiProviderResponse }>({ open: false });
@@ -303,7 +319,7 @@ function AiConfigTab() {
       }
       setProviderModal({ open: false });
       fetchProviders();
-      fetchModels(); // provider 变更可能影响 model 显示
+      fetchModels();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '操作失败';
       toast.error(msg);
@@ -325,6 +341,7 @@ function AiConfigTab() {
     try {
       await aiApi.providers.delete(p.id);
       toast.success('Provider 已删除');
+      if (selectedProviderId === p.id) setSelectedProviderId(null);
       fetchProviders();
       fetchModels();
     } catch (err: unknown) {
@@ -374,88 +391,136 @@ function AiConfigTab() {
     }
   };
 
-  const providerNameMap = Object.fromEntries(providers.map((p) => [p.id, p.name]));
+  const handleSetDefault = async (m: AiModelResponse) => {
+    try {
+      await aiApi.models.update(m.id, { is_default: true });
+      toast.success(`已将「${m.display_name}」设为默认`);
+      fetchModels();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '操作失败';
+      toast.error(msg);
+    }
+  };
 
-  const modelTypeLabel = (t: string) => MODEL_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t;
-  const platformLabel = (t: string) => PLATFORM_OPTIONS.find((o) => o.value === t)?.label ?? t;
+  // 按选中 Provider 过滤模型
+  const filteredModels = selectedProviderId
+    ? models.filter((m) => m.provider_id === selectedProviderId)
+    : models;
+
+  // 按 model_type 分组
+  const groupedModels = MODEL_TYPE_OPTIONS.map((type) => ({
+    ...type,
+    models: filteredModels.filter((m) => m.model_type === type.value),
+  })).filter((g) => g.models.length > 0);
+
+  // 未分类的模型
+  const categorizedTypes = new Set(MODEL_TYPE_OPTIONS.map((o) => o.value));
+  const uncategorizedModels = filteredModels.filter((m) => !categorizedTypes.has(m.model_type as typeof categorizedTypes extends Set<infer T> ? T : never));
+
+  const selectedProvider = providers.find((p) => p.id === selectedProviderId);
 
   if (loading) {
     return <p className="text-sm text-slate-500">加载中...</p>;
   }
 
   return (
-    <div className="space-y-8">
-      {/* Provider 管理 */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
+    <div className="flex gap-6 h-[calc(100vh-220px)] min-h-[400px]">
+      {/* 左栏：Provider 列表 */}
+      <div className="w-72 flex-shrink-0 flex flex-col rounded-xl border border-canvas-border bg-canvas-panel">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-canvas-border">
           <div className="flex items-center gap-2">
-            <Server className="w-5 h-5 text-neon-purple" />
-            <h2 className="text-lg font-medium text-white font-display">Provider 管理</h2>
+            <Server className="w-4 h-4 text-neon-purple" />
+            <span className="text-sm font-medium text-white">Provider</span>
+            <span className="text-xs text-slate-500">({providers.length})</span>
           </div>
           <button
             onClick={() => setProviderModal({ open: true })}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity"
+            className="p-1 text-slate-400 hover:text-white rounded transition-colors"
           >
-            <Plus className="w-3.5 h-3.5" />
-            添加 Provider
+            <Plus className="w-4 h-4" />
           </button>
         </div>
 
-        {providers.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4 text-center">暂无 Provider，点击上方按钮添加</p>
-        ) : (
-          <div className="rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-canvas-border text-xs text-slate-500 uppercase tracking-wider">
-                  <th className="px-4 py-3 text-left">名称</th>
-                  <th className="px-4 py-3 text-left">平台</th>
-                  <th className="px-4 py-3 text-left">Base URL</th>
-                  <th className="px-4 py-3 text-left">API Key</th>
-                  <th className="px-4 py-3 text-center">状态</th>
-                  <th className="px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {providers.map((p) => (
-                  <tr key={p.id} className="border-b border-canvas-border last:border-b-0 hover:bg-canvas-hover/50">
-                    <td className="px-4 py-3 text-slate-300">{p.name}</td>
-                    <td className="px-4 py-3 text-slate-400">{platformLabel(p.platform)}</td>
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{p.base_url}</td>
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{p.api_key}</td>
-                    <td className="px-4 py-3 text-center">
-                      <Toggle checked={p.is_active} onChange={() => handleProviderToggle(p)} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setProviderModal({ open: true, editing: p })}
-                          className="p-1.5 text-slate-400 hover:text-neon-blue rounded transition-colors"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleProviderDelete(p)}
-                          className="p-1.5 text-slate-400 hover:text-red-400 rounded transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="flex-1 overflow-y-auto">
+          {/* "全部"选项 */}
+          <button
+            onClick={() => setSelectedProviderId(null)}
+            className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+              selectedProviderId === null
+                ? 'bg-neon-purple/10 text-white border-l-2 border-neon-purple'
+                : 'text-slate-400 hover:bg-canvas-hover border-l-2 border-transparent'
+            }`}
+          >
+            <div className="w-8 h-8 rounded-lg bg-canvas-bg flex items-center justify-center">
+              <Cpu className="w-4 h-4 text-slate-400" />
+            </div>
+            <div className="flex-1 text-left">
+              <div className="font-medium">全部 Provider</div>
+              <div className="text-xs text-slate-500">{models.length} 个模型</div>
+            </div>
+          </button>
+
+          {providers.map((p) => {
+            const pModels = models.filter((m) => m.provider_id === p.id);
+            return (
+              <div
+                key={p.id}
+                className={`group flex items-center gap-3 px-4 py-3 text-sm cursor-pointer transition-colors ${
+                  selectedProviderId === p.id
+                    ? 'bg-neon-purple/10 text-white border-l-2 border-neon-purple'
+                    : 'text-slate-300 hover:bg-canvas-hover border-l-2 border-transparent'
+                }`}
+                onClick={() => setSelectedProviderId(p.id)}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                  p.is_active ? 'bg-neon-purple/20 text-neon-purple' : 'bg-canvas-bg text-slate-500'
+                }`}>
+                  {p.name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">{p.name}</div>
+                  <div className="text-xs text-slate-500">{platformLabel(p.platform)} · {pModels.length} 个模型</div>
+                </div>
+                <div className="hidden group-hover:flex items-center gap-0.5">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setProviderModal({ open: true, editing: p }); }}
+                    className="p-1 text-slate-400 hover:text-neon-blue rounded transition-colors"
+                  >
+                    <Edit2 className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleProviderDelete(p); }}
+                    className="p-1 text-slate-400 hover:text-red-400 rounded transition-colors"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+                {!p.is_active && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">停用</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 左栏底部：Provider 开关 */}
+        {selectedProvider && (
+          <div className="px-4 py-3 border-t border-canvas-border flex items-center justify-between">
+            <span className="text-xs text-slate-500">启用状态</span>
+            <Toggle checked={selectedProvider.is_active} onChange={() => handleProviderToggle(selectedProvider)} />
           </div>
         )}
-      </section>
+      </div>
 
-      {/* Model 管理 */}
-      <section className="space-y-4">
+      {/* 右栏：模型按类型分组 */}
+      <div className="flex-1 overflow-y-auto space-y-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Cpu className="w-5 h-5 text-neon-purple" />
-            <h2 className="text-lg font-medium text-white font-display">Model 管理</h2>
+            <h2 className="text-lg font-medium text-white font-display">
+              {selectedProvider ? selectedProvider.name : '全部模型'}
+            </h2>
+            <span className="text-xs text-slate-500">({filteredModels.length})</span>
           </div>
           <button
             onClick={() => setModelModal({ open: true })}
@@ -463,64 +528,65 @@ function AiConfigTab() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Plus className="w-3.5 h-3.5" />
-            添加 Model
+            添加模型
           </button>
         </div>
 
         {providers.length === 0 ? (
-          <p className="text-sm text-slate-500 py-2">请先添加 Provider</p>
-        ) : models.length === 0 ? (
-          <p className="text-sm text-slate-500 py-4 text-center">暂无 Model，点击上方按钮添加</p>
+          <p className="text-sm text-slate-500 py-8 text-center">请先添加 Provider</p>
+        ) : filteredModels.length === 0 ? (
+          <p className="text-sm text-slate-500 py-8 text-center">暂无模型，点击上方按钮添加</p>
         ) : (
-          <div className="rounded-xl border border-canvas-border bg-canvas-panel overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-canvas-border text-xs text-slate-500 uppercase tracking-wider">
-                  <th className="px-4 py-3 text-left">显示名称</th>
-                  <th className="px-4 py-3 text-left">模型 ID</th>
-                  <th className="px-4 py-3 text-left">类型</th>
-                  <th className="px-4 py-3 text-left">Provider</th>
-                  <th className="px-4 py-3 text-center">状态</th>
-                  <th className="px-4 py-3 text-right">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {models.map((m) => (
-                  <tr key={m.id} className="border-b border-canvas-border last:border-b-0 hover:bg-canvas-hover/50">
-                    <td className="px-4 py-3 text-slate-300">{m.display_name}</td>
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{m.model_id}</td>
-                    <td className="px-4 py-3">
-                      <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-neon-purple/20 text-neon-purple">
-                        {modelTypeLabel(m.model_type)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{providerNameMap[m.provider_id] ?? m.provider_id}</td>
-                    <td className="px-4 py-3 text-center">
-                      <Toggle checked={m.is_active} onChange={() => handleModelToggle(m)} />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => setModelModal({ open: true, editing: m })}
-                          className="p-1.5 text-slate-400 hover:text-neon-blue rounded transition-colors"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleModelDelete(m)}
-                          className="p-1.5 text-slate-400 hover:text-red-400 rounded transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {groupedModels.map((group) => (
+              <div key={group.value} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium ${group.color}`}>
+                    {group.label}
+                  </span>
+                  <span className="text-xs text-slate-500">{group.models.length}</span>
+                </div>
+                <div className="grid gap-2">
+                  {group.models.map((m) => (
+                    <ModelCard
+                      key={m.id}
+                      model={m}
+                      providerName={providers.find((p) => p.id === m.provider_id)?.name ?? ''}
+                      onToggle={() => handleModelToggle(m)}
+                      onSetDefault={() => handleSetDefault(m)}
+                      onEdit={() => setModelModal({ open: true, editing: m })}
+                      onDelete={() => handleModelDelete(m)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {uncategorizedModels.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block px-2 py-0.5 text-xs rounded-full font-medium bg-slate-500/20 text-slate-400">
+                    其他
+                  </span>
+                </div>
+                <div className="grid gap-2">
+                  {uncategorizedModels.map((m) => (
+                    <ModelCard
+                      key={m.id}
+                      model={m}
+                      providerName={providers.find((p) => p.id === m.provider_id)?.name ?? ''}
+                      onToggle={() => handleModelToggle(m)}
+                      onSetDefault={() => handleSetDefault(m)}
+                      onEdit={() => setModelModal({ open: true, editing: m })}
+                      onDelete={() => handleModelDelete(m)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
-      </section>
+      </div>
 
       {/* Provider 模态框 */}
       <Modal
@@ -539,7 +605,7 @@ function AiConfigTab() {
       <Modal
         open={modelModal.open}
         onClose={() => setModelModal({ open: false })}
-        title={modelModal.editing ? '编辑 Model' : '添加 Model'}
+        title={modelModal.editing ? '编辑模型' : '添加模型'}
       >
         <ModelForm
           providers={providers}
@@ -548,6 +614,84 @@ function AiConfigTab() {
           onCancel={() => setModelModal({ open: false })}
         />
       </Modal>
+    </div>
+  );
+}
+
+// ── 模型卡片 ──
+
+function ModelCard({
+  model,
+  providerName,
+  onToggle,
+  onSetDefault,
+  onEdit,
+  onDelete,
+}: {
+  model: AiModelResponse;
+  providerName: string;
+  onToggle: () => void;
+  onSetDefault: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const meta = modelTypeMeta(model.model_type);
+
+  return (
+    <div className={`group flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors ${
+      model.is_active
+        ? 'border-canvas-border bg-canvas-panel hover:bg-canvas-hover'
+        : 'border-canvas-border/50 bg-canvas-panel/50 opacity-60'
+    }`}>
+      {/* 左侧：模型信息 */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-white truncate">{model.display_name}</span>
+          {model.is_default && (
+            <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded-full bg-amber-500/20 text-amber-400">
+              <Star className="w-2.5 h-2.5 fill-amber-400" /> 默认
+            </span>
+          )}
+          <span className={`inline-block px-1.5 py-0.5 text-[10px] rounded-full font-medium ${meta.color}`}>
+            {meta.label}
+          </span>
+        </div>
+        <div className="text-xs text-slate-500 mt-0.5 truncate">
+          {model.model_id} · {providerName}
+        </div>
+      </div>
+
+      {/* 右侧：操作 */}
+      <div className="flex items-center gap-2">
+        {!model.is_default && model.is_active && (
+          <button
+            onClick={onSetDefault}
+            title="设为默认"
+            className="p-1.5 text-slate-500 hover:text-amber-400 rounded transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <Star className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <button
+          onClick={onToggle}
+          title={model.is_active ? '停用' : '启用'}
+          className="p-1.5 rounded transition-colors"
+        >
+          <div className={`w-2 h-2 rounded-full ${model.is_active ? 'bg-green-500' : 'bg-slate-600'}`} />
+        </button>
+        <button
+          onClick={onEdit}
+          className="p-1.5 text-slate-500 hover:text-neon-blue rounded transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <Edit2 className="w-3.5 h-3.5" />
+        </button>
+        <button
+          onClick={onDelete}
+          className="p-1.5 text-slate-500 hover:text-red-400 rounded transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -651,7 +795,6 @@ export default function Settings() {
 
   const tabs = [
     { id: 'profile', label: '个人信息', icon: User },
-    { id: 'api', label: 'API 配置', icon: Key },
     { id: 'ai', label: 'AI 配置', icon: Server },
     { id: 'storage', label: '存储用量', icon: HardDrive },
     { id: 'subscription', label: '订阅管理', icon: CreditCard },
@@ -659,7 +802,7 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-8 py-10">
+      <div className="max-w-5xl mx-auto px-8 py-10">
         <h1 className="text-2xl font-bold text-white font-display mb-6">设置</h1>
 
         <div className="flex gap-6">
@@ -684,30 +827,6 @@ export default function Settings() {
           {/* 内容 */}
           <div className="flex-1">
             {activeTab === 'profile' && <ProfileTab />}
-
-            {activeTab === 'api' && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-medium text-white font-display">API 配置</h2>
-                <p className="text-sm text-slate-400">配置第三方 AI 模型的 API Key</p>
-                <div className="space-y-3">
-                  {['OpenAI API Key', 'Stability AI Key', 'Kling API Key', 'CosyVoice API Key'].map((key) => (
-                    <div key={key}>
-                      <label className="text-xs text-slate-500">{key}</label>
-                      <input
-                        type="password"
-                        placeholder="sk-..."
-                        className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-neon-purple"
-                      />
-                    </div>
-                  ))}
-                </div>
-                <button className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity">
-                  <Save className="w-4 h-4" />
-                  保存配置
-                </button>
-              </div>
-            )}
-
             {activeTab === 'ai' && <AiConfigTab />}
 
             {activeTab === 'storage' && (

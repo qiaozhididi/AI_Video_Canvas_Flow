@@ -314,6 +314,7 @@ export interface AiModelResponse {
   display_name: string;
   model_type: string;
   is_active: boolean;
+  is_default: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -324,6 +325,7 @@ export interface AiModelCreateRequest {
   display_name: string;
   model_type: string;
   is_active?: boolean;
+  is_default?: boolean;
 }
 
 export interface AiModelUpdateRequest {
@@ -332,6 +334,7 @@ export interface AiModelUpdateRequest {
   display_name?: string;
   model_type?: string;
   is_active?: boolean;
+  is_default?: boolean;
 }
 
 // ── 快照 ──
