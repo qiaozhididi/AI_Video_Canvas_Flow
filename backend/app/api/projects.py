@@ -4,7 +4,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.deps import DBSession, CurrentUser
 from app.models.project import Project
@@ -25,12 +25,25 @@ async def list_projects(db: DBSession, current_user: CurrentUser):
     owner_id = uuid.UUID(current_user)
     result = await db.execute(select(Project).where(Project.owner_id == owner_id))
     projects = result.scalars().all()
+
+    # 批量查询每个项目的节点数
+    project_ids = [p.id for p in projects]
+    node_count_map: dict[str, int] = {}
+    if project_ids:
+        nc_result = await db.execute(
+            select(WorkflowNode.project_id, func.count(WorkflowNode.id))
+            .where(WorkflowNode.project_id.in_(project_ids))
+            .group_by(WorkflowNode.project_id)
+        )
+        node_count_map = {str(pid): cnt for pid, cnt in nc_result.all()}
+
     return [
         ProjectResponse(
             id=str(p.id),
             name=p.name,
             description=p.description,
             cover_url=p.cover_url,
+            node_count=node_count_map.get(str(p.id), 0),
             owner_id=str(p.owner_id),
             created_at=p.created_at,
             updated_at=p.updated_at,
@@ -57,6 +70,7 @@ async def create_project(body: ProjectCreate, db: DBSession, current_user: Curre
         name=project.name,
         description=project.description,
         cover_url=project.cover_url,
+        node_count=0,
         owner_id=str(project.owner_id),
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -73,11 +87,16 @@ async def get_project(project_id: str, db: DBSession, current_user: CurrentUser)
     project = result.scalar_one_or_none()
     if not project or project.owner_id != owner_id:
         raise HTTPException(status_code=404, detail="项目不存在")
+    nc_result = await db.execute(
+        select(func.count(WorkflowNode.id)).where(WorkflowNode.project_id == project.id)
+    )
+    node_count = nc_result.scalar() or 0
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         cover_url=project.cover_url,
+        node_count=node_count,
         owner_id=str(project.owner_id),
         created_at=project.created_at,
         updated_at=project.updated_at,
@@ -99,14 +118,21 @@ async def update_project(project_id: str, body: ProjectUpdate, db: DBSession, cu
         project.name = body.name
     if body.description is not None:
         project.description = body.description
+    if body.cover_url is not None:
+        project.cover_url = body.cover_url
     await db.commit()
     await db.refresh(project)
+    nc_result = await db.execute(
+        select(func.count(WorkflowNode.id)).where(WorkflowNode.project_id == project.id)
+    )
+    node_count = nc_result.scalar() or 0
     logger.info(f"[Project:Update] id={project_id}")
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         cover_url=project.cover_url,
+        node_count=node_count,
         owner_id=str(project.owner_id),
         created_at=project.created_at,
         updated_at=project.updated_at,

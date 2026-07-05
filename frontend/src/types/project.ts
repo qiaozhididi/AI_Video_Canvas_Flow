@@ -7,6 +7,7 @@ export interface Project {
   name: string;
   description?: string;
   thumbnailUrl?: string;
+  nodeCount: number;
   canvasNodes: CanvasNode[];
   canvasEdges: CanvasEdge[];
   timelineData: TimelineData;
@@ -20,6 +21,7 @@ export function createEmptyProject(name: string): Project {
   return {
     id: crypto.randomUUID(),
     name,
+    nodeCount: 0,
     canvasNodes: [],
     canvasEdges: [],
     timelineData: {

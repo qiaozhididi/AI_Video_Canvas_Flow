@@ -32,6 +32,7 @@ function toFrontendProject(p: {
   name: string;
   description: string | null;
   cover_url: string | null;
+  node_count?: number;
   owner_id: string;
   created_at: string;
   updated_at: string;
@@ -41,6 +42,7 @@ function toFrontendProject(p: {
     name: p.name,
     description: p.description || undefined,
     thumbnailUrl: p.cover_url || undefined,
+    nodeCount: p.node_count || 0,
     canvasNodes: [],
     canvasEdges: [],
     timelineData: {
@@ -138,8 +140,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       edges: canvasStore.edges.map(toEdgeCreate),
     });
 
-    // 更新项目的 updatedAt
-    await projectApi.update(currentProject.id, {});
+    // 从画布节点产出中提取第一张图片作为封面
+    const firstImage = canvasStore.nodes
+      .flatMap((n) => n.data.outputArtifacts)
+      .find((a) => a.type === 'image' && a.url);
+    const coverUrl = firstImage?.url;
+
+    // 更新项目元数据（updatedAt + cover_url）
+    await projectApi.update(currentProject.id, { cover_url: coverUrl });
 
     // 刷新项目列表
     await get().loadProjects();

@@ -13,6 +13,7 @@ class ProjectCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    cover_url: str | None = None
 
 
 class ProjectResponse(BaseModel):
@@ -20,6 +21,7 @@ class ProjectResponse(BaseModel):
     name: str
     description: str | None
     cover_url: str | None = None
+    node_count: int = 0
     owner_id: str
     created_at: datetime
     updated_at: datetime

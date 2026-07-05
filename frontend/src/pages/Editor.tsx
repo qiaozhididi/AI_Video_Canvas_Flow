@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
@@ -317,6 +317,13 @@ function PropertyPanelWithHistory({
   const [aiModels, setAiModels] = useState<AiModelResponse[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const paramSnapshotRef = useRef<Record<string, unknown> | null>(null);
+
+  // AI 推理节点：切换选中节点时预加载模型列表，确保 model_id 能正确回显
+  useEffect(() => {
+    if (selectedNode?.data.type === 'ai_inference' && aiModels.length === 0) {
+      loadAiModels();
+    }
+  }, [selectedNode?.id, selectedNode?.data.type]);
 
   // 时间轴：加入片段所需
   const addClip = useTimelineStore((s) => s.addClip);

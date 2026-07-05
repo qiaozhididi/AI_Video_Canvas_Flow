@@ -164,6 +164,7 @@ export interface ProjectCreateRequest {
 export interface ProjectUpdateRequest {
   name?: string;
   description?: string;
+  cover_url?: string;
 }
 
 // ── 模板 ──

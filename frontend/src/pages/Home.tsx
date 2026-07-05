@@ -149,7 +149,11 @@ export default function Home() {
                     onClick={() => navigate(`/editor/${project.id}`)}
                   >
                     {project.thumbnailUrl ? (
-                      <img src={project.thumbnailUrl} alt={project.name} className="w-full h-full object-cover" />
+                      <img
+                        src={project.thumbnailUrl.startsWith('/') ? `${project.thumbnailUrl}${project.thumbnailUrl.includes('?') ? '&' : '?'}token=${localStorage.getItem('access_token') || ''}` : project.thumbnailUrl}
+                        alt={project.name}
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Film className="w-8 h-8 text-slate-700" />
@@ -172,7 +176,7 @@ export default function Home() {
                     </div>
                     <div className="flex items-center justify-between mt-2">
                       <span className="text-xs text-slate-600">
-                        {project.canvasNodes.length} 个节点
+                        {project.nodeCount} 个节点
                       </span>
                       <div className="flex items-center gap-1">
                         <button
