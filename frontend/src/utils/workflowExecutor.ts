@@ -8,7 +8,9 @@
 
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useTimelineStore } from '@/stores/timelineStore';
 import type { NodeStatus } from '@/types/canvas';
+import type { TrackType } from '@/types/timeline';
 import { renderApi, aiApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge, NodeSubtype, Artifact } from '@/types/canvas';
 import type { RenderTaskResponse } from '@/utils/apiClient';
@@ -191,6 +193,35 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
 
     useCanvasStore.getState().setNodeOutput(nodeId, artifacts);
     useCanvasStore.getState().setNodeStatus(nodeId, 'completed', 100);
+
+    // 节点执行成功后自动将产出加入时间轴
+    if (artifacts.length > 0) {
+      const { addClip, data: timelineData } = useTimelineStore.getState();
+      for (const artifact of artifacts) {
+        const trackType: TrackType = artifact.type === 'audio' ? 'audio' : 'video';
+        const targetTrack = timelineData.tracks.find((t) => t.type === trackType);
+        if (!targetTrack) continue;
+
+        const duration = artifact.type === 'image' ? 3 : 5;
+        const tk = localStorage.getItem('access_token') || '';
+        const isInt = artifact.url.startsWith('/api/');
+        const isExt = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
+        let mediaUrl: string;
+        if (isInt) mediaUrl = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${tk}`;
+        else if (isExt) mediaUrl = artifact.url;
+        else mediaUrl = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${tk}`;
+
+        addClip(targetTrack.id, {
+          id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          trackId: targetTrack.id,
+          start: timelineData.currentTime,
+          end: timelineData.currentTime + duration,
+          mediaUrl,
+          label: node.data.label || node.data.subtype,
+          nodeId,
+        });
+      }
+    }
 
     return result;
   } catch (err: any) {

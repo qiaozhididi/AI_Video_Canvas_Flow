@@ -40,6 +40,7 @@ export default function Timeline() {
     removeClip, moveClip, resizeClip, setZoom,
   } = useTimelineStore();
   const { nodes } = useCanvasStore();
+  const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -368,6 +369,10 @@ export default function Timeline() {
                         borderLeft: `3px solid ${TRACK_COLORS[track.type]}`,
                       }}
                       onPointerDown={(e) => handleDragStart(e, track.id, clip, 'move')}
+                      onDoubleClick={() => {
+                        if (clip.nodeId) setSelectedNodeIds([clip.nodeId]);
+                      }}
+                      title={clip.nodeId ? `双击定位到节点: ${clip.label}` : clip.label}
                     >
                       <span className="text-xs text-slate-300 truncate pointer-events-none">{clip.label}</span>
                       <button

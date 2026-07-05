@@ -3,6 +3,7 @@ import type { CanvasNode, CanvasEdge, CanvasNodeData, NodeStatus } from '@/types
 import { NODE_TEMPLATES } from '@/types/canvas';
 import { useCollabStore, type NodeUpdatePayload, type EdgeUpdatePayload } from './collabStore';
 import { useAutoSaveStore } from './autoSaveStore';
+import { useTimelineStore } from './timelineStore';
 import { useHistoryStore } from './historyStore';
 import { toCanvasNode, toCanvasEdge } from '@/utils/canvasTransform';
 import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
@@ -171,6 +172,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     // 协作广播
     emitNodeDelete(id);
     affectedEdges.forEach((e) => emitEdgeDelete(e.id));
+
+    // 同步清除时间轴中关联该节点的片段
+    const { data: timelineData, loadTimeline } = useTimelineStore.getState();
+    let timelineChanged = false;
+    const updatedTracks = timelineData.tracks.map((track) => {
+      const filtered = track.clips.filter((c) => c.nodeId !== id);
+      if (filtered.length !== track.clips.length) {
+        timelineChanged = true;
+        return { ...track, clips: filtered };
+      }
+      return track;
+    });
+    if (timelineChanged) {
+      loadTimeline({ ...timelineData, tracks: updatedTracks });
+    }
 
     useAutoSaveStore.getState().markDirty();
   },

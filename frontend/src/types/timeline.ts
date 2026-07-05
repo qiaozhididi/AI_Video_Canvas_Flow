@@ -10,6 +10,8 @@ export interface Clip {
   mediaUrl: string;
   label: string;
   color?: string;
+  /** 关联的画布节点 ID，用于双向绑定 */
+  nodeId?: string;
 }
 
 // 时间轴轨道

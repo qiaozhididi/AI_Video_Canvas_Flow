@@ -359,6 +359,7 @@ function PropertyPanelWithHistory({
       })(),
       label: data.label,
       color: undefined,
+      nodeId: selectedNode.id,
     };
     addClip(targetTrack.id, clip);
   };
