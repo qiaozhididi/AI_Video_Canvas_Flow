@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/utils/apiClient';
 import { toast } from 'sonner';
@@ -13,6 +13,21 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // 已登录时自动跳转首页（含跨 Tab 同步）
+  useEffect(() => {
+    if (localStorage.getItem('access_token')) {
+      navigate('/', { replace: true });
+      return;
+    }
+    const onStorageChange = (e: StorageEvent) => {
+      if (e.key === 'access_token' && e.newValue) {
+        navigate('/', { replace: true });
+      }
+    };
+    window.addEventListener('storage', onStorageChange);
+    return () => window.removeEventListener('storage', onStorageChange);
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

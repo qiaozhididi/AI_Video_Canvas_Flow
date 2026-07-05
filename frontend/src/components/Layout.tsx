@@ -1,7 +1,7 @@
-import { Outlet, Link, useLocation } from 'react-router-dom';
+import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, FolderOpen, Monitor, Store, Settings,
-  Sparkles,
+  Sparkles, LogOut,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -14,6 +14,13 @@ const NAV_ITEMS = [
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    navigate('/login', { replace: true });
+  };
 
   return (
     <div className="h-screen flex bg-canvas-bg">
@@ -43,6 +50,17 @@ export default function Layout() {
             </Link>
           );
         })}
+
+        {/* 登出按钮：底部 */}
+        <div className="mt-auto">
+          <button
+            onClick={handleLogout}
+            className="w-10 h-10 rounded-lg flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+            title="退出登录"
+          >
+            <LogOut className="w-5 h-5" />
+          </button>
+        </div>
       </nav>
 
       {/* 主内容区 */}
