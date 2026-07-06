@@ -153,6 +153,7 @@ export default function Home() {
                         src={project.thumbnailUrl.startsWith('/') ? `${project.thumbnailUrl}${project.thumbnailUrl.includes('?') ? '&' : '?'}token=${localStorage.getItem('access_token') || ''}` : project.thumbnailUrl}
                         alt={project.name}
                         className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">

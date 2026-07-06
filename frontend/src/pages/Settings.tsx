@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  User, HardDrive, CreditCard, Save,
+  User, HardDrive, Save,
   Server, Cpu, Plus, Edit2, Trash2, X, Star, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -855,7 +855,6 @@ export default function Settings() {
     { id: 'profile', label: '个人信息', icon: User },
     { id: 'ai', label: 'AI 配置', icon: Server },
     { id: 'storage', label: '存储用量', icon: HardDrive },
-    { id: 'subscription', label: '订阅管理', icon: CreditCard },
   ];
 
   return (
@@ -918,41 +917,6 @@ export default function Settings() {
               </div>
             )}
 
-            {activeTab === 'subscription' && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-medium text-white font-display">订阅管理</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-canvas-border bg-canvas-panel p-6">
-                    <h3 className="text-sm font-medium text-slate-300 mb-2">免费版</h3>
-                    <p className="text-2xl font-bold text-white font-display mb-4">¥0<span className="text-sm text-slate-500">/月</span></p>
-                    <ul className="space-y-1.5 text-xs text-slate-400">
-                      <li>3 个工作流项目</li>
-                      <li>10 GB 存储</li>
-                      <li>基础 AI 模型</li>
-                    </ul>
-                    <button className="w-full mt-4 py-1.5 text-xs text-slate-400 border border-canvas-border rounded-lg">
-                      当前方案
-                    </button>
-                  </div>
-                  <div className="rounded-xl border-2 border-neon-purple bg-canvas-panel p-6 relative">
-                    <span className="absolute -top-2.5 left-4 px-2 py-0.5 text-[10px] font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-full">
-                      推荐
-                    </span>
-                    <h3 className="text-sm font-medium text-slate-300 mb-2">专业版</h3>
-                    <p className="text-2xl font-bold text-white font-display mb-4">¥99<span className="text-sm text-slate-500">/月</span></p>
-                    <ul className="space-y-1.5 text-xs text-slate-400">
-                      <li>无限工作流项目</li>
-                      <li>100 GB 存储</li>
-                      <li>全部 AI 模型</li>
-                      <li>GPU 渲染加速</li>
-                    </ul>
-                    <button className="w-full mt-4 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-lg hover:opacity-90 transition-opacity">
-                      升级
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>

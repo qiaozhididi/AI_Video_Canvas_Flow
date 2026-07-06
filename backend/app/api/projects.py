@@ -3,16 +3,18 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 from sqlalchemy import func, select
 
-from app.deps import DBSession, CurrentUser
+from app.deps import DBSession, CurrentUser, CurrentUserWithToken
 from app.models.project import Project
 from app.models.render_task import RenderTask
 from app.models.media_asset import MediaAsset
 from app.models.workflow import WorkflowNode, WorkflowEdge
 from app.models.project_snapshot import ProjectSnapshot
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
+from app.services.media_service import upload_file
+from app.config import settings
 
 logger = logging.getLogger("app.api.projects")
 
@@ -136,6 +138,76 @@ async def update_project(project_id: str, body: ProjectUpdate, db: DBSession, cu
         owner_id=str(project.owner_id),
         created_at=project.created_at,
         updated_at=project.updated_at,
+    )
+
+
+@router.post("/{project_id}/cover", summary="上传项目封面（覆盖旧封面）")
+async def upload_cover(project_id: str, file: UploadFile, db: DBSession, current_user: CurrentUser):
+    """上传项目封面到 MinIO 的 covers/ 目录，不进媒体库，覆盖旧文件
+
+    封面与项目 1:1 绑定，每次上传覆盖旧文件，不会产生多余的 MediaAsset 记录。
+    """
+    owner_id = uuid.UUID(current_user)
+    result = await db.execute(
+        select(Project).where(Project.id == uuid.UUID(project_id))
+    )
+    project = result.scalar_one_or_none()
+    if not project or project.owner_id != owner_id:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    content = await file.read()
+    # 固定路径：covers/{project_id}.png — 每次上传覆盖旧文件
+    storage_key = f"covers/{project_id}.png"
+
+    try:
+        await upload_file(
+            bucket=settings.MINIO_BUCKET,
+            object_name=storage_key,
+            file_data=content,
+            content_type=file.content_type or "image/png",
+        )
+    except Exception as e:
+        logger.error(f"[Project:Cover] MinIO 上传失败: {e}")
+        raise HTTPException(status_code=500, detail="封面上传失败")
+
+    # 更新项目 cover_url（使用代理下载路径）
+    cover_url = f"/api/v1/projects/{project_id}/cover/download"
+    project.cover_url = cover_url
+    await db.commit()
+
+    logger.info(f"[Project:Cover] id={project_id} size={len(content)}")
+    return {"cover_url": cover_url}
+
+
+@router.get("/{project_id}/cover/download", summary="下载项目封面")
+async def download_cover(project_id: str, user: CurrentUserWithToken):
+    """通过后端代理下载项目封面图片"""
+    storage_key = f"covers/{project_id}.png"
+    from app.services.media_service import get_presigned_url
+    import httpx
+    from fastapi.responses import StreamingResponse
+
+    try:
+        url = await get_presigned_url(
+            bucket=settings.MINIO_BUCKET,
+            object_name=storage_key,
+            expires_hours=1,
+        )
+    except Exception as e:
+        logger.error(f"[Project:CoverDownload] 预签名 URL 生成失败: {e}")
+        raise HTTPException(status_code=500, detail="封面下载失败")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except Exception:
+        raise HTTPException(status_code=404, detail="封面不存在")
+
+    return StreamingResponse(
+        iter([resp.content]),
+        media_type="image/png",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

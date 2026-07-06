@@ -8,7 +8,7 @@ import { useHistoryStore } from './historyStore';
 import { toPng } from 'html-to-image';
 import { snapshotApi, projectApi, type SnapshotResponse } from '@/utils/apiClient';
 
-/** 截取画布预览图并上传为项目封面 */
+/** 截取画布预览图并上传为项目封面（不走媒体库，覆盖旧封面） */
 async function updateCanvasCover(projectId: string) {
   try {
     const canvasEl = document.querySelector('.react-flow') as HTMLElement;
@@ -25,17 +25,21 @@ async function updateCanvasCover(projectId: string) {
     const res = await fetch(dataUrl);
     const blob = await res.blob();
     const formData = new FormData();
-    formData.append('file', blob, `cover-${projectId}.png`);
+    formData.append('file', blob, 'cover.png');
     const token = localStorage.getItem('access_token') || '';
-    const uploadRes = await fetch('/api/v1/media/upload', {
+    // 使用专用封面上传接口：覆盖旧封面，不进媒体库
+    const uploadRes = await fetch(`/api/v1/projects/${projectId}/cover`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: formData,
     });
     if (uploadRes.ok) {
-      const asset = await uploadRes.json();
-      const coverUrl = `/api/v1/media/${asset.id}/download`;
-      await projectApi.update(projectId, { cover_url: coverUrl });
+      const data = await uploadRes.json();
+      // 更新 projectStore 中的 cover_url
+      const projStore = useProjectStore.getState();
+      if (projStore.currentProject) {
+        projStore.setCurrentProject({ ...projStore.currentProject, thumbnailUrl: data.cover_url });
+      }
     }
   } catch {
     // 封面截图/上传失败不影响主流程
