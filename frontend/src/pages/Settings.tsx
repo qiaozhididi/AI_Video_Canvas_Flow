@@ -879,7 +879,9 @@ function StorageTab() {
   }
 
   const totalSize = usage?.total_size ?? 0;
+  const quota = usage?.quota ?? 10 * 1024 * 1024 * 1024;
   const categories = usage?.categories ?? {};
+  const usagePercent = Math.min((totalSize / quota) * 100, 100);
 
   return (
     <div className="space-y-4">
@@ -888,12 +890,12 @@ function StorageTab() {
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span className="text-slate-300">已使用</span>
-            <span className="text-slate-400">{formatBytes(totalSize)}</span>
+            <span className="text-slate-400">{formatBytes(totalSize)} / {formatBytes(quota)}</span>
           </div>
           <div className="w-full h-2 bg-canvas-border rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-neon-purple to-neon-blue rounded-full transition-all"
-              style={{ width: totalSize > 0 ? `${Math.min((totalSize / (10 * 1024 * 1024 * 1024)) * 100, 100)}%` : '0%' }}
+              className={`h-full rounded-full transition-all ${usagePercent > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-neon-purple to-neon-blue'}`}
+              style={{ width: `${usagePercent}%` }}
             />
           </div>
         </div>

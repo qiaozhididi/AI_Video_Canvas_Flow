@@ -100,9 +100,12 @@ async def get_storage_usage(user: CurrentUser, db: DBSession):
         categories[cat]["count"] += 1
         categories[cat]["size"] += size
 
+    quota = 10 * 1024 * 1024 * 1024  # 10 GB
+
     return {
         "total_size": total_size,
         "total_count": total_count,
+        "quota": quota,
         "categories": categories,
     }
 

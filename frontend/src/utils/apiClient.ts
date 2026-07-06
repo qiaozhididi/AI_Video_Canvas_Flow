@@ -473,6 +473,7 @@ export const workflowApi = {
 export interface StorageUsageResponse {
   total_size: number;
   total_count: number;
+  quota: number;
   categories: Record<string, { count: number; size: number }>;
 }
 
