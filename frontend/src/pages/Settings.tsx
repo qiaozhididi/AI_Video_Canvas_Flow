@@ -22,6 +22,9 @@ import {
 const PLATFORM_OPTIONS = [
   { value: 'volcengine', label: '火山引擎' },
   { value: 'openai', label: 'OpenAI' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'zhipu', label: '智谱 AI' },
+  { value: 'moonshot', label: 'Moonshot' },
   { value: 'custom', label: '自定义' },
 ] as const;
 
@@ -38,6 +41,17 @@ function modelTypeMeta(t: string) {
 
 function platformLabel(t: string) {
   return PLATFORM_OPTIONS.find((o) => o.value === t)?.label ?? t;
+}
+
+function platformIcon(p: string) {
+  const map: Record<string, string> = {
+    volcengine: '火',
+    openai: 'O',
+    deepseek: 'D',
+    zhipu: '智',
+    moonshot: 'M',
+  };
+  return map[p] ?? p.charAt(0).toUpperCase();
 }
 
 // ── 通用组件 ──
@@ -126,15 +140,19 @@ function ProviderForm({
       </div>
       <div>
         <label className="text-xs text-slate-500 uppercase tracking-wider">平台</label>
-        <select
+        <input
+          required
+          list="platform-list"
           value={platform}
           onChange={(e) => setPlatform(e.target.value)}
-          className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
-        >
+          placeholder="选择或输入平台名称"
+          className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-neon-purple"
+        />
+        <datalist id="platform-list">
           {PLATFORM_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
-        </select>
+        </datalist>
       </div>
       <div>
         <label className="text-xs text-slate-500 uppercase tracking-wider">Base URL</label>
@@ -292,6 +310,7 @@ function AiConfigTab() {
   const [models, setModels] = useState<AiModelResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [modelTypeFilter, setModelTypeFilter] = useState<string | null>(null);
 
   // Provider 模态框
   const [providerModal, setProviderModal] = useState<{ open: boolean; editing?: AiProviderResponse }>({ open: false });
@@ -403,9 +422,14 @@ function AiConfigTab() {
   };
 
   // 按选中 Provider 过滤模型
-  const filteredModels = selectedProviderId
+  let filteredModels = selectedProviderId
     ? models.filter((m) => m.provider_id === selectedProviderId)
     : models;
+
+  // 按 model_type 筛选
+  if (modelTypeFilter) {
+    filteredModels = filteredModels.filter((m) => m.model_type === modelTypeFilter);
+  }
 
   // 按 model_type 分组
   const groupedModels = MODEL_TYPE_OPTIONS.map((type) => ({
@@ -475,7 +499,7 @@ function AiConfigTab() {
                 <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
                   p.is_active ? 'bg-neon-purple/20 text-neon-purple' : 'bg-canvas-bg text-slate-500'
                 }`}>
-                  {p.name.charAt(0)}
+                  {platformIcon(p.platform)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-medium truncate">{p.name}</div>
@@ -530,6 +554,40 @@ function AiConfigTab() {
             <Plus className="w-3.5 h-3.5" />
             添加模型
           </button>
+        </div>
+
+        {/* 模型类型筛选标签 */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => setModelTypeFilter(null)}
+            className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+              modelTypeFilter === null
+                ? 'bg-neon-purple/20 text-neon-purple border border-neon-purple/40'
+                : 'bg-canvas-bg text-slate-400 border border-canvas-border hover:text-slate-300'
+            }`}
+          >
+            全部
+          </button>
+          {MODEL_TYPE_OPTIONS.map((t) => {
+            const count = (selectedProviderId
+              ? models.filter((m) => m.provider_id === selectedProviderId)
+              : models
+            ).filter((m) => m.model_type === t.value).length;
+            if (count === 0) return null;
+            return (
+              <button
+                key={t.value}
+                onClick={() => setModelTypeFilter(modelTypeFilter === t.value ? null : t.value)}
+                className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
+                  modelTypeFilter === t.value
+                    ? `${t.color} border border-current/30`
+                    : 'bg-canvas-bg text-slate-400 border border-canvas-border hover:text-slate-300'
+                }`}
+              >
+                {t.label} ({count})
+              </button>
+            );
+          })}
         </div>
 
         {providers.length === 0 ? (
