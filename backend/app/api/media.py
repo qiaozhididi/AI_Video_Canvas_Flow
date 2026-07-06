@@ -77,32 +77,28 @@ async def upload_media(file: UploadFile, user: CurrentUser, db: DBSession):
 @router.get("/stats/usage", summary="获取存储用量统计")
 async def get_storage_usage(user: CurrentUser, db: DBSession):
     """获取当前用户的媒体存储用量统计：总大小、各类型文件数量和大小"""
-    from sqlalchemy import func
-
     owner_id = uuid.UUID(user)
 
-    # 按文件类型分组统计（split_part 为 PostgreSQL 字符串分割函数）
-    stmt = (
-        select(
-            func.count(MediaAsset.id).label("count"),
-            func.coalesce(func.sum(MediaAsset.file_size), 0).label("total_size"),
-            func.split_part(MediaAsset.file_type, "/", 1).label("category"),
-        )
-        .where(MediaAsset.owner_id == owner_id)
-        .group_by(func.split_part(MediaAsset.file_type, "/", 1))
+    # 查询当前用户所有媒体资产
+    result = await db.execute(
+        select(MediaAsset).where(MediaAsset.owner_id == owner_id)
     )
-    result = await db.execute(stmt)
-    rows = result.all()
+    assets = result.scalars().all()
 
-    categories = {}
+    # 在 Python 端按文件类型前缀分组统计
+    categories: dict[str, dict] = {}
     total_size = 0
-    total_count = 0
-    for row in rows:
-        cat = row.category or "other"
-        size = row.total_size or 0
-        categories[cat] = {"count": row.count, "size": size}
+    total_count = len(assets)
+
+    for asset in assets:
+        cat = (asset.file_type or "other").split("/")[0]
+        size = asset.file_size or 0
         total_size += size
-        total_count += row.count
+
+        if cat not in categories:
+            categories[cat] = {"count": 0, "size": 0}
+        categories[cat]["count"] += 1
+        categories[cat]["size"] += size
 
     return {
         "total_size": total_size,
