@@ -153,13 +153,17 @@ export default function Home() {
                         src={project.thumbnailUrl.startsWith('/') ? `${project.thumbnailUrl}${project.thumbnailUrl.includes('?') ? '&' : '?'}token=${localStorage.getItem('access_token') || ''}` : project.thumbnailUrl}
                         alt={project.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        onError={(e) => {
+                          const img = e.target as HTMLImageElement;
+                          img.style.display = 'none';
+                          const placeholder = img.nextElementSibling as HTMLElement;
+                          if (placeholder) placeholder.style.display = 'flex';
+                        }}
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Film className="w-8 h-8 text-slate-700" />
-                      </div>
-                    )}
+                    ) : null}
+                    <div className={`w-full h-full items-center justify-center ${project.thumbnailUrl ? 'hidden' : 'flex'}`}>
+                      <Film className="w-8 h-8 text-slate-700" />
+                    </div>
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                       <ArrowRight className="w-6 h-6 text-white" />
                     </div>
