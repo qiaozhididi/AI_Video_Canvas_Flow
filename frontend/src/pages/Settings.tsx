@@ -883,6 +883,14 @@ function StorageTab() {
   const categories = usage?.categories ?? {};
   const usagePercent = Math.min((totalSize / quota) * 100, 100);
 
+  // 4 阶段进度条颜色：0-50% 绿色 / 50-75% 黄色 / 75-90% 橙色 / >90% 红色
+  const getBarColor = (pct: number) => {
+    if (pct > 90) return 'bg-red-500';
+    if (pct > 75) return 'bg-orange-500';
+    if (pct > 50) return 'bg-yellow-500';
+    return 'bg-gradient-to-r from-neon-purple to-neon-blue';
+  };
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-medium text-white font-display">存储用量</h2>
@@ -894,9 +902,12 @@ function StorageTab() {
           </div>
           <div className="w-full h-2 bg-canvas-border rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${usagePercent > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-neon-purple to-neon-blue'}`}
+              className={`h-full rounded-full transition-all duration-500 ${getBarColor(usagePercent)}`}
               style={{ width: `${usagePercent}%` }}
             />
+          </div>
+          <div className="flex justify-between text-[10px] text-slate-600 mt-1">
+            <span>0%</span><span>50%</span><span>75%</span><span>90%</span><span>100%</span>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 text-center">
