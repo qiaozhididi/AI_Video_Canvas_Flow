@@ -137,6 +137,43 @@ async def download_media(asset_id: str, user: CurrentUserWithToken, db: DBSessio
     )
 
 
+@router.get("/stats/usage", summary="获取存储用量统计")
+async def get_storage_usage(user: CurrentUser, db: DBSession):
+    """获取当前用户的媒体存储用量统计：总大小、各类型文件数量和大小"""
+    from sqlalchemy import func
+
+    owner_id = uuid.UUID(user)
+
+    # 按文件类型分组统计（split_part 为 PostgreSQL 字符串分割函数）
+    stmt = (
+        select(
+            func.count(MediaAsset.id).label("count"),
+            func.coalesce(func.sum(MediaAsset.file_size), 0).label("total_size"),
+            func.split_part(MediaAsset.file_type, "/", 1).label("category"),
+        )
+        .where(MediaAsset.owner_id == owner_id)
+        .group_by(func.split_part(MediaAsset.file_type, "/", 1))
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    categories = {}
+    total_size = 0
+    total_count = 0
+    for row in rows:
+        cat = row.category or "other"
+        size = row.total_size or 0
+        categories[cat] = {"count": row.count, "size": size}
+        total_size += size
+        total_count += row.count
+
+    return {
+        "total_size": total_size,
+        "total_count": total_count,
+        "categories": categories,
+    }
+
+
 @router.delete("/{asset_id}", status_code=204, summary="删除媒体资产")
 async def delete_media(asset_id: str, user: CurrentUser, db: DBSession):
     """删除指定媒体资产（同时从 MinIO 删除文件）"""

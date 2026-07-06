@@ -1,6 +1,6 @@
 # AI Canvas Flow — 开发路线图与未完成功能清单
 
-> 更新时间: 2026-07-01
+> 更新时间: 2026-07-06
 
 ## 当前项目状态概览
 
@@ -28,6 +28,9 @@
 | 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI + JWT 鉴权 + 房间成员管理 + 远端光标同步 |
 | 后端 | 模板市场 | ✅ 完成 | 列表/克隆/发布/取消发布 4 端点 |
 | 后端 | 快照系统 | ✅ 完成 | project_snapshots 表 + CRUD + 单事务恢复 + 5 auto 上限 |
+| 前端 | 跨 Tab 认证同步 | ✅ 完成 | AuthGuard + storage 事件 + Login 自动跳转 + 登出按钮 |
+| 前端 | 首页快捷操作 | ✅ 完成 | "从模板创建"弹窗 + "AI 快速生成"弹窗（Home.tsx） |
+| 后端 | Token 刷新 | ✅ 完成 | POST /auth/refresh 端点 + 前端自动续期（防并发锁） |
 
 ---
 
@@ -38,7 +41,7 @@
 | 后端 API | **100%** | 全部核心端点已实现（含 templates/snapshots/collaboration WS 鉴权 + AI 工作流生成） |
 | 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates + snapshots + generateWorkflow） |
 | 前端 Store 对接 | **90%** | authStore/projectStore/canvasStore(间接)/autoSaveStore/collabStore 已对接；timelineStore 通过快照恢复部分对接 |
-| 前端页面对接 | **100%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴+AI 生成) 全部对接；MediaLibrary 有 Mock 降级 |
+| 前端页面对接 | **100%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴+AI 生成) 全部对接；MediaLibrary 有 Mock 降级；Settings 存储用量使用硬编码数据（待后端API） |
 
 ---
 
@@ -273,6 +276,23 @@
 - **测试**: canvasStore.test.ts 单元测试（editingNodeId/renameNode/removeNode/removeNodes/addPastedNodes targetPosition），59/59 通过
 - **涉及文件**: ContextMenu.tsx, useContextMenu.ts, ShortcutHelpModal.tsx, canvasStore.ts, canvasStore.test.ts, CanvasNode.tsx, Canvas.tsx, EditorLayout.tsx
 
+### 15. 跨 Tab 登录状态同步
+- **前端**: 新增 AuthGuard 路由守卫组件（storage 事件监听跨 Tab 同步 + 未登录重定向 /login）
+- **前端**: Login.tsx 新增已登录自动跳转 + storage 事件跨 Tab 同步
+- **前端**: Layout.tsx 侧边栏底部新增登出按钮（清除 token + 触发其他 Tab storage 事件）
+- **前端**: App.tsx 路由结构改造：/login 在 AuthGuard 外，其他路由在 AuthGuard 内
+- **前端**: apiClient.ts 新增 Token 自动续期（isRefreshing 防并发锁 + pendingRequests 队列 + 401 重试）
+- **后端**: auth.py 新增 POST /auth/refresh 端点（验证 refresh_token → 返回新 access_token + refresh_token）
+- **设计文档**: docs/superpowers/specs/2026-07-05-cross-tab-auth-design.md
+- **涉及文件**: AuthGuard.tsx, Login.tsx, Layout.tsx, App.tsx, apiClient.ts, auth.py
+
+### 16. 首页快捷操作功能
+- **前端**: Home.tsx "从模板创建"弹窗（搜索框 + 分类标签 + 模板卡片网格 + 调用 templateApi.clone() 跳转编辑器）
+- **前端**: Home.tsx "AI 快速生成"弹窗（描述输入框 + AI 模型选择下拉框 + 调用 aiApi.generateWorkflow() 生成节点/边并跳转编辑器）
+- **设计文档**: docs/superpowers/specs/2026-07-06-home-quick-actions-design.md
+- **合并**: commit f153309
+- **涉及文件**: Home.tsx
+
 ---
 
 ## 后端 API 完整清单
@@ -322,6 +342,11 @@
 | `/api/v1/projects/{id}/publish` | POST | ✅ | 发布项目为模板（category + tags） |
 | `/api/v1/templates/{id}` | DELETE | ✅ | 取消模板发布（仅 owner） |
 | `/api/v1/collab/status` | GET | ✅ | 协作服务状态检查（实际协作走 Socket.IO `/socket.io/`） |
+| `/api/v1/auth/refresh` | POST | ✅ | Token 刷新（refresh_token → 新 access_token + refresh_token） |
+| `/api/v1/render/{id}/retry` | POST | ✅ | 重试渲染任务（复制原任务参数 + 从节点读取最新 node_params） |
+| `/api/v1/ai/generate-workflow` | POST | ✅ | AI 快速生成工作流（mode: replace/append，LLM 解析描述生成节点/边） |
+| `/api/v1/projects/{id}/cover` | POST | ✅ | 上传项目封面截图（data URL → MinIO，覆盖旧文件，不创建 MediaAsset） |
+| `/api/v1/projects/{id}/cover/download` | GET | ✅ | 下载项目封面图片 |
 
 ## 数据库表结构
 
@@ -373,3 +398,20 @@ cd backend
 ```
 
 > 注意：RabbitMQ 4.x 兼容性需要 `--without-mingle --without-gossip --without-heartbeat` 参数
+
+---
+
+## 待实现功能（下一迭代）
+
+| 优先级 | 功能 | 说明 |
+|--------|------|------|
+| P1 | 设置页"存储用量"对接真实数据 | 当前使用硬编码假数据，需后端存储统计 API |
+| P1 | PropertyPanel 处理/控制节点提示 | 处理节点显示"演示模式"提示，控制节点显示"不可执行"提示 |
+| P2 | OT/CRDT 协作冲突解决 | 当前协作仅广播不仲裁，同时修改同一节点可能冲突 |
+| P2 | 离线缓冲与重连同步 | 短暂断线期间操作缓存到本地，重连后自动同步 |
+| P2 | 协作者权限管理（编辑/只读） | 当前无权限分级，所有在线用户均可编辑 |
+| P2 | 邀请链接功能 | 支持生成带过期时间和权限级别的邀请链接 |
+| P2 | 操作历史面板可视化 | 分支式撤销树 + 操作者标注 + 时间线展示 |
+| P3 | 节点级自动重试（3次指数退避） | 当前仅支持手动重试 |
+| P3 | 媒体版本历史 | 素材多版本管理与回滚 |
+| P3 | 工作流状态快照存入 Redis | 断点续执行中间状态缓存 |

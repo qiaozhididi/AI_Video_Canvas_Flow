@@ -470,9 +470,18 @@ export const workflowApi = {
 
 // ── 媒体资产 ──
 
+export interface StorageUsageResponse {
+  total_size: number;
+  total_count: number;
+  categories: Record<string, { count: number; size: number }>;
+}
+
 export const mediaApi = {
   list: () =>
     request<MediaAssetResponse[]>('/media/'),
+
+  getStorageUsage: () =>
+    request<StorageUsageResponse>('/media/stats/usage'),
 
   upload: (file: File) => {
     const formData = new FormData();

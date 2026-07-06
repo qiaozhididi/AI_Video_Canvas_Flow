@@ -1,6 +1,6 @@
 import { useCanvasStore } from '@/stores/canvasStore';
-import { NODE_CATEGORIES, type CanvasNodeData } from '@/types/canvas';
-import { X, Trash2, Play } from 'lucide-react';
+import { NODE_CATEGORIES, type CanvasNodeData, type ProcessingSubtype, type ControlSubtype } from '@/types/canvas';
+import { X, Trash2, Play, AlertTriangle, Info } from 'lucide-react';
 import { executeNode } from '../../utils/workflowExecutor';
 
 export default function PropertyPanel() {
@@ -123,6 +123,28 @@ export default function PropertyPanel() {
           ))}
         </div>
 
+        {/* 处理节点演示模式提示 */}
+        {data.type === 'processing' && (
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+            <Info className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs text-cyan-300 font-medium">演示模式</p>
+              <p className="text-xs text-cyan-400/70">该节点使用模拟渲染，暂无真实 AI API 支持</p>
+            </div>
+          </div>
+        )}
+
+        {/* 控制节点不可执行提示 */}
+        {data.type === 'control' && (
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
+            <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-xs text-yellow-300 font-medium">控制节点</p>
+              <p className="text-xs text-yellow-400/70">此节点用于工作流逻辑控制，不可单独执行</p>
+            </div>
+          </div>
+        )}
+
         {/* 状态信息 */}
         <div className="space-y-1.5">
           <label className="text-xs text-slate-500 uppercase tracking-wider">状态</label>
@@ -164,21 +186,23 @@ export default function PropertyPanel() {
 
       {/* 底部操作 */}
       <div className="p-3 border-t border-canvas-border space-y-2">
-        <button
-          onClick={async () => {
-            try {
-              setNodeStatus(selectedNode.id, 'pending', 0);
-              await executeNode(selectedNode.id);
-            } catch (err: any) {
-              setNodeStatus(selectedNode.id, 'failed', 0);
-              setNodeError(selectedNode.id, err.message || '执行失败');
-            }
-          }}
-          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
-        >
-          <Play className="w-3.5 h-3.5" />
-          执行节点
-        </button>
+        {data.type !== 'control' && data.type !== 'input' && (
+          <button
+            onClick={async () => {
+              try {
+                setNodeStatus(selectedNode.id, 'pending', 0);
+                await executeNode(selectedNode.id);
+              } catch (err: any) {
+                setNodeStatus(selectedNode.id, 'failed', 0);
+                setNodeError(selectedNode.id, err.message || '执行失败');
+              }
+            }}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
+          >
+            <Play className="w-3.5 h-3.5" />
+            执行节点
+          </button>
+        )}
         <button
           onClick={() => removeNode(selectedNode.id)}
           className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm text-status-error hover:bg-status-error/10 rounded-md transition-colors"

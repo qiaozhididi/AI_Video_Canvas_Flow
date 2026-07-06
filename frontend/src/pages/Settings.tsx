@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import {
   aiApi,
   authApi,
+  mediaApi,
   type AiProviderResponse,
   type AiProviderCreateRequest,
   type AiProviderUpdateRequest,
@@ -15,6 +16,7 @@ import {
   type AiModelUpdateRequest,
   type UserResponse,
   type UserUpdateRequest,
+  type StorageUsageResponse,
 } from '../utils/apiClient';
 
 // ── 常量 ──
@@ -844,6 +846,79 @@ function ProfileTab() {
   );
 }
 
+// ── 存储用量标签页 ──
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+const CATEGORY_META: Record<string, { label: string; color: string }> = {
+  image: { label: '图片', color: 'text-purple-400' },
+  video: { label: '视频', color: 'text-emerald-400' },
+  audio: { label: '音频', color: 'text-amber-400' },
+  application: { label: '文档', color: 'text-blue-400' },
+};
+
+function StorageTab() {
+  const [usage, setUsage] = useState<StorageUsageResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    mediaApi.getStorageUsage()
+      .then(setUsage)
+      .catch(() => toast.error('加载存储用量失败'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <p className="text-sm text-slate-500">加载中...</p>;
+  }
+
+  const totalSize = usage?.total_size ?? 0;
+  const categories = usage?.categories ?? {};
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-medium text-white font-display">存储用量</h2>
+      <div className="rounded-xl border border-canvas-border bg-canvas-panel p-4 space-y-4">
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-slate-300">已使用</span>
+            <span className="text-slate-400">{formatBytes(totalSize)}</span>
+          </div>
+          <div className="w-full h-2 bg-canvas-border rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-neon-purple to-neon-blue rounded-full transition-all"
+              style={{ width: totalSize > 0 ? `${Math.min((totalSize / (10 * 1024 * 1024 * 1024)) * 100, 100)}%` : '0%' }}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 text-center">
+          {Object.entries(categories).map(([cat, data]) => {
+            const meta = CATEGORY_META[cat] ?? { label: cat, color: 'text-slate-400' };
+            return (
+              <div key={cat} className="p-3 bg-canvas-bg rounded-lg">
+                <p className={`text-lg font-bold font-display ${meta.color}`}>{data.count}</p>
+                <p className="text-xs text-slate-500">{meta.label}</p>
+                <p className="text-xs text-slate-600 mt-0.5">{formatBytes(data.size)}</p>
+              </div>
+            );
+          })}
+          {Object.keys(categories).length === 0 && (
+            <div className="col-span-3 p-3 bg-canvas-bg rounded-lg">
+              <p className="text-sm text-slate-500">暂无存储数据</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════
 // 主组件
 // ═══════════════════════════════════════════════════
@@ -886,36 +961,7 @@ export default function Settings() {
             {activeTab === 'profile' && <ProfileTab />}
             {activeTab === 'ai' && <AiConfigTab />}
 
-            {activeTab === 'storage' && (
-              <div className="space-y-4">
-                <h2 className="text-lg font-medium text-white font-display">存储用量</h2>
-                <div className="rounded-xl border border-canvas-border bg-canvas-panel p-4 space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-slate-300">已使用</span>
-                      <span className="text-slate-400">2.4 GB / 10 GB</span>
-                    </div>
-                    <div className="w-full h-2 bg-canvas-border rounded-full overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-neon-purple to-neon-blue rounded-full" style={{ width: '24%' }} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <div className="p-3 bg-canvas-bg rounded-lg">
-                      <p className="text-lg font-bold text-white font-display">156</p>
-                      <p className="text-xs text-slate-500">图片</p>
-                    </div>
-                    <div className="p-3 bg-canvas-bg rounded-lg">
-                      <p className="text-lg font-bold text-white font-display">23</p>
-                      <p className="text-xs text-slate-500">视频</p>
-                    </div>
-                    <div className="p-3 bg-canvas-bg rounded-lg">
-                      <p className="text-lg font-bold text-white font-display">45</p>
-                      <p className="text-xs text-slate-500">音频</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {activeTab === 'storage' && <StorageTab />}
 
           </div>
         </div>

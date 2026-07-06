@@ -87,6 +87,38 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 
 ---
 
+### POST /auth/refresh — 刷新访问令牌
+
+**无需 Token**（使用 refresh_token 认证）
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"eyJhbGciOiJIUzI1NiIs..."}'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| refresh_token | string | 是 | 登录时返回的 refresh_token |
+
+**响应 200：**
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "bearer"
+}
+```
+
+> 前端 `apiClient.ts` 在 401 时自动调用此端点续期，使用防并发锁避免多个请求同时刷新。
+
+**错误：** 401 refresh token 已过期 / 无效的 refresh token
+
+---
+
 ### GET /auth/me — 获取当前用户信息
 
 ```bash
@@ -224,6 +256,40 @@ curl -X DELETE http://localhost:8000/api/v1/projects/<project_id> \
 **响应 204：** 无内容
 
 > 级联删除关联的渲染任务和媒体资产
+
+---
+
+### POST /projects/{project_id}/cover — 上传项目封面
+
+```bash
+curl -X POST http://localhost:8000/api/v1/projects/<project_id>/cover \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"data_url":"data:image/png;base64,..."}'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| data_url | string | 是 | Canvas 截图的 data URL（Base64） |
+
+**逻辑：** 解码 data URL → 上传至 MinIO 路径 `covers/{project_id}.png`（覆盖旧文件） → 更新 `project.cover_url`，不创建 MediaAsset 记录
+
+**响应 200：** 更新后的项目对象
+
+---
+
+### GET /projects/{project_id}/cover/download — 下载项目封面
+
+```bash
+curl http://localhost:8000/api/v1/projects/<project_id>/cover/download \
+  -H 'Authorization: Bearer <token>'
+```
+
+**响应 200：** 图片文件流（Content-Type: image/png）
+
+**错误：** 404 封面不存在
 
 ---
 
@@ -519,7 +585,7 @@ curl -X POST http://localhost:8000/api/v1/media/upload \
 
 **响应 200：** 同资产列表中的单个对象
 
-> 当前开发模式：文件内容未持久化到 MinIO，仅存元数据到数据库
+> 文件通过 MinIO SDK 持久化到 MinIO 对象存储，元数据存入数据库
 
 ---
 
@@ -550,7 +616,7 @@ curl http://localhost:8000/api/v1/media/<asset_id>/presign \
 }
 ```
 
-> 当前为占位实现，非真正的 S3 预签名
+> 使用 MinIO SDK 真正的 S3 预签名 URL（默认 1 小时有效期）
 
 ---
 
@@ -596,8 +662,9 @@ curl -X POST http://localhost:8000/api/v1/render/ \
 | output_format | string | 否 | 输出格式（默认 mp4） |
 
 **task_type 路由：**
-- `ai_text2img` → 调 `call_image_gen`（Images API，文生图）
-- `ai_img2video` / `ai_tts` / 其他 `ai_*` → 调 `call_llm`（Chat Completions API）
+- `ai_text2img` / `ai_img2img` → 调 `call_image_gen` / `call_img2img`（Images API）
+- `ai_img2video` / `ai_text2video` → 调 `call_video_gen`（Ark 异步 API + 轮询）
+- `ai_tts` → 调 `call_audio_gen`（Ark 异步 API + 轮询）
 - 非 `ai_` 前缀 → 模拟渲染进度
 
 **响应 200：**
@@ -633,6 +700,21 @@ curl http://localhost:8000/api/v1/render/<task_id> \
 ```
 
 **响应 200：** 同上
+
+---
+
+### POST /render/{task_id}/retry — 重试渲染任务
+
+```bash
+curl -X POST http://localhost:8000/api/v1/render/<task_id>/retry \
+  -H 'Authorization: Bearer <token>'
+```
+
+**逻辑：** 复制原任务参数 + 从关联节点读取最新 `node_params`，创建新任务并触发 Celery 执行。
+
+**响应 200：** 新的 `RenderTaskResponse`（状态为 `pending`）
+
+**错误：** 404 任务不存在
 
 ---
 
@@ -743,6 +825,31 @@ curl http://localhost:8000/api/v1/ai/models/default \
 **响应 200：** Model 对象
 
 **错误：** 404 未找到可用的 AI 模型，请先在设置页配置
+
+---
+
+### POST /ai/generate-workflow — AI 快速生成工作流
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/generate-workflow \
+  -H 'Authorization: Bearer <token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"description":"生成一段关于猫咪的视频工作流","mode":"replace","model_id":"uuid-of-llm-model"}'
+```
+
+**请求体：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| description | string | 是 | 自然语言工作流描述 |
+| mode | `"replace"` \| `"append"` | 否 | 替换现有画布或追加（默认 `replace`） |
+| model_id | string | 否 | 指定 LLM 模型 UUID（不传则用默认 LLM） |
+
+**逻辑：** LLM 解析描述 → 生成节点/边 JSON → 自动网格布局 → 返回 WorkflowSaveRequest 格式
+
+**响应 200：** `WorkflowSaveRequest`（`{nodes: NodeCreateRequest[], edges: EdgeCreateRequest[]}`）
+
+**错误：** 404 未找到可用的 LLM 模型 / 500 AI 生成失败
 
 ---
 
@@ -1046,6 +1153,7 @@ renderApi.create({ project_id, task_type, node_id?, model_id?, prompt?, input_ar
 renderApi.get(taskId);
 renderApi.cancel(taskId);
 renderApi.poll(taskId, intervalMs?, onProgress?);      // 轮询直到完成
+renderApi.retry(taskId);                                 // 重试失败/取消的任务
 
 // AI 配置
 aiApi.providers.create(data);
@@ -1056,7 +1164,8 @@ aiApi.models.create(data);
 aiApi.models.list(providerId?);
 aiApi.models.update(id, data);
 aiApi.models.delete(id);
-aiApi.getDefaultModel();                               // 获取默认 AI 模型
+aiApi.models.getDefault(modelType?);                   // 获取默认 AI 模型（可按类型筛选）
+aiApi.generateWorkflow({ description, mode, model_id? }); // AI 快速生成工作流
 
 // 快照（自动保存/崩溃恢复）
 snapshotApi.create(projectId, { source, label?, snapshot_data });  // 创建快照
