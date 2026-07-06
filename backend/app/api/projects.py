@@ -184,8 +184,24 @@ async def download_cover(project_id: str, user: CurrentUserWithToken):
     """通过后端代理下载项目封面图片"""
     storage_key = f"covers/{project_id}.png"
     from app.services.media_service import get_presigned_url
+    from minio import Minio
     import httpx
     from fastapi.responses import StreamingResponse
+
+    # 先检查文件是否存在，避免 httpx 超时等待
+    try:
+        client = Minio(
+            endpoint=settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+        )
+        if not client.stat_object(settings.MINIO_BUCKET, storage_key):
+            raise HTTPException(status_code=404, detail="封面不存在")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=404, detail="封面不存在")
 
     try:
         url = await get_presigned_url(
@@ -198,7 +214,7 @@ async def download_cover(project_id: str, user: CurrentUserWithToken):
         raise HTTPException(status_code=500, detail="封面下载失败")
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url)
             resp.raise_for_status()
     except Exception:
