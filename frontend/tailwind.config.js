@@ -28,8 +28,8 @@ export default {
         },
       },
       fontFamily: {
-        display: ["Space Grotesk", "sans-serif"],
-        body: ["DM Sans", "sans-serif"],
+        display: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "PingFang SC", "sans-serif"],
+        body: ["-apple-system", "BlinkMacSystemFont", "Segoe UI", "PingFang SC", "sans-serif"],
       },
       animation: {
         "pulse-neon": "pulse-neon 2s ease-in-out infinite",
