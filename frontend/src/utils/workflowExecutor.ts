@@ -217,6 +217,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
           start: timelineData.currentTime,
           end: timelineData.currentTime + duration,
           mediaUrl,
+          mediaType: artifact.type as 'image' | 'video' | 'audio',
           label: node.data.label || node.data.subtype,
           nodeId,
         });

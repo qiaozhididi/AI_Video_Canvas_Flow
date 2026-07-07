@@ -9,7 +9,7 @@ import NodePanel from '@/components/panels/NodePanel';
 import Timeline from '@/components/timeline/Timeline';
 import VideoPreview from '@/components/preview/VideoPreview';
 import { loadMockData } from '@/mock';
-import { ChevronDown, ChevronUp, Database, Plus, RotateCcw, RotateCw } from 'lucide-react';
+import { ChevronDown, ChevronUp, Database, Plus, RotateCcw, RotateCw, LayoutDashboard, PlayCircle } from 'lucide-react';
 import type { CanvasNodeData, Artifact } from '@/types/canvas';
 import type { Clip, TrackType } from '@/types/timeline';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
@@ -47,9 +47,19 @@ export default function Editor() {
 
   // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);
-  const [showPreview, setShowPreview] = useState(true);
+  const [activeTab, setActiveTab] = useState<'canvas' | 'preview'>('canvas');
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [selectedClipMedia, setSelectedClipMedia] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+
+  // 时间轴播放时自动切换到预览选项卡
+  useEffect(() => {
+    if (isTimelinePlaying) setActiveTab('preview');
+  }, [isTimelinePlaying]);
+
+  // 点击片段/加入时间轴时切换到预览选项卡
+  useEffect(() => {
+    if (selectedClipMedia) setActiveTab('preview');
+  }, [selectedClipMedia]);
 
   const preview = useMemo(() => {
     // 1. 播放中：根据当前时间找时间轴上对应的片段
@@ -62,8 +72,8 @@ export default function Editor() {
         (c) => ct >= c.start && ct < c.end && c.mediaUrl
       );
       if (activeClip) {
-        const isVideo = activeClip.mediaUrl.includes('.mp4') || activeClip.mediaUrl.includes('video');
-        return { url: activeClip.mediaUrl, type: (isVideo ? 'video' : 'image') as 'image' | 'video' | undefined };
+        const clipType = activeClip.mediaType || (activeClip.mediaUrl.includes('.mp4') || activeClip.mediaUrl.includes('video') ? 'video' : 'image');
+        return { url: activeClip.mediaUrl, type: clipType as 'image' | 'video' | undefined };
       }
       return { url: undefined, type: undefined as 'image' | 'video' | undefined };
     }
@@ -165,20 +175,42 @@ export default function Editor() {
       {/* 左侧节点面板 */}
       <NodePanel />
 
-      {/* 中间画布 + 预览 */}
+      {/* 中间画布 / 预览选项卡 */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 flex overflow-hidden">
-          {/* 画布 */}
-          <div
-            ref={reactFlowWrapper}
-            className="flex-1"
+        {/* 选项卡头部 */}
+        <div className="flex items-center h-8 bg-canvas-panel border-b border-canvas-border px-1 gap-0.5 flex-shrink-0">
+          <button
+            onClick={() => setActiveTab('canvas')}
+            className={`flex items-center gap-1.5 px-3 h-6 rounded text-xs transition-colors ${
+              activeTab === 'canvas'
+                ? 'bg-canvas-hover text-slate-200'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
           >
-            <Canvas />
-          </div>
+            <LayoutDashboard className="w-3.5 h-3.5" />
+            画布
+          </button>
+          <button
+            onClick={() => setActiveTab('preview')}
+            className={`flex items-center gap-1.5 px-3 h-6 rounded text-xs transition-colors ${
+              activeTab === 'preview'
+                ? 'bg-canvas-hover text-slate-200'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            <PlayCircle className="w-3.5 h-3.5" />
+            预览
+          </button>
+        </div>
 
-          {/* 视频预览 */}
-          {showPreview && (
-            <div className="w-80 border-l border-canvas-border p-2">
+        {/* 选项卡内容 */}
+        <div className="flex-1 overflow-hidden">
+          {activeTab === 'canvas' ? (
+            <div ref={reactFlowWrapper} className="h-full">
+              <Canvas />
+            </div>
+          ) : (
+            <div className="h-full p-2">
               <VideoPreview
                 src={preview.url}
                 mediaType={preview.type}
@@ -201,8 +233,9 @@ export default function Editor() {
           {showTimeline && (
             <Timeline
               onClipClick={(clip) => {
-                const isVideo = clip.mediaUrl.includes('.mp4') || clip.mediaUrl.includes('video');
-                setSelectedClipMedia({ url: clip.mediaUrl, type: isVideo ? 'video' : 'image' });
+                const mediaType = clip.mediaType || (clip.mediaUrl.includes('.mp4') || clip.mediaUrl.includes('video') ? 'video' : 'image');
+                setSelectedClipMedia({ url: clip.mediaUrl, type: mediaType as 'image' | 'video' });
+                setActiveTab('preview');
               }}
             />
           )}
@@ -326,13 +359,6 @@ export default function Editor() {
         </div>
       )}
 
-      {/* 预览切换按钮 */}
-      <button
-        onClick={() => setShowPreview(!showPreview)}
-        className="absolute bottom-10 right-72 z-20 flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 bg-canvas-panel border border-canvas-border rounded-lg hover:text-slate-200 hover:border-canvas-hover transition-colors shadow-lg"
-      >
-        {showPreview ? '隐藏预览' : '显示预览'}
-      </button>
     </div>
   );
 }
@@ -395,6 +421,7 @@ function PropertyPanelWithHistory({
       trackId: targetTrack.id,
       start: timelineCurrentTime,
       end: timelineCurrentTime + duration,
+      mediaType: artifact.type as 'image' | 'video' | 'audio',
       mediaUrl: (() => {
         const isInt = artifact.url.startsWith('/api/');
         const isExt = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');

@@ -8,6 +8,7 @@ export interface Clip {
   start: number;
   end: number;
   mediaUrl: string;
+  mediaType?: 'image' | 'video' | 'audio';
   label: string;
   color?: string;
   /** 关联的画布节点 ID，用于双向绑定 */

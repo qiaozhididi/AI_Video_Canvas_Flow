@@ -45,6 +45,11 @@ export const useTimelineStore = create<TimelineState>((set) => ({
     if (rAFId !== null) {
       cancelAnimationFrame(rAFId);
     }
+    // 播放前：如果已在末尾，先回到开头，避免立即触发结束条件导致循环卡住
+    const current = useTimelineStore.getState();
+    if (current.data.currentTime >= current.data.duration - 0.1) {
+      set((s) => ({ data: { ...s.data, currentTime: 0 } }));
+    }
     set({ isPlaying: true });
     lastTimestamp = null;
     const tick = (timestamp: number) => {
