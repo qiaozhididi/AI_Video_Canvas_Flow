@@ -441,7 +441,9 @@ async def _call_ark_async(
     # 构建请求体
     content: list[dict] = [{"type": "text", "text": prompt}]
     if image_url:
-        content.append({"type": "image_url", "image_url": {"url": image_url}})
+        # 内部 MinIO 路径需转为 base64，外部 URL 原样传递
+        resolved_url = await _resolve_image_url(db, image_url)
+        content.append({"type": "image_url", "image_url": {"url": resolved_url}})
 
     body: dict = {
         "model": model.model_id,
