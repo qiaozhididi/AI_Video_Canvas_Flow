@@ -116,10 +116,8 @@ export default function EditorLayout() {
     if (!projectId) return;
 
     const load = async () => {
-      // 确保 projects 已加载
-      if (projects.length === 0) {
-        await loadProjects();
-      }
+      // 始终重新加载项目列表，确保新建/克隆的项目也能找到
+      await loadProjects();
       const latestProjects = useProjectStore.getState().projects;
       const project = latestProjects.find((p) => p.id === projectId);
       if (project) {

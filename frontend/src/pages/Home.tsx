@@ -15,7 +15,7 @@ export default function Home() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [publishModal, setPublishModal] = useState<{ open: boolean; projectId: string; projectName: string }>({ open: false, projectId: '', projectName: '' });
-  const [publishCategory, setPublishCategory] = useState('社区');
+  const [publishCategory, setPublishCategory] = useState('官方');
   const [publishTags, setPublishTags] = useState('');
   const [publishing, setPublishing] = useState(false);
 
@@ -88,7 +88,7 @@ export default function Home() {
       toast.success(`项目「${publishModal.projectName}」已发布为模板`);
       setPublishModal({ open: false, projectId: '', projectName: '' });
       setPublishTags('');
-      setPublishCategory('社区');
+      setPublishCategory('官方');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : '发布失败';
       toast.error(msg);
@@ -352,7 +352,6 @@ export default function Home() {
                   onChange={(e) => setPublishCategory(e.target.value)}
                   className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
                 >
-                  <option value="社区">社区</option>
                   <option value="官方">官方</option>
                 </select>
               </div>
@@ -414,7 +413,7 @@ export default function Home() {
                 />
               </div>
               <div className="flex gap-1">
-                {['全部', '官方', '社区'].map((cat) => (
+                {['全部', '官方'].map((cat) => (
                   <button
                     key={cat}
                     onClick={() => setTemplateCategory(cat)}

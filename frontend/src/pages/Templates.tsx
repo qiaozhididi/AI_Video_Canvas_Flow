@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { templateApi, type TemplateResponse } from '../utils/apiClient';
 
-const CATEGORIES = ['全部', '官方', '社区'] as const;
+const CATEGORIES = ['全部', '官方'] as const;
 
 export default function Templates() {
   const navigate = useNavigate();
