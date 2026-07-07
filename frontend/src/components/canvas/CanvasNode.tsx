@@ -90,6 +90,7 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
       {data.type !== 'input' && (
         <Handle
           type="target"
+          id="in"
           position={Position.Left}
           className="!w-3 !h-3 !border-2 !border-neon-purple !bg-canvas-panel"
         />
@@ -191,6 +192,7 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
       {data.type !== 'output' && (
         <Handle
           type="source"
+          id="out"
           position={Position.Right}
           className="!w-3 !h-3 !border-2 !border-neon-purple !bg-canvas-panel"
         />
