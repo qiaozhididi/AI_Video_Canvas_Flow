@@ -90,14 +90,15 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
         <div ref={videoRef} className="w-full h-full" />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
-          <div className="text-center space-y-2">
+          <div className="text-center space-y-2 px-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-canvas-hover flex items-center justify-center">
               <svg className="w-8 h-8 text-slate-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
             </div>
             <p className="text-sm text-slate-500">暂无预览</p>
-            <p className="text-xs text-slate-600">执行工作流后在此预览</p>
+            <p className="text-xs text-slate-600">执行 AI 节点后，将产出加入时间轴</p>
+            <p className="text-xs text-slate-600">播放时间轴即可在此预览</p>
           </div>
         </div>
       )}

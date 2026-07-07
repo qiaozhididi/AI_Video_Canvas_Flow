@@ -40,32 +40,65 @@ export default function Editor() {
 
   const currentProject = useProjectStore((s) => s.currentProject);
 
-  // 计算预览 URL 和类型：订阅选中节点的 outputArtifacts
+  // 计算预览内容：播放时按时间轴片段，暂停时按选中节点
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
+  const timelineData = useTimelineStore((s) => s.data);
+  const isTimelinePlaying = useTimelineStore((s) => s.isPlaying);
+
+  // ===== 本地状态 =====
+  const [showTimeline, setShowTimeline] = useState(true);
+  const [showPreview, setShowPreview] = useState(true);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [selectedClipMedia, setSelectedClipMedia] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+
   const preview = useMemo(() => {
-    if (!selectedNodeId) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
-    const node = nodes.find((n) => n.id === selectedNodeId);
-    if (!node || !node.data.outputArtifacts.length) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
-    // 优先 video，其次 image
-    const videoArt = node.data.outputArtifacts.find((a) => a.type === 'video');
-    const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
-    const artifact = videoArt || imageArt;
-    if (!artifact) return { url: undefined, type: undefined as 'image' | 'video' | undefined };
-    // URL 规范化：完整路径直接用；外部 URL 直接用；相对路径加 /api/v1/media/ 前缀
-    // 内部 /api/ 路径需要附带 token（<video>/<img> 无法设置自定义 Header）
-    const isInternal = artifact.url.startsWith('/api/');
-    const isExternal = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
-    const accessToken = localStorage.getItem('access_token') || '';
-    let url: string;
-    if (isInternal) {
-      url = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${accessToken}`;
-    } else if (isExternal) {
-      url = artifact.url;
-    } else {
-      url = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${accessToken}`;
+    // 1. 播放中：根据当前时间找时间轴上对应的片段
+    if (isTimelinePlaying) {
+      const ct = timelineData.currentTime;
+      const allClips = timelineData.tracks
+        .filter((t) => t.visible && !t.muted)
+        .flatMap((t) => t.clips);
+      const activeClip = allClips.find(
+        (c) => ct >= c.start && ct < c.end && c.mediaUrl
+      );
+      if (activeClip) {
+        const isVideo = activeClip.mediaUrl.includes('.mp4') || activeClip.mediaUrl.includes('video');
+        return { url: activeClip.mediaUrl, type: (isVideo ? 'video' : 'image') as 'image' | 'video' | undefined };
+      }
+      return { url: undefined, type: undefined as 'image' | 'video' | undefined };
     }
-    return { url, type: artifact.type as 'image' | 'video' };
-  }, [selectedNodeId, nodes]);
+
+    // 2. 暂停态 + 点击了时间轴片段
+    if (selectedClipMedia) {
+      return { url: selectedClipMedia.url, type: selectedClipMedia.type };
+    }
+
+    // 3. 暂停态 + 选中了有产出的节点
+    if (selectedNodeId) {
+      const node = nodes.find((n) => n.id === selectedNodeId);
+      if (node && node.data.outputArtifacts.length) {
+        const videoArt = node.data.outputArtifacts.find((a) => a.type === 'video');
+        const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
+        const artifact = videoArt || imageArt;
+        if (artifact) {
+          const isInternal = artifact.url.startsWith('/api/');
+          const isExternal = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
+          const accessToken = localStorage.getItem('access_token') || '';
+          let url: string;
+          if (isInternal) {
+            url = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${accessToken}`;
+          } else if (isExternal) {
+            url = artifact.url;
+          } else {
+            url = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${accessToken}`;
+          }
+          return { url, type: artifact.type as 'image' | 'video' };
+        }
+      }
+    }
+
+    return { url: undefined, type: undefined as 'image' | 'video' | undefined };
+  }, [isTimelinePlaying, selectedClipMedia, selectedNodeId, timelineData.currentTime, timelineData.tracks, nodes]);
 
   // 时间轴 ↔ 预览联动
   const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
@@ -74,10 +107,6 @@ export default function Editor() {
     setTimelineCurrentTime(time);
   }, [setTimelineCurrentTime]);
 
-  // ===== 本地状态 =====
-  const [showTimeline, setShowTimeline] = useState(true);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showDebugPanel, setShowDebugPanel] = useState(false);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // ===== Mock 数据加载（仅用于开发调试，已移至调试面板手动触发） =====
@@ -169,7 +198,14 @@ export default function Editor() {
             {showTimeline ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
             时间轴
           </button>
-          {showTimeline && <Timeline />}
+          {showTimeline && (
+            <Timeline
+              onClipClick={(clip) => {
+                const isVideo = clip.mediaUrl.includes('.mp4') || clip.mediaUrl.includes('video');
+                setSelectedClipMedia({ url: clip.mediaUrl, type: isVideo ? 'video' : 'image' });
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -177,6 +213,7 @@ export default function Editor() {
       <PropertyPanelWithHistory
         onUpdateData={handleNodeDataUpdate}
         onRemoveNode={handleNodeRemove}
+        onSelectClipPreview={setSelectedClipMedia}
       />
 
       {/* 底部状态栏 */}
@@ -304,9 +341,11 @@ export default function Editor() {
 function PropertyPanelWithHistory({
   onUpdateData,
   onRemoveNode,
+  onSelectClipPreview,
 }: {
   onUpdateData: (id: string, updates: Partial<CanvasNodeData>) => void;
   onRemoveNode: (id: string) => void;
+  onSelectClipPreview?: (media: { url: string; type: 'image' | 'video' } | null) => void;
 }) {
   const nodes = useCanvasStore((s) => s.nodes);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -369,6 +408,9 @@ function PropertyPanelWithHistory({
       nodeId: selectedNode.id,
     };
     addClip(targetTrack.id, clip);
+    // 加入时间轴后自动在预览中显示
+    const isVideo = artifact.type === 'video';
+    onSelectClipPreview?.({ url: clip.mediaUrl, type: isVideo ? 'video' : 'image' });
   };
 
   const handleParamChange = (key: string, value: unknown) => {

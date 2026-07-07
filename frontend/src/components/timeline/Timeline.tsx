@@ -33,7 +33,11 @@ const SNAP_THRESHOLD_PX = 8;
 // 片段最小时长（秒）
 const MIN_CLIP_DURATION = 0.5;
 
-export default function Timeline() {
+interface TimelineProps {
+  onClipClick?: (clip: Clip) => void;
+}
+
+export default function Timeline({ onClipClick }: TimelineProps) {
   const {
     data, isPlaying, play, pause, seekTo,
     addTrack, removeTrack, toggleTrackMute, toggleTrackLock, toggleTrackVisibility,
@@ -385,8 +389,9 @@ export default function Timeline() {
                       onPointerDown={(e) => handleDragStart(e, track.id, clip, 'move')}
                       onDoubleClick={() => {
                         if (clip.nodeId) setSelectedNodeIds([clip.nodeId]);
+                        if (clip.mediaUrl && onClipClick) onClipClick(clip);
                       }}
-                      title={clip.nodeId ? `双击定位到节点: ${clip.label}` : clip.label}
+                      title={clip.nodeId ? `双击: 定位节点 + 预览` : clip.label}
                     >
                       <span className="text-xs text-slate-300 truncate pointer-events-none">{clip.label}</span>
                       <button
