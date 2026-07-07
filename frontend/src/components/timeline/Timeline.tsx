@@ -347,11 +347,25 @@ export default function Timeline() {
             className="relative"
             style={{ width: data.duration * PIXELS_PER_SECOND }}
           >
+            {/* 空轨道引导提示 */}
+            {data.tracks.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="text-center space-y-2 px-6 py-4 rounded-lg bg-canvas-hover/30">
+                  <p className="text-sm text-slate-400">时间轴用于编排音视频片段</p>
+                  <p className="text-xs text-slate-500">点击上方「+」按钮添加轨道，执行 AI 节点后可在属性面板将产出加入时间轴</p>
+                </div>
+              </div>
+            )}
             {data.tracks.map((track) => (
               <div
                 key={track.id}
                 className="h-10 relative border-b border-canvas-border/30"
               >
+                {track.clips.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="text-[10px] text-slate-600">执行节点后，在属性面板点击「加入时间轴」</span>
+                  </div>
+                )}
                 {track.clips.map((clip) => {
                   const isDragging = dragState?.clipId === clip.id;
                   return (

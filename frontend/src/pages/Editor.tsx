@@ -161,10 +161,10 @@ export default function Editor() {
         </div>
 
         {/* 时间轴 */}
-        <div className="relative">
+        <div className="flex flex-col">
           <button
             onClick={() => setShowTimeline(!showTimeline)}
-            className="absolute -top-7 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 px-2 py-0.5 text-xs text-slate-500 bg-canvas-panel border border-canvas-border rounded-t-md hover:text-slate-300 transition-colors"
+            className="flex items-center justify-center gap-1 h-7 text-xs text-slate-500 bg-canvas-panel border-y border-canvas-border hover:text-slate-300 transition-colors flex-shrink-0"
           >
             {showTimeline ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
             时间轴
