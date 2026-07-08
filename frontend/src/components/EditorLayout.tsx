@@ -7,7 +7,7 @@ import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
-import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown, Users } from 'lucide-react';
 import CollaboratorPanel from './CollaboratorPanel';
 import { toast } from 'sonner';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
@@ -345,28 +345,38 @@ export default function EditorLayout() {
 
         <div className="flex-1" />
 
-        {/* 在线用户列表 */}
-        {onlineUsers.length > 0 && (
-          <div className="flex items-center mr-2 cursor-pointer" onClick={() => setShowCollabPanel((v) => !v)}>
-            {onlineUsers.slice(0, 5).map((u, idx) => {
-              const isSelf = currentUser?.id === u.user_id;
-              return (
-                <div
-                  key={u.sid}
-                  title={`${u.username}${isSelf ? ' (你)' : ''}`}
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium text-white border-2 ${getAvatarColor(u.user_id)} ${idx > 0 ? '-ml-1.5' : ''} ${isSelf ? 'border-neon-blue' : 'border-canvas-panel'}`}
-                >
-                  {getAvatarText(u.username)}
+        {/* 在线用户列表 + 协作者入口 */}
+        <div className="flex items-center mr-2">
+          {onlineUsers.length > 0 && (
+            <div className="flex items-center cursor-pointer" onClick={() => setShowCollabPanel((v) => !v)}>
+              {onlineUsers.slice(0, 5).map((u, idx) => {
+                const isSelf = currentUser?.id === u.user_id;
+                return (
+                  <div
+                    key={u.sid}
+                    title={`${u.username}${isSelf ? ' (你)' : ''}`}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium text-white border-2 ${getAvatarColor(u.user_id)} ${idx > 0 ? '-ml-1.5' : ''} ${isSelf ? 'border-neon-blue' : 'border-canvas-panel'}`}
+                  >
+                    {getAvatarText(u.username)}
+                  </div>
+                );
+              })}
+              {onlineUsers.length > 5 && (
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium text-slate-300 bg-canvas-hover border-2 border-canvas-panel -ml-1.5">
+                  +{onlineUsers.length - 5}
                 </div>
-              );
-            })}
-            {onlineUsers.length > 5 && (
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-medium text-slate-300 bg-canvas-hover border-2 border-canvas-panel -ml-1.5">
-                +{onlineUsers.length - 5}
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
+          <button
+            onClick={() => setShowCollabPanel((v) => !v)}
+            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${onlineUsers.length > 0 ? 'ml-1' : ''} text-slate-400 hover:text-slate-200 hover:bg-canvas-hover`}
+            title="协作者"
+          >
+            <Users className="w-3.5 h-3.5" />
+            {onlineUsers.length > 0 && <span>{onlineUsers.length}</span>}
+          </button>
+        </div>
 
         {/* 撤销/重做 */}
         <div className="flex items-center gap-0.5">

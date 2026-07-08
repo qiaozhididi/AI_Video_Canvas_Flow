@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 
 /**
  * 路由守卫：未登录重定向到 /login
@@ -10,7 +11,15 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
  */
 export default function AuthGuard() {
   const [authenticated, setAuthenticated] = useState(() => !!localStorage.getItem('access_token'));
+  const checkAuth = useAuthStore((s) => s.checkAuth);
   const location = useLocation();
+
+  useEffect(() => {
+    // 页面加载时，用 token 获取用户信息
+    if (localStorage.getItem('access_token')) {
+      checkAuth();
+    }
+  }, [checkAuth]);
 
   useEffect(() => {
     const onStorageChange = (e: StorageEvent) => {
