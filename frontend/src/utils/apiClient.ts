@@ -537,6 +537,14 @@ export const renderApi = {
   retry: (taskId: string) =>
     request<RenderTaskResponse>(`/render/${taskId}/retry`, { method: 'POST' }),
 
+  exportVideo: async (projectId: string, format: string, resolution: string): Promise<{ task_id: string; status: string }> => {
+    const res = await request<{ task_id: string; status: string }>('/render/export', {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId, format, resolution }),
+    });
+    return res;
+  },
+
   /**
    * 轮询渲染任务直到完成/失败
    */

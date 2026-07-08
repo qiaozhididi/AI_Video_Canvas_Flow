@@ -1,11 +1,13 @@
 import { useRef, useCallback, useState } from 'react';
 import { useTimelineStore } from '@/stores/timelineStore';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { useCollabStore } from '@/stores/collabStore';
 import {
   Play, Pause, SkipBack, SkipForward,
   Plus, Volume2, VolumeX, Lock, Unlock, Eye, EyeOff,
-  Trash2, ZoomIn, ZoomOut,
+  Trash2, ZoomIn, ZoomOut, Download,
 } from 'lucide-react';
+import ExportModal from '@/components/ExportModal';
 import type { TrackType, Clip } from '@/types/timeline';
 
 const TRACK_COLORS: Record<TrackType, string> = {
@@ -45,9 +47,11 @@ export default function Timeline({ onClipClick }: TimelineProps) {
   } = useTimelineStore();
   const { nodes } = useCanvasStore();
   const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
+  const currentProjectId = useCollabStore((s) => s.currentProjectId);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   const PIXELS_PER_SECOND = 80 * data.zoom;
 
@@ -242,6 +246,15 @@ export default function Timeline({ onClipClick }: TimelineProps) {
             </button>
           ))}
         </div>
+
+        {/* 导出 */}
+        <button
+          onClick={() => setShowExportModal(true)}
+          className="flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded transition-colors ml-1"
+          title="导出视频"
+        >
+          <Download className="w-3 h-3" />
+        </button>
 
         {/* 缩放 */}
         <div className="flex items-center gap-1 ml-2">
@@ -442,6 +455,14 @@ export default function Timeline({ onClipClick }: TimelineProps) {
         >
           {tooltip.text}
         </div>
+      )}
+
+      {/* 导出弹窗 */}
+      {showExportModal && currentProjectId && (
+        <ExportModal
+          projectId={currentProjectId}
+          onClose={() => setShowExportModal(false)}
+        />
       )}
     </div>
   );

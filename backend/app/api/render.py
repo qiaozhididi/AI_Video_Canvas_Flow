@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
+from app.models.project import Project
 from app.models.render_task import RenderTask
 
 logger = logging.getLogger("app.api.render")
@@ -244,3 +245,51 @@ async def retry_render_task(task_id: str, db: DBSession, user: CurrentUser):
     project_name = pr.scalar_one_or_none()
 
     return _task_to_dict(new_task, node_label=node_label, project_name=project_name)
+
+
+class ExportRequest(BaseModel):
+    project_id: str
+    format: str = "mp4"  # mp4/mov/webm
+    resolution: str = "1080p"  # 720p/1080p/4k
+
+
+@router.post("/export", summary="导出时间轴视频")
+async def export_video(req: ExportRequest, db: DBSession, user: CurrentUser):
+    """创建视频导出任务"""
+    project = await db.get(Project, uuid.UUID(req.project_id))
+    if not project or str(project.owner_id) != user:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 从最新快照获取 timeline_data
+    from app.models.project_snapshot import ProjectSnapshot
+    result = await db.execute(
+        select(ProjectSnapshot)
+        .where(ProjectSnapshot.project_id == uuid.UUID(req.project_id))
+        .order_by(ProjectSnapshot.created_at.desc())
+        .limit(1)
+    )
+    snapshot = result.scalar_one_or_none()
+    timeline_data = {}
+    if snapshot and snapshot.snapshot_data:
+        timeline_data = snapshot.snapshot_data.get('timelineData', {})
+
+    task = RenderTask(
+        project_id=uuid.UUID(req.project_id),
+        owner_id=uuid.UUID(user),
+        task_type="export",
+        status="pending",
+        progress=0,
+        node_params={
+            "format": req.format,
+            "resolution": req.resolution,
+            "timeline_data": timeline_data,
+        },
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+
+    from app.tasks.render_tasks import run_export_task
+    run_export_task.delay(str(task.id))
+
+    return {"task_id": str(task.id), "status": "pending"}

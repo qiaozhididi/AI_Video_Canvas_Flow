@@ -8,6 +8,7 @@ progress 范围：0~100（整数百分比）
 
 import asyncio
 import logging
+import os
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -490,3 +491,98 @@ async def _execute_render_task(
         "status": "completed",
         "result_url": f"render_result/{task_id}/output{ext}",
     }
+
+
+@celery_app.task(name="run_export_task")
+def run_export_task(task_id: str):
+    """视频导出任务：FFmpeg 混流合成"""
+    async def _run():
+        from app.services.export_service import compose_video
+        from app.services.media_service import get_minio_client, upload_file
+        from app.config import settings
+        from app.models.media_asset import MediaAsset
+
+        sf = _get_celery_session_factory()
+        async with sf() as db:
+            task = await db.get(RenderTask, uuid.UUID(task_id))
+            if not task:
+                return
+
+            task.status = "running"
+            await db.commit()
+
+            try:
+                params = task.node_params or {}
+                timeline_data = params.get('timeline_data', {})
+                tracks = timeline_data.get('tracks', [])
+                duration = timeline_data.get('duration', 30)
+
+                # 从 tracks 收集所有 clip
+                clips = []
+                for track in tracks:
+                    if not track.get('visible', True):
+                        continue
+                    for clip in track.get('clips', []):
+                        if clip.get('mediaUrl'):
+                            clips.append({
+                                'url': clip['mediaUrl'],
+                                'start': clip.get('start', 0),
+                                'end': clip.get('end', 5),
+                                'track_type': track.get('type', 'video'),
+                                'media_type': clip.get('mediaType', 'video'),
+                            })
+
+                if not clips:
+                    task.status = "failed"
+                    task.error_message = "时间轴上没有素材"
+                    await db.commit()
+                    return
+
+                output_path = await compose_video(
+                    clips=clips,
+                    output_format=params.get('format', 'mp4'),
+                    resolution=params.get('resolution', '1080p'),
+                    duration=duration,
+                    task_id=task_id,
+                )
+
+                # 上传到 MinIO
+                object_name = f"exports/{task.project_id}/{task_id}{output_path.suffix}"
+                with open(str(output_path), 'rb') as f:
+                    file_data = f.read()
+                await upload_file(
+                    bucket=settings.MINIO_BUCKET,
+                    object_name=object_name,
+                    file_data=file_data,
+                    content_type="video/mp4",
+                )
+
+                # 创建 MediaAsset
+                file_size = os.path.getsize(str(output_path))
+                asset = MediaAsset(
+                    file_name=f"export_{task_id}{output_path.suffix}",
+                    file_type="video/mp4",
+                    file_size=file_size,
+                    storage_key=object_name,
+                    owner_id=task.owner_id,
+                )
+                db.add(asset)
+                await db.flush()
+
+                task.result_url = f"/api/v1/media/{asset.id}/download"
+                task.status = "completed"
+                task.progress = 100
+                await db.commit()
+
+                # 清理临时文件
+                import shutil
+                shutil.rmtree(str(output_path.parent), ignore_errors=True)
+
+            except Exception as e:
+                task.status = "failed"
+                task.error_message = str(e)[:500]
+                task.progress = 0
+                await db.commit()
+                logger.error(f"[Export:Error] task={task_id} error={e}")
+
+    _get_celery_loop().run_until_complete(_run())
