@@ -118,6 +118,11 @@ interface CanvasState {
 
   // 对齐节点位置
   alignNodes: (updates: Map<string, { x: number; y: number }>) => void;
+
+  // 预览请求（右键菜单触发，Editor 监听切换到预览选项卡）
+  previewRequest: { url: string; type: 'image' | 'video' } | null;
+  requestPreview: (media: { url: string; type: 'image' | 'video' }) => void;
+  clearPreviewRequest: () => void;
 }
 
 export const useCanvasStore = create<CanvasState>((set, get) => ({
@@ -504,4 +509,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }));
     }
   },
+
+  // ── 预览请求 ──
+  previewRequest: null,
+  requestPreview: (media) => set({ previewRequest: media }),
+  clearPreviewRequest: () => set({ previewRequest: null }),
 }));

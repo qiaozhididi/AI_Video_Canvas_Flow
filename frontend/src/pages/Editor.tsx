@@ -61,16 +61,35 @@ export default function Editor() {
     if (selectedClipMedia) setActiveTab('preview');
   }, [selectedClipMedia]);
 
+  // 右键菜单「预览」请求时切换到预览选项卡
+  const previewRequest = useCanvasStore((s) => s.previewRequest);
+  const clearPreviewRequest = useCanvasStore((s) => s.clearPreviewRequest);
+  useEffect(() => {
+    if (previewRequest) {
+      setSelectedClipMedia(previewRequest);
+      setActiveTab('preview');
+      clearPreviewRequest();
+    }
+  }, [previewRequest, clearPreviewRequest]);
+
   const preview = useMemo(() => {
     // 1. 播放中：根据当前时间找时间轴上对应的片段
     if (isTimelinePlaying) {
       const ct = timelineData.currentTime;
-      const allClips = timelineData.tracks
+      // 轨道优先级：video > audio > subtitle > effect
+      const trackPriority: Record<string, number> = { video: 0, audio: 1, subtitle: 2, effect: 3 };
+      const activeClips = timelineData.tracks
         .filter((t) => t.visible && !t.muted)
-        .flatMap((t) => t.clips);
-      const activeClip = allClips.find(
-        (c) => ct >= c.start && ct < c.end && c.mediaUrl
-      );
+        .flatMap((t) => t.clips.map((c) => ({ ...c, trackType: t.type })))
+        .filter((c) => ct >= c.start && ct < c.end && c.mediaUrl)
+        .sort((a, b) => {
+          // 按轨道优先级排序，同优先级按 start 排序
+          const pa = trackPriority[a.trackType] ?? 9;
+          const pb = trackPriority[b.trackType] ?? 9;
+          if (pa !== pb) return pa - pb;
+          return a.start - b.start;
+        });
+      const activeClip = activeClips[0];
       if (activeClip) {
         const clipType = activeClip.mediaType || (activeClip.mediaUrl.includes('.mp4') || activeClip.mediaUrl.includes('video') ? 'video' : 'image');
         return { url: activeClip.mediaUrl, type: clipType as 'image' | 'video' | undefined };
@@ -178,7 +197,7 @@ export default function Editor() {
       {/* 中间画布 / 预览选项卡 */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 选项卡头部 */}
-        <div className="flex items-center h-8 bg-canvas-panel border-b border-canvas-border px-1 gap-0.5 flex-shrink-0">
+        <div className="flex items-center justify-center h-8 bg-canvas-panel border-b border-canvas-border px-1 gap-0.5 flex-shrink-0">
           <button
             onClick={() => setActiveTab('canvas')}
             className={`flex items-center gap-1.5 px-3 h-6 rounded text-xs transition-colors ${
@@ -210,7 +229,7 @@ export default function Editor() {
               <Canvas />
             </div>
           ) : (
-            <div className="h-full p-2">
+            <div className="h-full">
               <VideoPreview
                 src={preview.url}
                 mediaType={preview.type}
@@ -221,11 +240,11 @@ export default function Editor() {
           )}
         </div>
 
-        {/* 时间轴 */}
-        <div className="flex flex-col">
+        {/* 时间轴 - 切换按钮始终可见 */}
+        <div className="flex flex-col flex-shrink-0">
           <button
             onClick={() => setShowTimeline(!showTimeline)}
-            className="flex items-center justify-center gap-1 h-7 text-xs text-slate-500 bg-canvas-panel border-y border-canvas-border hover:text-slate-300 transition-colors flex-shrink-0"
+            className="flex items-center justify-center gap-1 h-7 text-xs text-slate-500 bg-canvas-panel border-t border-canvas-border hover:text-slate-300 transition-colors flex-shrink-0"
           >
             {showTimeline ? <ChevronDown className="w-3 h-3" /> : <ChevronUp className="w-3 h-3" />}
             时间轴

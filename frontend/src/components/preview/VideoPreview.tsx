@@ -35,7 +35,7 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
         controls: true,
         autoplay: false,
         preload: 'auto',
-        fluid: false,
+        fluid: true,
         responsive: true,
         poster: poster || '',
         sources: src ? [{ src, type: 'video/mp4' }] : [],
@@ -83,11 +83,11 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
   }, []);
 
   return (
-    <div className="w-full h-full bg-black rounded-lg overflow-hidden">
+    <div className="w-full h-full bg-black rounded-lg overflow-hidden flex flex-col">
       {src && mediaType === 'image' ? (
         <img src={src} alt="预览图片" className="w-full h-full object-contain" />
       ) : src ? (
-        <div ref={videoRef} className="w-full h-full" />
+        <div ref={videoRef} className="w-full h-full flex-1" />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
           <div className="text-center space-y-2 px-4">

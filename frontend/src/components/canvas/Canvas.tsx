@@ -34,7 +34,7 @@ import AlignmentToolbar from './AlignmentToolbar';
 import ContextMenu, { type MenuItem } from './ContextMenu';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import {
-  Copy, ClipboardPaste, Pencil, Play, Trash2,
+  Copy, ClipboardPaste, Pencil, Play, Trash2, Eye,
   AlignStartVertical, AlignStartHorizontal,
   AlignCenterVertical, AlignCenterHorizontal,
   Type, Image as ImageIcon, Music, Wand2, Video, Mic,
@@ -301,6 +301,35 @@ export default function Canvas() {
           });
         },
       });
+    }
+
+    // 预览：仅当节点有图片/音视频产出时可用
+    if (targetNode) {
+      const mediaArtifacts = targetNode.data.outputArtifacts.filter(
+        (a) => a.type === 'image' || a.type === 'video' || a.type === 'audio'
+      );
+      if (mediaArtifacts.length > 0) {
+        items.push({
+          icon: Eye,
+          label: '预览',
+          onClick: () => {
+            const artifact = mediaArtifacts.find((a) => a.type === 'video') || mediaArtifacts[0];
+            const isInternal = artifact.url.startsWith('/api/');
+            const isExternal = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
+            const accessToken = localStorage.getItem('access_token') || '';
+            let url: string;
+            if (isInternal) {
+              url = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${accessToken}`;
+            } else if (isExternal) {
+              url = artifact.url;
+            } else {
+              url = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${accessToken}`;
+            }
+            const mediaType = artifact.type === 'audio' ? 'video' : (artifact.type as 'image' | 'video');
+            useCanvasStore.getState().requestPreview({ url, type: mediaType });
+          },
+        });
+      }
     }
 
     items.push({
