@@ -1,7 +1,8 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import videojs from 'video.js';
 import type Player from 'video.js/dist/types/player';
 import 'video.js/dist/video-js.css';
+import { Maximize, Minimize } from 'lucide-react';
 
 interface VideoPreviewProps {
   src?: string;
@@ -14,6 +15,8 @@ interface VideoPreviewProps {
 export default function VideoPreview({ src, poster, mediaType, currentTime, onTimeUpdate }: VideoPreviewProps) {
   const videoRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Player | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   // 用 ref 存储 onTimeUpdate 回调，避免闭包陈旧 + 从依赖数组移除
   const onTimeUpdateRef = useRef(onTimeUpdate);
 
@@ -21,6 +24,23 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
   useEffect(() => {
     onTimeUpdateRef.current = onTimeUpdate;
   }, [onTimeUpdate]);
+
+  // 全屏切换
+  const toggleFullscreen = useCallback(() => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }, []);
+
+  // 监听全屏变化
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', handler);
+    return () => document.removeEventListener('fullscreenchange', handler);
+  }, []);
 
   // 创建/更新 player（src/poster 变化时）
   useEffect(() => {
@@ -35,8 +55,9 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
         controls: true,
         autoplay: false,
         preload: 'auto',
-        fluid: true,
+        fluid: false,
         responsive: true,
+        aspectRatio: '16:9',
         poster: poster || '',
         sources: src ? [{ src, type: 'video/mp4' }] : [],
       });
@@ -83,7 +104,7 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
   }, []);
 
   return (
-    <div className="w-full h-full bg-black rounded-lg overflow-hidden flex flex-col">
+    <div ref={containerRef} className="w-full h-full bg-black rounded-lg overflow-hidden flex flex-col relative">
       {src && mediaType === 'image' ? (
         <img src={src} alt="预览图片" className="w-full h-full object-contain" />
       ) : src ? (
@@ -101,6 +122,16 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
             <p className="text-xs text-slate-600">播放时间轴即可在此预览</p>
           </div>
         </div>
+      )}
+      {/* 全屏按钮 */}
+      {src && (
+        <button
+          onClick={toggleFullscreen}
+          className="absolute top-2 right-2 z-10 p-1.5 rounded-md bg-black/60 text-white/80 hover:text-white hover:bg-black/80 transition-colors"
+          title={isFullscreen ? '退出全屏' : '全屏预览'}
+        >
+          {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+        </button>
       )}
     </div>
   );
