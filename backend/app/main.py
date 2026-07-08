@@ -29,11 +29,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"   MinIO: {settings.MINIO_ENDPOINT}")
     logger.info(f"   CORS: {settings.CORS_ORIGINS}")
 
-    # 自动创建数据库表（开发模式）
+    # 自动创建数据库表（仅开发模式）
     from app.database import Base, engine, async_session_factory
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("   数据库表已创建/验证")
+    if settings.DEBUG:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("   数据库表已创建/验证（开发模式）")
+    else:
+        logger.info("   生产模式：跳过自动建表，请使用数据库迁移工具")
 
     # 首次启动时初始化默认 AI 配置
     from app.api.ai import ensure_default_ai_config

@@ -72,6 +72,8 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
     } else {
       if (src) {
         playerRef.current.src({ src, type: 'video/mp4' });
+      } else {
+        playerRef.current.reset();
       }
       if (poster) {
         playerRef.current.poster(poster);
@@ -79,7 +81,7 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
     }
 
     return () => {
-      // 组件卸载时不销毁 player，避免重复创建
+      // src/poster 变化时不销毁 player，仅更新源
     };
   }, [src, poster]);
 

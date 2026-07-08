@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useTimelineStore } from '@/stores/timelineStore';
+import { usePreviewContent } from '@/hooks/usePreviewContent';
 import Canvas from '@/components/canvas/Canvas';
 import NodePanel from '@/components/panels/NodePanel';
 import Timeline from '@/components/timeline/Timeline';
@@ -40,16 +41,13 @@ export default function Editor() {
 
   const currentProject = useProjectStore((s) => s.currentProject);
 
-  // 计算预览内容：播放时按时间轴片段，暂停时按选中节点
-  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
-  const timelineData = useTimelineStore((s) => s.data);
-  const isTimelinePlaying = useTimelineStore((s) => s.isPlaying);
-
   // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);
   const [activeTab, setActiveTab] = useState<'canvas' | 'preview'>('canvas');
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [selectedClipMedia, setSelectedClipMedia] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+
+  const isTimelinePlaying = useTimelineStore((s) => s.isPlaying);
 
   // 时间轴播放时自动切换到预览选项卡
   useEffect(() => {
@@ -72,62 +70,7 @@ export default function Editor() {
     }
   }, [previewRequest, clearPreviewRequest]);
 
-  const preview = useMemo(() => {
-    // 1. 播放中：根据当前时间找时间轴上对应的片段
-    if (isTimelinePlaying) {
-      const ct = timelineData.currentTime;
-      // 轨道优先级：video > audio > subtitle > effect
-      const trackPriority: Record<string, number> = { video: 0, audio: 1, subtitle: 2, effect: 3 };
-      const activeClips = timelineData.tracks
-        .filter((t) => t.visible && !t.muted)
-        .flatMap((t) => t.clips.map((c) => ({ ...c, trackType: t.type })))
-        .filter((c) => ct >= c.start && ct < c.end && c.mediaUrl)
-        .sort((a, b) => {
-          // 按轨道优先级排序，同优先级按 start 排序
-          const pa = trackPriority[a.trackType] ?? 9;
-          const pb = trackPriority[b.trackType] ?? 9;
-          if (pa !== pb) return pa - pb;
-          return a.start - b.start;
-        });
-      const activeClip = activeClips[0];
-      if (activeClip) {
-        const clipType = activeClip.mediaType || (activeClip.mediaUrl.includes('.mp4') || activeClip.mediaUrl.includes('video') ? 'video' : 'image');
-        return { url: activeClip.mediaUrl, type: clipType as 'image' | 'video' | undefined };
-      }
-      return { url: undefined, type: undefined as 'image' | 'video' | undefined };
-    }
-
-    // 2. 暂停态 + 点击了时间轴片段
-    if (selectedClipMedia) {
-      return { url: selectedClipMedia.url, type: selectedClipMedia.type };
-    }
-
-    // 3. 暂停态 + 选中了有产出的节点
-    if (selectedNodeId) {
-      const node = nodes.find((n) => n.id === selectedNodeId);
-      if (node && node.data.outputArtifacts.length) {
-        const videoArt = node.data.outputArtifacts.find((a) => a.type === 'video');
-        const imageArt = node.data.outputArtifacts.find((a) => a.type === 'image');
-        const artifact = videoArt || imageArt;
-        if (artifact) {
-          const isInternal = artifact.url.startsWith('/api/');
-          const isExternal = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
-          const accessToken = localStorage.getItem('access_token') || '';
-          let url: string;
-          if (isInternal) {
-            url = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${accessToken}`;
-          } else if (isExternal) {
-            url = artifact.url;
-          } else {
-            url = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${accessToken}`;
-          }
-          return { url, type: artifact.type as 'image' | 'video' };
-        }
-      }
-    }
-
-    return { url: undefined, type: undefined as 'image' | 'video' | undefined };
-  }, [isTimelinePlaying, selectedClipMedia, selectedNodeId, timelineData.currentTime, timelineData.tracks, nodes]);
+  const preview = usePreviewContent(selectedClipMedia);
 
   // 时间轴 ↔ 预览联动
   const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
@@ -252,7 +195,7 @@ export default function Editor() {
           {showTimeline && (
             <Timeline
               onClipClick={(clip) => {
-                const mediaType = clip.mediaType || (clip.mediaUrl.includes('.mp4') || clip.mediaUrl.includes('video') ? 'video' : 'image');
+                const mediaType = clip.mediaType || 'video';
                 setSelectedClipMedia({ url: clip.mediaUrl, type: mediaType as 'image' | 'video' });
                 setActiveTab('preview');
               }}

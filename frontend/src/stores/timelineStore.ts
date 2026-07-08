@@ -9,6 +9,7 @@ let lastTimestamp: number | null = null;
 interface TimelineState {
   data: TimelineData;
   isPlaying: boolean;
+  hasPlayedToEnd: boolean;
 
   // 播放控制
   play: () => void;
@@ -40,11 +41,13 @@ interface TimelineState {
 export const useTimelineStore = create<TimelineState>((set) => ({
   data: createDefaultTimeline(),
   isPlaying: false,
+  hasPlayedToEnd: false,
 
   play: () => {
     if (rAFId !== null) {
       cancelAnimationFrame(rAFId);
     }
+    set({ hasPlayedToEnd: false });
     // 播放前：如果已在末尾，先回到开头，避免立即触发结束条件导致循环卡住
     const current = useTimelineStore.getState();
     if (current.data.currentTime >= current.data.duration - 0.1) {
@@ -73,6 +76,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
         set((s) => ({
           data: { ...s.data, currentTime: s.data.duration },
           isPlaying: false,
+          hasPlayedToEnd: true,
         }));
         rAFId = null;
         lastTimestamp = null;
@@ -93,7 +97,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       rAFId = null;
     }
     lastTimestamp = null;
-    set({ isPlaying: false });
+    set({ isPlaying: false, hasPlayedToEnd: false });
   },
 
   seekTo: (time) => {
@@ -221,6 +225,6 @@ export const useTimelineStore = create<TimelineState>((set) => ({
       data: { ...state.data, zoom: Math.max(0.1, Math.min(10, zoom)) },
     })),
 
-  reset: () => set({ data: createDefaultTimeline(), isPlaying: false }),
-  loadTimeline: (data) => set({ data, isPlaying: false }),
+  reset: () => set({ data: createDefaultTimeline(), isPlaying: false, hasPlayedToEnd: false }),
+  loadTimeline: (data) => set({ data, isPlaying: false, hasPlayedToEnd: false }),
 }));

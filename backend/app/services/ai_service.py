@@ -20,6 +20,9 @@ from app.models.ai_model import AiModel
 
 logger = logging.getLogger("app.services.ai")
 
+# AI 图片生成默认尺寸
+DEFAULT_IMAGE_SIZE = "2k"
+
 
 async def _get_provider_and_model(db, model_id: str | UUID, expected_type: str | None = None) -> tuple[AiProvider, AiModel]:
     """根据 model_id 获取 Provider 和 Model 配置
@@ -178,7 +181,7 @@ async def _call_image_api(
         body.update(body_extra)
     body.setdefault("n", params.get("n", 1) if params else 1)
     # 规范化 size 参数：仅接受 API 合法值(1k/2k/4k/特定 WxH)，其他一律回退到 2k
-    raw_size = params.get("size", "2k") if params else "2k"
+    raw_size = params.get("size", DEFAULT_IMAGE_SIZE) if params else DEFAULT_IMAGE_SIZE
     valid_sizes = {"1k", "2k", "4k",
                    "512x512", "768x768", "1024x1024", "1280x720", "720x1280",
                    "1536x1536", "2048x2048", "1024x1536", "1536x1024"}

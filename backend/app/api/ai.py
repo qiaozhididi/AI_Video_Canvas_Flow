@@ -132,19 +132,22 @@ async def update_provider(provider_id: str, body: ProviderUpdate, db: DBSession,
     return _provider_to_dict(provider)
 
 
-@router.delete("/providers/{provider_id}", status_code=204, summary="删除 AI Provider")
+@router.delete("/providers/{provider_id}", summary="删除 AI Provider")
 async def delete_provider(provider_id: str, db: DBSession, user: CurrentUser):
     result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(provider_id)))
     provider = result.scalar_one_or_none()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider 不存在")
     # 级联删除关联 models
+    deleted_count = 0
     model_result = await db.execute(select(AiModel).where(AiModel.provider_id == uuid.UUID(provider_id)))
     for model in model_result.scalars().all():
         await db.delete(model)
+        deleted_count += 1
     await db.delete(provider)
     await db.commit()
     logger.info(f"[AI:Provider:Delete] id={provider_id}")
+    return {"message": f"已删除 Provider 及其关联的 {deleted_count} 个模型"}
 
 
 # ── Model CRUD ──
@@ -229,7 +232,7 @@ async def update_model(model_id: str, body: ModelUpdate, db: DBSession, user: Cu
     return _model_to_dict(model)
 
 
-@router.delete("/models/{model_id}", status_code=204, summary="删除 AI Model")
+@router.delete("/models/{model_id}", summary="删除 AI Model")
 async def delete_model(model_id: str, db: DBSession, user: CurrentUser):
     result = await db.execute(select(AiModel).where(AiModel.id == uuid.UUID(model_id)))
     model = result.scalar_one_or_none()
@@ -238,6 +241,7 @@ async def delete_model(model_id: str, db: DBSession, user: CurrentUser):
     await db.delete(model)
     await db.commit()
     logger.info(f"[AI:Model:Delete] id={model_id}")
+    return {"message": "已删除模型"}
 
 
 @router.get("/models/default", summary="获取默认 AI 模型")

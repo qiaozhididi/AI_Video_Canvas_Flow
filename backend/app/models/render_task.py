@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Float, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -13,6 +13,12 @@ class RenderTask(Base):
     """渲染任务：跟踪视频/AI 推理任务的执行状态"""
 
     __tablename__ = "render_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'running', 'completed', 'failed', 'cancelled')",
+            name="render_task_status_check",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))

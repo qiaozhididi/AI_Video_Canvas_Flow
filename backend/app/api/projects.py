@@ -155,7 +155,18 @@ async def upload_cover(project_id: str, file: UploadFile, db: DBSession, current
     if not project or project.owner_id != owner_id:
         raise HTTPException(status_code=404, detail="项目不存在")
 
+    # 校验文件类型
+    ALLOWED_COVER_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+    if file.content_type not in ALLOWED_COVER_TYPES:
+        raise HTTPException(status_code=422, detail=f"不支持的文件类型: {file.content_type}，仅支持 PNG/JPEG/WebP/GIF")
+
     content = await file.read()
+
+    # 校验文件大小（最大 5MB）
+    MAX_COVER_SIZE = 5 * 1024 * 1024
+    if len(content) > MAX_COVER_SIZE:
+        raise HTTPException(status_code=422, detail=f"封面文件过大: {len(content)} 字节，最大允许 5MB")
+
     # 固定路径：covers/{project_id}.png — 每次上传覆盖旧文件
     storage_key = f"covers/{project_id}.png"
 
