@@ -345,7 +345,7 @@ export interface CollaboratorResponse {
   user_id: string;
   username: string;
   role: 'owner' | 'editor' | 'viewer';
-  created_at: string;
+  joined_at: string;
 }
 
 // ── 邀请 ──
@@ -526,6 +526,15 @@ export interface StorageStatsResponse {
   file_count: number;
 }
 
+// 从 /stats/usage 响应转换为 StorageStatsResponse
+function usageToStats(u: StorageUsageResponse): StorageStatsResponse {
+  return {
+    quota_bytes: u.quota,
+    used_bytes: u.total_size,
+    file_count: u.total_count,
+  };
+}
+
 export const mediaApi = {
   list: () =>
     request<MediaAssetResponse[]>('/media/'),
@@ -534,7 +543,7 @@ export const mediaApi = {
     request<StorageUsageResponse>('/media/stats/usage'),
 
   getStorageStats: () =>
-    request<StorageStatsResponse>('/media/storage-stats'),
+    request<StorageUsageResponse>('/media/stats/usage').then(usageToStats),
 
   upload: (file: File) => {
     const formData = new FormData();

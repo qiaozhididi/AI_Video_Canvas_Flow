@@ -119,6 +119,11 @@ async def accept_invitation(token: str, user: CurrentUser, db: DBSession):
     if inv.expires_at and inv.expires_at < datetime.utcnow():
         raise HTTPException(status_code=410, detail="邀请已过期")
 
+    # 项目所有者不能接受自己项目的邀请
+    project = await db.get(Project, inv.project_id)
+    if project and str(project.owner_id) == user:
+        raise HTTPException(status_code=409, detail="不能接受自己项目的邀请")
+
     # 创建协作者记录
     existing = await db.execute(
         select(ProjectCollaborator).where(

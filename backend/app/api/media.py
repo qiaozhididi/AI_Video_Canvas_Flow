@@ -205,21 +205,6 @@ async def _get_asset(asset_id: str, user: str, db: DBSession) -> MediaAsset:
     return asset
 
 
-@router.get("/storage-stats", summary="获取用户存储用量统计")
-async def get_storage_stats(user: CurrentUser, db: DBSession):
-    result = await db.execute(
-        select(func.coalesce(func.sum(MediaAsset.file_size), 0), func.count(MediaAsset.id))
-        .where(MediaAsset.owner_id == uuid.UUID(user))
-    )
-    used_bytes, file_count = result.one()
-    quota_bytes = 10 * 1024 * 1024 * 1024  # 10 GB 默认配额
-    return {
-        "quota_bytes": quota_bytes,
-        "used_bytes": int(used_bytes),
-        "file_count": file_count,
-    }
-
-
 def _asset_to_dict(asset: MediaAsset) -> dict:
     """将 ORM 对象转为字典格式"""
     return {

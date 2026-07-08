@@ -35,7 +35,7 @@ class CollaboratorResponse(BaseModel):
     user_id: str
     username: str
     role: str
-    created_at: datetime
+    joined_at: datetime
 
     class Config:
         from_attributes = True
@@ -74,7 +74,7 @@ async def list_collaborators(project_id: str, user: CurrentUser, db: DBSession):
         user_id=str(project.owner_id),
         username=owner_user.username if owner_user else "unknown",
         role="owner",
-        created_at=project.created_at,
+        joined_at=project.created_at,
     ))
 
     # 查询显式协作者
@@ -89,7 +89,7 @@ async def list_collaborators(project_id: str, user: CurrentUser, db: DBSession):
             user_id=str(c.user_id),
             username=u.username if u else "unknown",
             role=c.role,
-            created_at=c.created_at,
+            joined_at=c.joined_at,
         ))
 
     return result
