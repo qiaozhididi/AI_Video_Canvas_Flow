@@ -1,6 +1,6 @@
 import { useCanvasStore } from '@/stores/canvasStore';
 import { NODE_CATEGORIES, type CanvasNodeData, type ProcessingSubtype, type ControlSubtype } from '@/types/canvas';
-import { X, Trash2, Play, AlertTriangle, Info } from 'lucide-react';
+import { X, Trash2, Play } from 'lucide-react';
 import { executeNode } from '../../utils/workflowExecutor';
 
 export default function PropertyPanel() {
@@ -123,25 +123,11 @@ export default function PropertyPanel() {
           ))}
         </div>
 
-        {/* 处理节点演示模式提示 */}
-        {data.type === 'processing' && (
-          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-            <Info className="w-4 h-4 text-cyan-400 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs text-cyan-300 font-medium">演示模式</p>
-              <p className="text-xs text-cyan-400/70">该节点使用模拟渲染，暂无真实 AI API 支持</p>
-            </div>
-          </div>
-        )}
-
         {/* 控制节点不可执行提示 */}
         {data.type === 'control' && (
-          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-            <AlertTriangle className="w-4 h-4 text-yellow-400 mt-0.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs text-yellow-300 font-medium">控制节点</p>
-              <p className="text-xs text-yellow-400/70">此节点用于工作流逻辑控制，不可单独执行</p>
-            </div>
+          <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex-shrink-0 mt-0.5">控制</span>
+            <p className="text-xs text-purple-300/80">此节点用于工作流逻辑控制，不可单独执行</p>
           </div>
         )}
 

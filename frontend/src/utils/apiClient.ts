@@ -341,6 +341,7 @@ export interface AiModelUpdateRequest {
 
 export interface SnapshotCreateRequest {
   source: 'auto' | 'manual';
+  name?: string | null;
   label?: string;
   snapshot_data: {
     nodes: CanvasNode[];
@@ -354,6 +355,7 @@ export interface SnapshotResponse {
   project_id: string;
   owner_id: string;
   source: 'auto' | 'manual';
+  name: string | null;
   label: string | null;
   snapshot_data: {
     nodes: CanvasNode[];
@@ -477,12 +479,21 @@ export interface StorageUsageResponse {
   categories: Record<string, { count: number; size: number }>;
 }
 
+export interface StorageStatsResponse {
+  quota_bytes: number;
+  used_bytes: number;
+  file_count: number;
+}
+
 export const mediaApi = {
   list: () =>
     request<MediaAssetResponse[]>('/media/'),
 
   getStorageUsage: () =>
     request<StorageUsageResponse>('/media/stats/usage'),
+
+  getStorageStats: () =>
+    request<StorageStatsResponse>('/media/storage-stats'),
 
   upload: (file: File) => {
     const formData = new FormData();

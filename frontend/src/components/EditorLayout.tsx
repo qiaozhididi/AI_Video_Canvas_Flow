@@ -7,13 +7,14 @@ import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
-import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw } from 'lucide-react';
+import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
 import ShortcutHelpModal from './canvas/ShortcutHelpModal';
 import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
+import { snapshotApi } from '@/utils/apiClient';
 
 // 在线用户头像配色（按 user_id hash 选取）
 const AVATAR_COLORS = [
@@ -61,6 +62,7 @@ export default function EditorLayout() {
   });
   const [showAiModal, setShowAiModal] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  const [showSaveDropdown, setShowSaveDropdown] = useState(false);
   // 标记刚退出编辑态，避免 Escape 取消重命名后同时取消节点选中
   const justExitedEditingRef = useRef(false);
 
@@ -392,20 +394,63 @@ export default function EditorLayout() {
 
         <div className="h-5 w-px bg-canvas-border" />
 
-        <button
-          onClick={async () => {
-            try {
-              await saveCurrentProject();
-              toast.success('项目已保存');
-            } catch (err: any) {
-              toast.error(`保存失败: ${err.message || '未知错误'}`);
-            }
-          }}
-          className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded transition-colors"
-        >
-          <Save className="w-3.5 h-3.5" />
-          保存
-        </button>
+        <div className="relative flex items-center">
+          <button
+            onClick={async () => {
+              try {
+                await saveCurrentProject();
+                toast.success('项目已保存');
+              } catch (err: any) {
+                toast.error(`保存失败: ${err.message || '未知错误'}`);
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded-l transition-colors"
+          >
+            <Save className="w-3.5 h-3.5" />
+            保存
+          </button>
+          <button
+            onClick={() => setShowSaveDropdown((v) => !v)}
+            className="flex items-center px-1.5 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded-r transition-colors border-l border-canvas-border"
+          >
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          {showSaveDropdown && (
+            <>
+              {/* 点击外部关闭 */}
+              <div className="fixed inset-0 z-40" onClick={() => setShowSaveDropdown(false)} />
+              <div className="absolute top-full right-0 mt-1 w-40 bg-canvas-panel border border-canvas-border rounded-lg shadow-xl z-50 py-1">
+                <button
+                  onClick={async () => {
+                    setShowSaveDropdown(false);
+                    const versionName = window.prompt('请输入版本快照名称：');
+                    if (versionName === null) return;
+                    try {
+                      const { useCanvasStore: canvasStore } = await import('@/stores/canvasStore');
+                      const { useTimelineStore: timelineStore } = await import('@/stores/timelineStore');
+                      const snapshotData = {
+                        nodes: JSON.parse(JSON.stringify(canvasStore.getState().nodes)),
+                        edges: JSON.parse(JSON.stringify(canvasStore.getState().edges)),
+                        timelineData: JSON.parse(JSON.stringify(timelineStore.getState().data)),
+                      };
+                      await snapshotApi.create(projectId!, {
+                        source: 'manual',
+                        name: versionName || null,
+                        snapshot_data: snapshotData,
+                      });
+                      toast.success(versionName ? `版本快照「${versionName}」已创建` : '版本快照已创建');
+                    } catch (err: any) {
+                      toast.error(`创建快照失败: ${err.message || '未知错误'}`);
+                    }
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs text-slate-300 hover:bg-canvas-hover hover:text-white transition-colors"
+                >
+                  创建版本快照
+                </button>
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="h-5 w-px bg-canvas-border" />
 

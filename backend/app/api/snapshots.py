@@ -39,6 +39,7 @@ def _to_response(s: ProjectSnapshot) -> SnapshotResponse:
         project_id=s.project_id,
         owner_id=s.owner_id,
         source=s.source,
+        name=s.name,
         label=s.label,
         snapshot_data=s.snapshot_data,
         created_at=s.created_at,
@@ -100,6 +101,7 @@ async def create_snapshot(
         owner_id=owner_id,
         snapshot_data=body.snapshot_data,
         source=body.source,
+        name=body.name,
         label=body.label,
     )
     db.add(snapshot)

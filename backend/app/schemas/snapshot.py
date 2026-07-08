@@ -10,6 +10,7 @@ from pydantic import BaseModel
 class SnapshotCreate(BaseModel):
     """创建快照请求"""
     source: Literal["auto", "manual"]
+    name: str | None = None
     label: str | None = None
     snapshot_data: dict  # {nodes: [...], edges: [...], timelineData: {...}}
 
@@ -20,6 +21,7 @@ class SnapshotResponse(BaseModel):
     project_id: UUID
     owner_id: UUID
     source: str
+    name: str | None = None
     label: str | None
     snapshot_data: dict
     created_at: datetime

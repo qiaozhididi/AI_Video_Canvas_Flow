@@ -16,6 +16,7 @@ import {
   type AiModelUpdateRequest,
   type UserResponse,
   type UserUpdateRequest,
+  type StorageStatsResponse,
   type StorageUsageResponse,
 } from '../utils/apiClient';
 
@@ -864,24 +865,26 @@ const CATEGORY_META: Record<string, { label: string; color: string }> = {
 };
 
 function StorageTab() {
+  const [stats, setStats] = useState<StorageStatsResponse | null>(null);
   const [usage, setUsage] = useState<StorageUsageResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    mediaApi.getStorageUsage()
-      .then(setUsage)
-      .catch(() => toast.error('加载存储用量失败'))
-      .finally(() => setLoading(false));
+    Promise.all([
+      mediaApi.getStorageStats().then(setStats).catch(() => {}),
+      mediaApi.getStorageUsage().then(setUsage).catch(() => {}),
+    ]).finally(() => setLoading(false));
   }, []);
 
   if (loading) {
     return <p className="text-sm text-slate-500">加载中...</p>;
   }
 
-  const totalSize = usage?.total_size ?? 0;
-  const quota = usage?.quota ?? 10 * 1024 * 1024 * 1024;
+  const quotaBytes = stats?.quota_bytes ?? 10 * 1024 * 1024 * 1024;
+  const usedBytes = stats?.used_bytes ?? 0;
+  const fileCount = stats?.file_count ?? 0;
   const categories = usage?.categories ?? {};
-  const usagePercent = Math.min((totalSize / quota) * 100, 100);
+  const usagePercent = Math.min((usedBytes / quotaBytes) * 100, 100);
 
   // 4 阶段进度条颜色：0-50% 绿色 / 50-75% 黄色 / 75-90% 橙色 / >90% 红色
   const getBarColor = (pct: number) => {
@@ -898,7 +901,7 @@ function StorageTab() {
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span className="text-slate-300">已使用</span>
-            <span className="text-slate-400">{formatBytes(totalSize)} / {formatBytes(quota)}</span>
+            <span className="text-slate-400">{formatBytes(usedBytes)} / {formatBytes(quotaBytes)}</span>
           </div>
           <div className="w-full h-2 bg-canvas-border rounded-full overflow-hidden">
             <div

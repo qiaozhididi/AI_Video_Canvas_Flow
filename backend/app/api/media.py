@@ -8,7 +8,7 @@ import httpx
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.deps import CurrentUser, CurrentUserWithToken, DBSession
 from app.models.media_asset import MediaAsset
@@ -203,6 +203,21 @@ async def _get_asset(asset_id: str, user: str, db: DBSession) -> MediaAsset:
     if str(asset.owner_id) != user:
         raise HTTPException(status_code=403, detail="无权访问此资产")
     return asset
+
+
+@router.get("/storage-stats", summary="获取用户存储用量统计")
+async def get_storage_stats(user: CurrentUser, db: DBSession):
+    result = await db.execute(
+        select(func.coalesce(func.sum(MediaAsset.file_size), 0), func.count(MediaAsset.id))
+        .where(MediaAsset.owner_id == uuid.UUID(user))
+    )
+    used_bytes, file_count = result.one()
+    quota_bytes = 10 * 1024 * 1024 * 1024  # 10 GB 默认配额
+    return {
+        "quota_bytes": quota_bytes,
+        "used_bytes": int(used_bytes),
+        "file_count": file_count,
+    }
 
 
 def _asset_to_dict(asset: MediaAsset) -> dict:

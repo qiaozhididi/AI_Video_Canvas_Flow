@@ -26,6 +26,7 @@ class ProjectSnapshot(Base):
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     snapshot_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
     source: Mapped[str] = mapped_column(String(16))  # auto / manual
+    name: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="版本快照名称")
     label: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
