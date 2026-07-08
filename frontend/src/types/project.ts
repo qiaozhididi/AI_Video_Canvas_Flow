@@ -11,6 +11,7 @@ export interface Project {
   canvasNodes: CanvasNode[];
   canvasEdges: CanvasEdge[];
   timelineData: TimelineData;
+  ownerId?: string;
   createdAt: string;
   updatedAt: string;
 }

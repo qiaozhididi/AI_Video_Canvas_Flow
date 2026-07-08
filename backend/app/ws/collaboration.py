@@ -11,6 +11,8 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session_factory
+from app.models.project import Project
+from app.models.project_collaborator import ProjectCollaborator
 from app.models.user import User
 
 logger = logging.getLogger("app.ws.collaboration")
@@ -55,6 +57,35 @@ def _remove_member_from_room(sid: str, room: str) -> dict | None:
         if m["sid"] == sid:
             return members.pop(i)
     return None
+
+
+async def _check_edit_permission(project_id: str, user_id: str) -> bool:
+    """检查用户是否有编辑权限（owner/editor 可编辑，viewer 不可）"""
+    try:
+        async with async_session_factory() as db:
+            pid = uuid.UUID(project_id)
+            uid = uuid.UUID(user_id)
+
+            # 项目 owner 始终可编辑
+            project = await db.get(Project, pid)
+            if project and str(project.owner_id) == user_id:
+                return True
+
+            # 查询协作者角色
+            result = await db.execute(
+                select(ProjectCollaborator).where(
+                    ProjectCollaborator.project_id == pid,
+                    ProjectCollaborator.user_id == uid,
+                )
+            )
+            collab = result.scalar_one_or_none()
+            if collab and collab.role == "viewer":
+                return False
+            # 协作者非 viewer（即 editor）→ 可编辑；无记录→ 允许（兼容旧行为）
+            return True
+    except Exception as e:
+        logger.warning(f"[WS:PermCheck] 权限检查异常 project={project_id} user={user_id} err={e}")
+        return True
 
 
 # ── 连接管理 ──
@@ -203,6 +234,11 @@ async def node_update(sid, data):
     session = await _get_session_info(sid)
     user_id = session.get("user_id", "unknown")
 
+    # 权限检查：viewer 不可编辑
+    if not await _check_edit_permission(project_id, user_id):
+        await sio.emit("error", {"message": "查看者无法编辑"}, room=sid)
+        return
+
     room = f"project:{project_id}"
     await sio.emit("node_update", data, room=room, skip_sid=sid)
 
@@ -227,6 +263,11 @@ async def edge_update(sid, data):
 
     session = await _get_session_info(sid)
     user_id = session.get("user_id", "unknown")
+
+    # 权限检查：viewer 不可编辑
+    if not await _check_edit_permission(project_id, user_id):
+        await sio.emit("error", {"message": "查看者无法编辑"}, room=sid)
+        return
 
     room = f"project:{project_id}"
     await sio.emit("edge_update", data, room=room, skip_sid=sid)

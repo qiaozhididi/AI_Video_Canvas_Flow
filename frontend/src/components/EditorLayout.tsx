@@ -8,6 +8,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown } from 'lucide-react';
+import CollaboratorPanel from './CollaboratorPanel';
 import { toast } from 'sonner';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
@@ -63,6 +64,7 @@ export default function EditorLayout() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [showSaveDropdown, setShowSaveDropdown] = useState(false);
+  const [showCollabPanel, setShowCollabPanel] = useState(false);
   // 标记刚退出编辑态，避免 Escape 取消重命名后同时取消节点选中
   const justExitedEditingRef = useRef(false);
 
@@ -321,7 +323,7 @@ export default function EditorLayout() {
   return (
     <div className="h-screen flex flex-col bg-canvas-bg">
       {/* 顶部工具栏 */}
-      <div className="h-11 bg-canvas-panel border-b border-canvas-border flex items-center px-3 gap-2 flex-shrink-0">
+      <div className="h-11 bg-canvas-panel border-b border-canvas-border flex items-center px-3 gap-2 flex-shrink-0 relative">
         <button
           onClick={() => navigate('/')}
           className="p-1.5 rounded hover:bg-canvas-hover transition-colors"
@@ -345,7 +347,7 @@ export default function EditorLayout() {
 
         {/* 在线用户列表 */}
         {onlineUsers.length > 0 && (
-          <div className="flex items-center mr-2">
+          <div className="flex items-center mr-2 cursor-pointer" onClick={() => setShowCollabPanel((v) => !v)}>
             {onlineUsers.slice(0, 5).map((u, idx) => {
               const isSelf = currentUser?.id === u.user_id;
               return (
@@ -494,6 +496,15 @@ export default function EditorLayout() {
               </button>
             )}
           </div>
+        )}
+
+        {/* 协作者面板 */}
+        {showCollabPanel && projectId && (
+          <CollaboratorPanel
+            projectId={projectId}
+            isOwner={currentProject.ownerId === currentUser?.id}
+            onClose={() => setShowCollabPanel(false)}
+          />
         )}
       </div>
 

@@ -13,6 +13,7 @@ const MediaLibrary = lazy(() => import("@/pages/MediaLibrary"));
 const RenderCenter = lazy(() => import("@/pages/RenderCenter"));
 const Templates = lazy(() => import("@/pages/Templates"));
 const Settings = lazy(() => import("@/pages/Settings"));
+const AcceptInvite = lazy(() => import("@/pages/AcceptInvite"));
 
 function PageLoader() {
   return (
@@ -40,6 +41,9 @@ export default function App() {
           <Routes>
             {/* 登录页：独立布局，无需守卫 */}
             <Route path="/login" element={<Login />} />
+
+            {/* 邀请页：无需登录即可查看，接受时需登录 */}
+            <Route path="/invite/:token" element={<AcceptInvite />} />
 
             {/* 受保护路由：AuthGuard 拦截未登录 + 跨 Tab 同步 */}
             <Route element={<AuthGuard />}>

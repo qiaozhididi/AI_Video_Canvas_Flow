@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.ai import router as ai_router
 from app.api.auth import router as auth_router
 from app.api.collaboration import router as collaboration_router
+from app.api.invitations import router as invitations_router
 from app.api.media import router as media_router
 from app.api.projects import router as projects_router
 from app.api.render import router as render_router
@@ -19,9 +20,12 @@ api_router.include_router(projects_router, prefix="/projects", tags=["项目"])
 api_router.include_router(workflows_router, prefix="/workflows", tags=["工作流"])
 api_router.include_router(media_router, prefix="/media", tags=["媒体资产"])
 api_router.include_router(render_router, prefix="/render", tags=["渲染任务"])
-api_router.include_router(collaboration_router, prefix="/collab", tags=["协作"])
+# collaboration_router 含完整路径前缀（/status + /projects/{id}/collaborators），不加 prefix
+api_router.include_router(collaboration_router, tags=["协作"])
 api_router.include_router(ai_router, prefix="/ai", tags=["ai"])
 # snapshots_router 含完整路径前缀（/projects/{id}/snapshots + /snapshots/{id}），不加 prefix
 api_router.include_router(snapshots_router, tags=["快照"])
 # templates_router 含混合路径（/templates/ + /projects/{id}/publish），不加 prefix
 api_router.include_router(templates_router, tags=["模板"])
+# invitations_router 含混合路径（/projects/{id}/invitations + /invitations/{token}），不加 prefix
+api_router.include_router(invitations_router, tags=["邀请"])

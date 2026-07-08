@@ -337,6 +337,47 @@ export interface AiModelUpdateRequest {
   is_default?: boolean;
 }
 
+// ── 协作者 ──
+
+export interface CollaboratorResponse {
+  id: string;
+  project_id: string;
+  user_id: string;
+  username: string;
+  role: 'owner' | 'editor' | 'viewer';
+  created_at: string;
+}
+
+// ── 邀请 ──
+
+export interface CreateInvitationRequest {
+  role: 'editor' | 'viewer';
+  expires_in_hours: number | null;
+}
+
+export interface CreateInvitationResponse {
+  id: string;
+  token: string;
+  role: string;
+  expires_at: string | null;
+}
+
+export interface InvitationInfoResponse {
+  id: string;
+  project_id: string;
+  project_name: string;
+  role: string;
+  created_by_username: string;
+  expires_at: string | null;
+  is_valid: boolean;
+}
+
+export interface AcceptInvitationResponse {
+  project_id: string;
+  project_name: string;
+  role: string;
+}
+
 // ── 快照 ──
 
 export interface SnapshotCreateRequest {
@@ -650,6 +691,42 @@ export const snapshotApi = {
   /** 恢复快照到实际 nodes/edges */
   restore: (snapshotId: string) =>
     request<SnapshotRestoreResponse>(`/snapshots/${snapshotId}/restore`, {
+      method: 'POST',
+    }),
+};
+
+// ── 协作者 ──
+
+export const collabApi = {
+  list: (projectId: string) =>
+    request<CollaboratorResponse[]>(`/projects/${projectId}/collaborators`),
+
+  updateRole: (projectId: string, userId: string, role: string) =>
+    request<{ message: string }>(`/projects/${projectId}/collaborators/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    }),
+
+  remove: (projectId: string, userId: string) =>
+    request<{ message: string }>(`/projects/${projectId}/collaborators/${userId}`, {
+      method: 'DELETE',
+    }),
+};
+
+// ── 邀请 ──
+
+export const invitationApi = {
+  create: (projectId: string, data: CreateInvitationRequest) =>
+    request<CreateInvitationResponse>(`/projects/${projectId}/invitations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getInfo: (token: string) =>
+    request<InvitationInfoResponse>(`/invitations/${token}`),
+
+  accept: (token: string) =>
+    request<AcceptInvitationResponse>(`/invitations/${token}/accept`, {
       method: 'POST',
     }),
 };

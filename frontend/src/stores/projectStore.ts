@@ -51,6 +51,7 @@ function toFrontendProject(p: {
       currentTime: 0,
       zoom: 1,
     },
+    ownerId: p.owner_id,
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };
