@@ -259,6 +259,26 @@ export default function Editor() {
             />
           )}
         </div>
+
+        {/* 底部状态栏 */}
+        <div className="h-7 bg-canvas-panel border-t border-canvas-border flex items-center px-3 gap-4 text-[10px] text-slate-500 flex-shrink-0">
+          <span>节点: {nodes.length}</span>
+          <span>连线: {edges.length}</span>
+          <span className="flex items-center gap-1">
+            <div className={`w-1.5 h-1.5 rounded-full ${isDirty ? 'bg-status-warning' : 'bg-status-success'}`} />
+            {isDirty ? '未保存' : '已保存'}
+          </span>
+          <span>{formatLastSaved()}</span>
+          <span>操作历史: {actionList.length} 步</span>
+          <div className="flex-1" />
+          <button
+            onClick={() => setShowDebugPanel(!showDebugPanel)}
+            className="flex items-center gap-1 hover:text-slate-300 transition-colors"
+          >
+            <Database className="w-3 h-3" />
+            调试面板
+          </button>
+        </div>
       </div>
 
       {/* 右侧属性面板 */}
@@ -267,26 +287,6 @@ export default function Editor() {
         onRemoveNode={handleNodeRemove}
         onSelectClipPreview={setSelectedClipMedia}
       />
-
-      {/* 底部状态栏 */}
-      <div className="absolute bottom-0 left-60 right-72 h-7 bg-canvas-panel border-t border-canvas-border flex items-center px-3 gap-4 text-[10px] text-slate-500 z-10">
-        <span>节点: {nodes.length}</span>
-        <span>连线: {edges.length}</span>
-        <span className="flex items-center gap-1">
-          <div className={`w-1.5 h-1.5 rounded-full ${isDirty ? 'bg-status-warning' : 'bg-status-success'}`} />
-          {isDirty ? '未保存' : '已保存'}
-        </span>
-        <span>{formatLastSaved()}</span>
-        <span>操作历史: {actionList.length} 步</span>
-        <div className="flex-1" />
-        <button
-          onClick={() => setShowDebugPanel(!showDebugPanel)}
-          className="flex items-center gap-1 hover:text-slate-300 transition-colors"
-        >
-          <Database className="w-3 h-3" />
-          调试面板
-        </button>
-      </div>
 
       {/* 调试面板 - 撤销/重做操作历史 */}
       {showDebugPanel && (

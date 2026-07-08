@@ -456,6 +456,7 @@ export default function Canvas() {
         deleteKeyCode={['Backspace', 'Delete']}
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode={['Meta', 'Control']}
+        proOptions={{ hideAttribution: true }}
         className="bg-canvas-bg"
         onContextMenu={(e) => e.preventDefault()}
       >
