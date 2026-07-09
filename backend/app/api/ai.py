@@ -366,3 +366,58 @@ async def generate_workflow_endpoint(
 
     logger.info(f"[AI:GenerateWorkflow] user={user}, mode={body.mode}, nodes={len(result['nodes'])}")
     return result
+
+
+# ── AI 字幕生成 ──
+
+class GenerateSubtitlesRequest(BaseModel):
+    prompt: str
+    duration: float = 30
+    model_id: str | None = None
+
+
+SUBTITLE_SYSTEM_PROMPT = """你是一个专业的字幕生成助手。根据用户提供的文本内容，生成带时间轴的字幕分段。
+
+输出严格的 JSON 格式（不要 markdown 代码块，不要额外文字）：
+{"segments":[{"start":0.0,"end":3.5,"text":"第一句字幕"},{"start":3.5,"end":7.0,"text":"第二句字幕"}]}
+
+规则：
+1. start/end 为秒数，从 0 开始
+2. 每段字幕 2-5 秒，根据语义自然断句
+3. 所有段时间总和应接近总时长 duration
+4. 段与段时间连续，不重叠不间隔
+5. text 使用中文
+"""
+
+
+@router.post("/generate-subtitles", summary="AI 生成字幕")
+async def generate_subtitles(body: GenerateSubtitlesRequest, db: DBSession, user: CurrentUser):
+    """根据文本内容生成带时间轴的字幕分段"""
+    from app.services.ai_service import call_llm, _get_default_llm_model_id
+    import json
+
+    model_id = await _get_default_llm_model_id(db, body.model_id)
+    messages = [
+        {"role": "system", "content": SUBTITLE_SYSTEM_PROMPT},
+        {"role": "user", "content": f"文本内容：{body.prompt}\n总时长（秒）：{body.duration}"},
+    ]
+    logger.info(f"[AI:Subtitle] 生成字幕, duration={body.duration}, prompt={body.prompt[:50]}")
+
+    raw = await call_llm(db, model_id, messages, temperature=0.3)
+
+    # 解析 JSON（容忍 markdown 代码块包裹）
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:]).strip()
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"AI 返回格式异常: {e}")
+
+    segments = data.get("segments", [])
+    if not segments:
+        raise HTTPException(status_code=422, detail="AI 未生成字幕分段")
+
+    return {"segments": segments}

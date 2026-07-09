@@ -541,6 +541,7 @@ NODE_WHITELIST: dict[str, str] = {
     "image_to_video": "ai_inference",
     "text_to_speech": "ai_inference",
     "text_to_video": "ai_inference",
+    "text_to_subtitle": "ai_inference",
     "upscale": "processing",
     "style_transfer": "processing",
     "remove_bg": "processing",
@@ -563,6 +564,7 @@ NODE_DEFAULT_LABELS: dict[str, str] = {
     "image_to_video": "图生视频",
     "text_to_speech": "文生语音",
     "text_to_video": "文生视频",
+    "text_to_subtitle": "AI 字幕",
     "upscale": "高清放大",
     "style_transfer": "风格化",
     "remove_bg": "抠图",
@@ -586,6 +588,7 @@ NODE_DEFAULT_PARAMS: dict[str, dict] = {
     "image_to_video": {"prompt": "", "duration": 5},
     "text_to_speech": {"text": "", "voice": "default"},
     "text_to_video": {"prompt": "", "duration": 5},
+    "text_to_subtitle": {"prompt": "", "duration": 30},
     "upscale": {"scale": 2},
     "style_transfer": {"style": ""},
     "remove_bg": {},
@@ -605,6 +608,7 @@ AI_INFERENCE_MODEL_TYPE: dict[str, str] = {
     "image_to_video": "video_gen",
     "text_to_speech": "tts",
     "text_to_video": "video_gen",
+    "text_to_subtitle": "llm",
 }
 
 

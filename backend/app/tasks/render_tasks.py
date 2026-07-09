@@ -232,6 +232,14 @@ AI_TASK_CONFIG = {
         "has_size_param": False,
         "has_size_retry": False,
     },
+    "ai_subtitle": {
+        "default_prompt": "生成字幕文本",
+        "needs_image": False,
+        "result_key": "segments",
+        "fallback_msg": "未配置LLM模型",
+        "has_size_param": False,
+        "has_size_retry": False,
+    },
 }
 
 
