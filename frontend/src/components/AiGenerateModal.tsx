@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 import { aiApi, type NodeCreateRequest, type EdgeCreateRequest } from '@/utils/apiClient';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 interface AiGenerateModalProps {
   open: boolean;
@@ -41,7 +42,7 @@ export default function AiGenerateModal({ open, onClose, onGenerated }: AiGenera
       setError(null);
       onClose();
     } catch (err: any) {
-      const msg = err?.message || '生成失败,请重试';
+      const msg = getErrorMessage(err, 'ai_generate');
       setError(msg);
       // 不关闭模态框,保留输入内容便于重试
     } finally {

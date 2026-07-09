@@ -13,6 +13,7 @@ import type { NodeStatus } from '@/types/canvas';
 import type { TrackType } from '@/types/timeline';
 import { renderApi, aiApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge, NodeSubtype, Artifact } from '@/types/canvas';
+import { getErrorMessage } from '@/utils/errorMessages';
 import type { RenderTaskResponse } from '@/utils/apiClient';
 
 // ── 节点可执行性判定 ──
@@ -226,7 +227,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
 
     return result;
   } catch (err: any) {
-    useCanvasStore.getState().setNodeError(nodeId, err?.message || '执行失败');
+    useCanvasStore.getState().setNodeError(nodeId, getErrorMessage(err, 'node_execute'));
     throw err;
   }
 }

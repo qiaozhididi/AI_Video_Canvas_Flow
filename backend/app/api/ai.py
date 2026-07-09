@@ -112,7 +112,7 @@ async def update_provider(provider_id: str, body: ProviderUpdate, db: DBSession,
     result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(provider_id)))
     provider = result.scalar_one_or_none()
     if not provider:
-        raise HTTPException(status_code=404, detail="Provider 不存在")
+        raise HTTPException(status_code=404, detail="AI 服务商不存在")
 
     if body.name is not None:
         provider.name = body.name
@@ -137,7 +137,7 @@ async def delete_provider(provider_id: str, db: DBSession, user: CurrentUser):
     result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(provider_id)))
     provider = result.scalar_one_or_none()
     if not provider:
-        raise HTTPException(status_code=404, detail="Provider 不存在")
+        raise HTTPException(status_code=404, detail="AI 服务商不存在")
     # 级联删除关联 models
     deleted_count = 0
     model_result = await db.execute(select(AiModel).where(AiModel.provider_id == uuid.UUID(provider_id)))
@@ -156,7 +156,7 @@ async def delete_provider(provider_id: str, db: DBSession, user: CurrentUser):
 async def create_model(body: ModelCreate, db: DBSession, user: CurrentUser):
     result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(body.provider_id)))
     if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Provider 不存在")
+        raise HTTPException(status_code=404, detail="AI 服务商不存在")
 
     model = AiModel(
         provider_id=uuid.UUID(body.provider_id),
@@ -203,7 +203,7 @@ async def update_model(model_id: str, body: ModelUpdate, db: DBSession, user: Cu
     result = await db.execute(select(AiModel).where(AiModel.id == uuid.UUID(model_id)))
     model = result.scalar_one_or_none()
     if not model:
-        raise HTTPException(status_code=404, detail="Model 不存在")
+        raise HTTPException(status_code=404, detail="AI 模型不存在")
 
     if body.provider_id is not None:
         model.provider_id = uuid.UUID(body.provider_id)
@@ -237,7 +237,7 @@ async def delete_model(model_id: str, db: DBSession, user: CurrentUser):
     result = await db.execute(select(AiModel).where(AiModel.id == uuid.UUID(model_id)))
     model = result.scalar_one_or_none()
     if not model:
-        raise HTTPException(status_code=404, detail="Model 不存在")
+        raise HTTPException(status_code=404, detail="AI 模型不存在")
     await db.delete(model)
     await db.commit()
     logger.info(f"[AI:Model:Delete] id={model_id}")
@@ -359,10 +359,10 @@ async def generate_workflow_endpoint(
         elif "AI 返回格式异常" in msg or "AI 生成内容无效" in msg:
             raise HTTPException(status_code=502, detail=msg)
         else:
-            raise HTTPException(status_code=502, detail=f"AI 服务调用失败: {msg}")
+            raise HTTPException(status_code=502, detail="AI 服务调用失败，请检查配置或稍后重试")
     except Exception as e:
         logger.error(f"[AI:GenerateWorkflow] 未预期错误: {e}", exc_info=True)
-        raise HTTPException(status_code=502, detail=f"AI 服务调用失败: {str(e)}")
+        raise HTTPException(status_code=502, detail="AI 服务暂时不可用，请稍后重试")
 
     logger.info(f"[AI:GenerateWorkflow] user={user}, mode={body.mode}, nodes={len(result['nodes'])}")
     return result

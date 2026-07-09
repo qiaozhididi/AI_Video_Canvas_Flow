@@ -5,6 +5,7 @@ import { NODE_CATEGORIES } from '@/types/canvas';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { executeNode } from '@/utils/workflowExecutor';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 import {
   Type, Image, Music, Wand2, Video, Mic,
   Maximize, Palette, Scissors, Expand,
@@ -165,7 +166,7 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                executeNode(id).catch((err) => { toast.error(`执行失败: ${err?.message || '未知错误'}`); });
+                executeNode(id).catch((err) => { toast.error(getErrorMessage(err, 'node_execute')); });
               }}
               className="p-0.5 rounded hover:bg-canvas-hover text-status-error hover:text-status-running transition-colors flex-shrink-0"
               title="重试"

@@ -4,6 +4,7 @@ import {
   Server, Cpu, Plus, Edit2, Trash2, X, Star, Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 import {
   aiApi,
   authApi,
@@ -343,7 +344,7 @@ function AiConfigTab() {
       fetchProviders();
       fetchModels();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_provider_save');
       toast.error(msg);
     }
   };
@@ -353,7 +354,7 @@ function AiConfigTab() {
       await aiApi.providers.update(p.id, { is_active: !p.is_active });
       fetchProviders();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_provider_save');
       toast.error(msg);
     }
   };
@@ -367,7 +368,7 @@ function AiConfigTab() {
       fetchProviders();
       fetchModels();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_provider_delete');
       toast.error(msg);
     }
   };
@@ -386,7 +387,7 @@ function AiConfigTab() {
       setModelModal({ open: false });
       fetchModels();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_model_save');
       toast.error(msg);
     }
   };
@@ -396,7 +397,7 @@ function AiConfigTab() {
       await aiApi.models.update(m.id, { is_active: !m.is_active });
       fetchModels();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_model_save');
       toast.error(msg);
     }
   };
@@ -408,7 +409,7 @@ function AiConfigTab() {
       toast.success('Model 已删除');
       fetchModels();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_model_delete');
       toast.error(msg);
     }
   };
@@ -419,7 +420,7 @@ function AiConfigTab() {
       toast.success(`已将「${m.display_name}」设为默认`);
       fetchModels();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '操作失败';
+      const msg = getErrorMessage(err, 'ai_model_default');
       toast.error(msg);
     }
   };
@@ -774,7 +775,7 @@ function ProfileTab() {
         setAvatarUrl(user.avatar_url ?? '');
       })
       .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : '加载用户信息失败';
+        const msg = getErrorMessage(err, 'auth_update');
         toast.error(msg);
       })
       .finally(() => setLoading(false));
@@ -791,7 +792,7 @@ function ProfileTab() {
       await authApi.update(data);
       toast.success('个人信息已保存');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '保存失败';
+      const msg = getErrorMessage(err, 'auth_update');
       toast.error(msg);
     } finally {
       setSaving(false);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
@@ -16,6 +17,7 @@ import type { Clip, TrackType } from '@/types/timeline';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import { aiApi } from '@/utils/apiClient';
 import type { AiModelResponse } from '@/utils/apiClient';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 export default function Editor() {
   // ===== Store hooks =====
@@ -451,8 +453,8 @@ function PropertyPanelWithHistory({
     try {
       const models = await aiApi.models.list();
       setAiModels(models);
-    } catch {
-      // 静默失败
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'ai_model_load'));
     } finally {
       setLoadingModels(false);
     }

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { invitationApi, type InvitationInfoResponse } from '@/utils/apiClient';
 import { useAuthStore } from '@/stores/authStore';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 import { Mail, Loader2, CheckCircle, XCircle, LogIn } from 'lucide-react';
 
 type PageState = 'loading' | 'loaded' | 'accepting' | 'accepted' | 'error';
@@ -27,7 +28,7 @@ export default function AcceptInvite() {
         setState('loaded');
       })
       .catch((err: any) => {
-        setErrorMsg(err?.message || '获取邀请信息失败');
+        setErrorMsg(getErrorMessage(err, 'invite_accept'));
         setState('error');
       });
   }, [token]);
@@ -41,7 +42,7 @@ export default function AcceptInvite() {
       toast.success(`已加入项目「${res.project_name}」`);
       setTimeout(() => navigate(`/editor/${res.project_id}`, { replace: true }), 1000);
     } catch (err: any) {
-      toast.error(err?.message || '接受邀请失败');
+      toast.error(getErrorMessage(err, 'invite_accept'));
       setState('loaded');
     }
   };

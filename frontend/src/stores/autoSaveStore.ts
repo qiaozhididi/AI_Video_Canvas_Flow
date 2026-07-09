@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
 import type { TimelineData } from '@/types/timeline';
 import { useCanvasStore } from './canvasStore';
@@ -7,6 +8,7 @@ import { useProjectStore } from './projectStore';
 import { useHistoryStore } from './historyStore';
 import { toPng } from 'html-to-image';
 import { snapshotApi, projectApi, type SnapshotResponse } from '@/utils/apiClient';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 /** 截取画布预览图并上传为项目封面（不走媒体库，覆盖旧封面） */
 async function updateCanvasCover(projectId: string) {
@@ -169,6 +171,7 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
       void updateCanvasCover(projectId);
     } catch (err) {
       console.error(`${LOG} 保存失败:`, err);
+      toast.error(getErrorMessage(err, 'autosave'));
       set({ isSaving: false });
     }
   },
@@ -247,6 +250,7 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
         return null;
       }
       console.error(`${LOG} 检查恢复失败:`, err);
+      toast.error(getErrorMessage(err, 'autosave_recovery'));
       return null;
     }
   },
@@ -283,6 +287,7 @@ export const useAutoSaveStore = create<AutoSaveStore>((set, get) => ({
       });
     } catch (err) {
       console.error(`${LOG} 恢复快照失败:`, err);
+      toast.error(getErrorMessage(err, 'snapshot_restore'));
       throw err;
     }
   },

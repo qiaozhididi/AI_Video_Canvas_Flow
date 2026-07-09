@@ -2,6 +2,7 @@ import { Search, Download, Tag } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 import { templateApi, type TemplateResponse } from '../utils/apiClient';
 
 const CATEGORIES = ['全部', '官方'] as const;
@@ -22,7 +23,7 @@ export default function Templates() {
     templateApi.list(params)
       .then(setTemplates)
       .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : '加载模板失败';
+        const msg = getErrorMessage(err, 'template_clone');
         toast.error(msg);
       })
       .finally(() => setLoading(false));
@@ -48,7 +49,7 @@ export default function Templates() {
       toast.success(`已从模板创建项目「${project.name}」`);
       navigate(`/editor/${project.id}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '克隆失败';
+      const msg = getErrorMessage(err, 'template_clone');
       toast.error(msg);
     } finally {
       setCloningId(null);

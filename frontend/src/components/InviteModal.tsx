@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Link, Copy, Loader2, Check } from 'lucide-react';
 import { invitationApi } from '@/utils/apiClient';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 interface InviteModalProps {
   projectId: string;
@@ -40,7 +41,7 @@ export default function InviteModal({ projectId, onClose }: InviteModalProps) {
       setInviteLink(link);
       setStage('created');
     } catch (err: any) {
-      toast.error(err?.message || '创建邀请链接失败');
+      toast.error(getErrorMessage(err, 'invite_create'));
       setStage('idle');
     }
   };

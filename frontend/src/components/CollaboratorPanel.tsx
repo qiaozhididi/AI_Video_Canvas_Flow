@@ -4,6 +4,7 @@ import { collabApi, type CollaboratorResponse } from '@/utils/apiClient';
 import { useAuthStore } from '@/stores/authStore';
 import InviteModal from './InviteModal';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 interface CollaboratorPanelProps {
   projectId: string;
@@ -36,7 +37,7 @@ export default function CollaboratorPanel({ projectId, isOwner, onClose }: Colla
       setCollaborators((prev) => prev.filter((c) => c.user_id !== userId));
       toast.success(`已移除 ${username}`);
     } catch (err: any) {
-      toast.error(err?.message || '移除失败');
+      toast.error(getErrorMessage(err, 'collab_remove'));
     }
   };
 
@@ -48,7 +49,7 @@ export default function CollaboratorPanel({ projectId, isOwner, onClose }: Colla
       );
       toast.success(`已将 ${username} 设为${ROLE_CONFIG[newRole as keyof typeof ROLE_CONFIG]?.label || newRole}`);
     } catch (err: any) {
-      toast.error(err?.message || '修改权限失败');
+      toast.error(getErrorMessage(err, 'collab_update_role'));
     }
   };
 

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import type { Project } from '@/types/project';
 import { createEmptyProject } from '@/types/project';
 import { useCanvasStore } from './canvasStore';
@@ -7,6 +8,7 @@ import { useAutoSaveStore } from './autoSaveStore';
 import { projectApi, workflowApi, snapshotApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
 import { toCanvasNode, toCanvasEdge } from '@/utils/canvasTransform';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 interface ProjectState {
   projects: Project[];
@@ -124,8 +126,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const resp = await projectApi.list();
       const projects = resp.map(toFrontendProject);
       set({ projects, isLoading: false });
-    } catch {
+    } catch (err) {
       set({ isLoading: false });
+      toast.error(getErrorMessage(err, 'project_load'));
     }
   },
 
@@ -181,7 +184,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }
 
       return hasData;
-    } catch {
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'workflow_load'));
       return false;
     }
   },
@@ -202,6 +206,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       });
     } catch (err) {
       console.error('[ProjectStore] 刷新当前项目失败:', err);
+      toast.error(getErrorMessage(err, 'project_refresh'));
     }
   },
 }));

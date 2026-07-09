@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { NODE_TEMPLATES, NODE_CATEGORIES, type NodeSubtype, type CanvasNodeData } from '@/types/canvas';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 // 节点模板图标映射（与 CanvasNode.tsx 的 ICON_MAP 一致）
 const ICON_MAP_LUCIDE: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -297,7 +298,7 @@ export default function Canvas() {
         shortcut: 'F5',
         onClick: () => {
           void executeNode(menuState.targetNodeId!).catch((err) => {
-            toast.error(`执行失败: ${err?.message || '未知错误'}`);
+            toast.error(getErrorMessage(err, 'node_execute'));
           });
         },
       });

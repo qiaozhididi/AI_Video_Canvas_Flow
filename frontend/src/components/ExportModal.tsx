@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { X, Download, Loader2 } from 'lucide-react';
 import { renderApi } from '@/utils/apiClient';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 interface ExportModalProps {
   projectId: string;
@@ -70,7 +71,7 @@ export default function ExportModal({ projectId, onClose }: ExportModalProps) {
       }, 2000);
     } catch (err: any) {
       setStage('failed');
-      toast.error(err?.message || '导出请求失败');
+      toast.error(getErrorMessage(err, 'render_export'));
     }
   };
 

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
+import { getErrorMessage } from '@/utils/errorMessages';
 import { templateApi, aiApi, workflowApi, type TemplateResponse, type AiModelResponse } from '../utils/apiClient';
 
 export default function Home() {
@@ -90,7 +91,7 @@ export default function Home() {
       setPublishTags('');
       setPublishCategory('官方');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '发布失败';
+      const msg = getErrorMessage(err, 'template_publish');
       toast.error(msg);
     } finally {
       setPublishing(false);
@@ -105,7 +106,7 @@ export default function Home() {
       setShowTemplateDialog(false);
       navigate(`/editor/${project.id}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '克隆模板失败';
+      const msg = getErrorMessage(err, 'template_clone');
       toast.error(msg);
     } finally {
       setCloningId(null);
@@ -131,7 +132,7 @@ export default function Home() {
       setAiDescription('');
       navigate(`/editor/${project.id}`);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'AI 生成失败';
+      const msg = getErrorMessage(err, 'ai_generate');
       toast.error(msg);
     } finally {
       setAiGenerating(false);

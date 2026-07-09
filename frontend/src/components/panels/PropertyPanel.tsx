@@ -2,6 +2,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { NODE_CATEGORIES, type CanvasNodeData, type ProcessingSubtype, type ControlSubtype } from '@/types/canvas';
 import { X, Trash2, Play } from 'lucide-react';
 import { executeNode } from '../../utils/workflowExecutor';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 export default function PropertyPanel() {
   const { nodes, selectedNodeId, updateNodeData, removeNode, setNodeStatus, setNodeError } = useCanvasStore();
@@ -180,7 +181,7 @@ export default function PropertyPanel() {
                 await executeNode(selectedNode.id);
               } catch (err: any) {
                 setNodeStatus(selectedNode.id, 'failed', 0);
-                setNodeError(selectedNode.id, err.message || '执行失败');
+                setNodeError(selectedNode.id, getErrorMessage(err, 'node_execute'));
               }
             }}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-gradient-to-r from-neon-purple to-neon-blue rounded-md hover:opacity-90 transition-opacity"
