@@ -8,9 +8,11 @@ export interface Clip {
   start: number;
   end: number;
   mediaUrl: string;
-  mediaType?: 'image' | 'video' | 'audio';
+  mediaType?: 'image' | 'video' | 'audio' | 'subtitle';
   label: string;
   color?: string;
+  /** 字幕文本内容 */
+  subtitleText?: string;
   /** 关联的画布节点 ID，用于双向绑定 */
   nodeId?: string;
 }

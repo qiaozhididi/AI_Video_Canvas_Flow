@@ -404,14 +404,16 @@ function PropertyPanelWithHistory({
     if (artifact.type === 'audio') {
       const subtitleTrack = timelineTracks.find((t) => t.type === 'subtitle');
       if (subtitleTrack) {
+        const subtitleText = (data.params?.text as string) || (data.params?.prompt as string) || '';
         const subtitleClip: Clip = {
           id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           trackId: subtitleTrack.id,
           start: clip.start,
           end: clip.end,
-          mediaType: 'audio',
+          mediaType: 'subtitle',
           mediaUrl: '',
-          label: data.params?.text || data.params?.prompt || clip.label,
+          subtitleText,
+          label: subtitleText.length > 20 ? subtitleText.slice(0, 20) + '…' : subtitleText || clip.label,
           color: undefined,
           nodeId: selectedNode.id,
         };

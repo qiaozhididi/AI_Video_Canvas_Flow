@@ -227,14 +227,16 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
         if (artifact.type === 'audio') {
           const subtitleTrack = timelineData.tracks.find((t) => t.type === 'subtitle');
           if (subtitleTrack) {
+            const subtitleText = ((node.data.params?.text as string) || (node.data.params?.prompt as string)) ?? '';
             addClip(subtitleTrack.id, {
               id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               trackId: subtitleTrack.id,
               start: timelineData.currentTime,
               end: timelineData.currentTime + duration,
               mediaUrl: '',
-              mediaType: 'audio',
-              label: (node.data.params?.text as string) || (node.data.params?.prompt as string) || node.data.label || node.data.subtype,
+              mediaType: 'subtitle',
+              subtitleText,
+              label: subtitleText.length > 20 ? subtitleText.slice(0, 20) + '…' : subtitleText || node.data.label || node.data.subtype,
               nodeId,
             });
           }

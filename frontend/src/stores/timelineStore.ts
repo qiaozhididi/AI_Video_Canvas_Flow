@@ -29,6 +29,7 @@ interface TimelineState {
   removeClip: (trackId: string, clipId: string) => void;
   moveClip: (trackId: string, clipId: string, newStart: number) => void;
   resizeClip: (trackId: string, clipId: string, newStart: number, newEnd: number) => void;
+  updateClipText: (trackId: string, clipId: string, text: string) => void;
 
   // 缩放
   setZoom: (zoom: number) => void;
@@ -213,6 +214,29 @@ export const useTimelineStore = create<TimelineState>((set) => ({
                 ...t,
                 clips: t.clips.map((c) =>
                   c.id === clipId ? { ...c, start: newStart, end: newEnd } : c
+                ),
+              }
+            : t
+        ),
+      },
+    })),
+
+  updateClipText: (trackId, clipId, text) =>
+    set((state) => ({
+      data: {
+        ...state.data,
+        tracks: state.data.tracks.map((t) =>
+          t.id === trackId
+            ? {
+                ...t,
+                clips: t.clips.map((c) =>
+                  c.id === clipId
+                    ? {
+                        ...c,
+                        subtitleText: text,
+                        label: text.length > 20 ? text.slice(0, 20) + '…' : text || c.label,
+                      }
+                    : c
                 ),
               }
             : t
