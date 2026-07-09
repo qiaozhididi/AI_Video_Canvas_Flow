@@ -23,7 +23,7 @@ export default function Templates() {
     templateApi.list(params)
       .then(setTemplates)
       .catch((err: unknown) => {
-        const msg = getErrorMessage(err, 'template_clone');
+        const msg = getErrorMessage(err, 'template_load');
         toast.error(msg);
       })
       .finally(() => setLoading(false));

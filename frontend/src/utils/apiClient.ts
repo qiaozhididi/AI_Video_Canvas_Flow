@@ -83,7 +83,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (!res.ok) {
-    if (res.status === 401) {
+    // 认证接口（登录/注册/刷新）的 401 是业务错误，不应触发 token 刷新
+    const isAuthEndpoint = path.startsWith('/auth/');
+    if (res.status === 401 && !isAuthEndpoint) {
       try {
         const newToken = await refreshToken();
         // 用新 token 重试原请求

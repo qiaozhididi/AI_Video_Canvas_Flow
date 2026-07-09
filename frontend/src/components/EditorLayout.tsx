@@ -7,10 +7,10 @@ import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
-import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown, Users } from 'lucide-react';
-import CollaboratorPanel from './CollaboratorPanel';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
+import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown, Users } from 'lucide-react';
+import CollaboratorPanel from './CollaboratorPanel';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
@@ -78,7 +78,7 @@ export default function EditorLayout() {
       if (result.state === 'completed') {
         toast.success('工作流执行完成');
       } else if (result.state === 'failed') {
-        toast.error(getErrorMessage(new Error(result.error), 'workflow_execute'));
+        toast.error(`工作流执行失败: ${result.error}`);
       }
     } catch (err: any) {
       setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: err.message });
@@ -100,7 +100,7 @@ export default function EditorLayout() {
       if (result.state === 'completed') {
         toast.success('断点续执行完成');
       } else if (result.state === 'failed') {
-        toast.error(getErrorMessage(new Error(result.error), 'workflow_resume'));
+        toast.error(`断点续执行失败: ${result.error}`);
       }
     } catch (err: any) {
       setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: err.message });

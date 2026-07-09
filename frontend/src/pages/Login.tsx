@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/utils/apiClient';
 import { toast } from 'sonner';
-import { Sparkles, Loader2 } from 'lucide-react';
 import { getErrorMessage } from '@/utils/errorMessages';
+import { Sparkles, Loader2 } from 'lucide-react';
 
 type Mode = 'login' | 'register';
 

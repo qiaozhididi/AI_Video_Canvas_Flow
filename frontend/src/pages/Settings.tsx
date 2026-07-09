@@ -775,8 +775,7 @@ function ProfileTab() {
         setAvatarUrl(user.avatar_url ?? '');
       })
       .catch((err: unknown) => {
-        const msg = getErrorMessage(err, 'auth_update');
-        toast.error(msg);
+        toast.error(getErrorMessage(err, 'auth_update'));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -792,8 +791,7 @@ function ProfileTab() {
       await authApi.update(data);
       toast.success('个人信息已保存');
     } catch (err: unknown) {
-      const msg = getErrorMessage(err, 'auth_update');
-      toast.error(msg);
+      toast.error(getErrorMessage(err, 'settings_save'));
     } finally {
       setSaving(false);
     }
