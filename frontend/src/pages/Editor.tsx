@@ -180,6 +180,7 @@ export default function Editor() {
                 mediaType={preview.type}
                 currentTime={timelineCurrentTime}
                 onTimeUpdate={handleTimeUpdate}
+                subtitleText={preview.subtitleText}
               />
             </div>
           )}

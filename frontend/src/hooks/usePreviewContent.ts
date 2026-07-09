@@ -5,6 +5,7 @@ import { useTimelineStore } from '@/stores/timelineStore';
 interface PreviewContent {
   url: string | undefined;
   type: 'image' | 'video' | undefined;
+  subtitleText?: string;
 }
 
 export function usePreviewContent(
@@ -19,20 +20,32 @@ export function usePreviewContent(
     if (isTimelinePlaying) {
       const ct = timelineData.currentTime;
       const trackPriority: Record<string, number> = { video: 0, audio: 1, subtitle: 2 };
-      const activeClips = timelineData.tracks
+      const allActiveClips = timelineData.tracks
         .filter((t) => t.visible && !t.muted)
         .flatMap((t) => t.clips.map((c) => ({ ...c, trackType: t.type })))
-        .filter((c) => ct >= c.start && ct < c.end && c.mediaUrl)
+        .filter((c) => ct >= c.start && ct < c.end && (c.mediaUrl || c.subtitleText));
+
+      // 媒体片段（有 mediaUrl）排序取第一个 → 控制 url/type
+      const mediaClip = allActiveClips
+        .filter((c) => c.mediaUrl)
         .sort((a, b) => {
           const pa = trackPriority[a.trackType] ?? 9;
           const pb = trackPriority[b.trackType] ?? 9;
           if (pa !== pb) return pa - pb;
           return a.start - b.start;
-        });
-      const activeClip = activeClips[0];
-      if (activeClip) {
-        const clipType = activeClip.mediaType || 'video';
-        return { url: activeClip.mediaUrl, type: clipType as 'image' | 'video' | undefined };
+        })[0];
+
+      // 字幕片段（trackType === 'subtitle' 且有 subtitleText）
+      const subtitleClip = allActiveClips.find(
+        (c) => c.trackType === 'subtitle' && c.subtitleText,
+      );
+
+      if (mediaClip) {
+        const clipType = mediaClip.mediaType || 'video';
+        return { url: mediaClip.mediaUrl, type: clipType as 'image' | 'video' | undefined, subtitleText: subtitleClip?.subtitleText };
+      }
+      if (subtitleClip) {
+        return { url: undefined, type: undefined, subtitleText: subtitleClip.subtitleText };
       }
       return { url: undefined, type: undefined };
     }

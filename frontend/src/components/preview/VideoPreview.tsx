@@ -10,9 +10,10 @@ interface VideoPreviewProps {
   mediaType?: 'image' | 'video';
   currentTime?: number;
   onTimeUpdate?: (time: number) => void;
+  subtitleText?: string;
 }
 
-export default function VideoPreview({ src, poster, mediaType, currentTime, onTimeUpdate }: VideoPreviewProps) {
+export default function VideoPreview({ src, poster, mediaType, currentTime, onTimeUpdate, subtitleText }: VideoPreviewProps) {
   const videoRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<Player | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -123,6 +124,12 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
             <p className="text-xs text-slate-600">执行 AI 节点后，将产出加入时间轴</p>
             <p className="text-xs text-slate-600">播放时间轴即可在此预览</p>
           </div>
+        </div>
+      )}
+      {/* 字幕覆盖层 */}
+      {subtitleText && (
+        <div className="absolute bottom-[8%] left-1/2 -translate-x-1/2 bg-black/70 text-white px-4 py-1.5 rounded text-sm max-w-[80%] text-center transition-opacity duration-200 pointer-events-none">
+          {subtitleText}
         </div>
       )}
       {/* 全屏按钮 */}
