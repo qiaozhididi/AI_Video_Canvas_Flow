@@ -669,6 +669,13 @@ export const aiApi = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  /** AI 字幕生成 */
+  generateSubtitles: (prompt: string, duration: number = 30, modelId?: string) =>
+    request<{ segments: Array<{ start: number; end: number; text: string }> }>('/ai/generate-subtitles', {
+      method: 'POST',
+      body: JSON.stringify({ prompt, duration, model_id: modelId }),
+    }),
 };
 
 // ── 快照 ──

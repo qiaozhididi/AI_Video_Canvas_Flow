@@ -19,13 +19,13 @@ import type { RenderTaskResponse } from '@/utils/apiClient';
 // ── 节点可执行性判定 ──
 
 const EXECUTABLE_SUBTYPES: Set<string> = new Set([
-  'text_to_image', 'image_to_image', 'image_to_video', 'text_to_video', 'text_to_speech',
+  'text_to_image', 'image_to_image', 'image_to_video', 'text_to_video', 'text_to_speech', 'text_to_subtitle',
   'upscale', 'style_transfer', 'remove_bg', 'extend_image',
   'video_output', 'image_output', 'audio_output',
 ]);
 
 const AI_SUBTYPES: Set<string> = new Set([
-  'text_to_image', 'image_to_image', 'image_to_video', 'text_to_video', 'text_to_speech',
+  'text_to_image', 'image_to_image', 'image_to_video', 'text_to_video', 'text_to_speech', 'text_to_subtitle',
 ]);
 
 /** 节点 subtype → 后端 task_type 映射 */
@@ -35,6 +35,7 @@ function getTaskType(subtype: NodeSubtype): string {
   if (subtype === 'image_to_video') return 'ai_img2video';
   if (subtype === 'text_to_video') return 'ai_text2video';
   if (subtype === 'text_to_speech') return 'ai_tts';
+  if (subtype === 'text_to_subtitle') return 'ai_subtitle';
   return 'render';
 }
 
@@ -125,6 +126,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
           image_to_video: 'video_gen',
           text_to_video: 'video_gen',
           text_to_speech: 'tts',
+          text_to_subtitle: 'llm',
         };
         const modelType = modelTypeMap[node.data.subtype];
         const defaultModel = await aiApi.models.getDefault(modelType);
@@ -155,6 +157,61 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
     : undefined;
 
   useCanvasStore.getState().setNodeStatus(nodeId, 'pending', 0);
+
+  // ── ai_subtitle 特殊处理：直接调用字幕生成 API，不走 render 流程 ──
+  if (taskType === 'ai_subtitle') {
+    useCanvasStore.getState().setNodeStatus(nodeId, 'running', 0);
+    try {
+      const duration = (node.data.params.duration as number) || 30;
+      const subtitleResult = await aiApi.generateSubtitles(prompt || '', duration, modelId);
+      const segments = subtitleResult.segments || [];
+
+      // 批量将 segments 添加到字幕轨
+      if (segments.length > 0) {
+        const { addClip, data: timelineData } = useTimelineStore.getState();
+        const subtitleTrack = timelineData.tracks.find((t) => t.type === 'subtitle');
+        if (subtitleTrack) {
+          for (const seg of segments) {
+            addClip(subtitleTrack.id, {
+              id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              trackId: subtitleTrack.id,
+              start: seg.start,
+              end: seg.end,
+              mediaUrl: '',
+              mediaType: 'subtitle',
+              subtitleText: seg.text,
+              label: seg.text.length > 20 ? seg.text.slice(0, 20) + '…' : seg.text,
+              nodeId,
+            });
+          }
+        }
+      }
+
+      useCanvasStore.getState().setNodeOutput(nodeId, []);
+      useCanvasStore.getState().setNodeStatus(nodeId, 'completed', 100);
+
+      // 返回一个虚拟的 RenderTaskResponse 以保持接口兼容
+      return {
+        id: `subtitle-${Date.now()}`,
+        project_id: projectId,
+        owner_id: '',
+        task_type: taskType,
+        status: 'completed',
+        progress: 100,
+        celery_task_id: null,
+        result_url: null,
+        error_message: null,
+        node_id: nodeId,
+        node_label: node.data.label,
+        project_name: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    } catch (err: any) {
+      useCanvasStore.getState().setNodeError(nodeId, getErrorMessage(err, 'node_execute'));
+      throw err;
+    }
+  }
 
   const task = await renderApi.create({
     project_id: projectId,
