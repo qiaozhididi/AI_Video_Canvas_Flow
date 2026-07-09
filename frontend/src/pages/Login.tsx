@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { authApi } from '@/utils/apiClient';
 import { toast } from 'sonner';
 import { Sparkles, Loader2 } from 'lucide-react';
+import { getErrorMessage } from '@/utils/errorMessages';
 
 type Mode = 'login' | 'register';
 
@@ -52,12 +53,7 @@ export default function Login() {
       toast.success('登录成功');
       navigate('/');
     } catch (err) {
-      if (err instanceof Error && 'status' in err) {
-        const apiErr = err as { status: number; message: string };
-        toast.error(apiErr.message || (mode === 'login' ? '登录失败' : '注册失败'));
-      } else {
-        toast.error(mode === 'login' ? '登录失败' : '注册失败');
-      }
+      toast.error(getErrorMessage(err, mode === 'login' ? 'auth_login' : 'auth_register'));
     } finally {
       setLoading(false);
     }

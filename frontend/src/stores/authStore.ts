@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authApi, ApiError } from '@/utils/apiClient';
+import { getErrorMessage } from '@/utils/errorMessages';
 import type { User } from '@/types/api';
 
 interface AuthState {
@@ -34,7 +35,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const user = await authApi.getMe();
       set({ user, isLoading: false });
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : '登录失败';
+      const msg = getErrorMessage(err, 'auth_login');
       set({ error: msg, isLoading: false });
       throw err;
     }
@@ -47,7 +48,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       // 注册成功后自动登录（后端用 username 登录）
       await useAuthStore.getState().login(username, password);
     } catch (err) {
-      const msg = err instanceof ApiError ? err.message : '注册失败';
+      const msg = getErrorMessage(err, 'auth_register');
       set({ error: msg, isLoading: false });
       throw err;
     }
