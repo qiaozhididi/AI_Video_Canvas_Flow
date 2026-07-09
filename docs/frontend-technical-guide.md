@@ -105,6 +105,9 @@ frontend/src/
 │   └── useTheme.ts            # 主题切换
 │
 ├── utils/                     # 工具函数
+│   ├── apiClient.ts           # API 客户端（请求封装、401 拦截、Token 刷新）
+│   ├── errorMessages.ts       # 全局错误提示映射表（场景化 fallback + HTTP 状态码兜底）
+│   ├── workflowExecutor.ts    # 工作流执行引擎（拓扑排序 + 单节点/全流程执行）
 │   └── mockData.ts            # Mock 数据（9节点+7边完整工作流）
 │
 └── lib/
@@ -301,6 +304,36 @@ idle → pending → running → completed
 - `useEffect` 必须声明依赖数组，禁止省略
 - 大列表使用虚拟滚动
 - 快照深拷贝使用 `JSON.parse(JSON.stringify())`
+
+### 9.5 错误处理规范
+
+全局错误提示统一使用 `@/utils/errorMessages.ts` 中的 `getErrorMessage(err, scene?)` 函数：
+
+**策略：直接信任后端 detail 消息 + 场景化 fallback 兜底**
+
+```typescript
+import { getErrorMessage } from '@/utils/errorMessages';
+
+// 用法：catch 块中传入错误对象 + 场景标识
+catch (err) {
+  toast.error(getErrorMessage(err, 'project_save'));
+}
+```
+
+**优先级：**
+1. `ApiError.detail`（后端返回的中文消息，包含中文字符时直接展示）
+2. 场景 fallback（如 `project_save` → "保存项目失败"）
+3. HTTP 状态码 fallback（如 404 → "请求的资源不存在"）
+4. 通用兜底（"操作失败，请稍后重试"）
+
+**规范：**
+- 禁止直接使用 `err.message` 或 `err?.message || 'xxx'` 显示给用户
+- 所有面向用户的错误提示必须经过 `getErrorMessage()` 处理
+- 内部状态（如 `setWorkflowStatus`、WebSocket 错误）可保留 `err.message`
+- 添加新场景时只需在 `errorMessages.ts` 的 `SCENE_MESSAGES` 中增加映射
+
+**认证接口 401 特殊处理：**
+- `apiClient.ts` 中 `/auth/` 路径的 401 不触发 token 刷新，直接抛出 `ApiError`，避免登录失败时页面刷新
 
 ## 10. 构建与部署
 
