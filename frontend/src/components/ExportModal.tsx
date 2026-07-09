@@ -3,6 +3,7 @@ import { X, Download, Loader2 } from 'lucide-react';
 import { renderApi } from '@/utils/apiClient';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
+import { useTimelineStore } from '@/stores/timelineStore';
 
 interface ExportModalProps {
   projectId: string;
@@ -29,7 +30,14 @@ export default function ExportModal({ projectId, onClose }: ExportModalProps) {
   const [stage, setStage] = useState<ExportStage>('idle');
   const [progress, setProgress] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [burnSubtitles, setBurnSubtitles] = useState(true);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const timelineData = useTimelineStore((s) => s.data);
+  const subtitleClips = timelineData.tracks
+    .filter((t) => t.type === 'subtitle')
+    .flatMap((t) => t.clips)
+    .filter((c) => c.subtitleText);
 
   // 清理轮询
   useEffect(() => {
@@ -44,7 +52,11 @@ export default function ExportModal({ projectId, onClose }: ExportModalProps) {
     setResultUrl(null);
 
     try {
-      const res = await renderApi.exportVideo(projectId, format, resolution);
+      const res = await renderApi.exportVideo(projectId, format, resolution,
+        burnSubtitles
+          ? subtitleClips.map((c) => ({ start: c.start, end: c.end, text: c.subtitleText || '' }))
+          : []
+      );
       const taskId = res.task_id;
 
       // 开始轮询
@@ -145,6 +157,22 @@ export default function ExportModal({ projectId, onClose }: ExportModalProps) {
                   ))}
                 </select>
               </div>
+
+              {/* 字幕烧录开关 */}
+              {subtitleClips.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-500 uppercase tracking-wider">字幕</label>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-300">烧录字幕到视频</span>
+                    <button
+                      onClick={() => setBurnSubtitles(!burnSubtitles)}
+                      className={`relative w-9 h-5 rounded-full transition-colors ${burnSubtitles ? 'bg-indigo-600' : 'bg-slate-600'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${burnSubtitles ? 'translate-x-4' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 

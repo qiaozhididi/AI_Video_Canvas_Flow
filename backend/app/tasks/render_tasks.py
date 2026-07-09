@@ -552,6 +552,7 @@ def run_export_task(task_id: str):
                     resolution=params.get('resolution', '1080p'),
                     duration=duration,
                     task_id=task_id,
+                    subtitles=params.get('subtitles'),
                 )
 
                 # 上传到 MinIO

@@ -251,6 +251,7 @@ class ExportRequest(BaseModel):
     project_id: str
     format: str = "mp4"  # mp4/mov/webm
     resolution: str = "1080p"  # 720p/1080p/4k
+    subtitles: list[dict] = []  # [{start, end, text}]
 
 
 @router.post("/export", summary="导出时间轴视频")
@@ -283,6 +284,7 @@ async def export_video(req: ExportRequest, db: DBSession, user: CurrentUser):
             "format": req.format,
             "resolution": req.resolution,
             "timeline_data": timeline_data,
+            "subtitles": req.subtitles,
         },
     )
     db.add(task)

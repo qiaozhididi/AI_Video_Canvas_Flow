@@ -42,6 +42,7 @@ async def compose_video(
     resolution: str,
     duration: float,
     task_id: str,
+    subtitles: list[dict] | None = None,
 ) -> Path:
     """将时间轴素材合成为最终视频
 
@@ -51,6 +52,7 @@ async def compose_video(
         resolution: 720p/1080p/4k
         duration: 总时长（秒）
         task_id: 渲染任务 ID，用于更新进度
+        subtitles: [{start, end, text}] 字幕数据，可选
     """
     tmp_dir = tempfile.mkdtemp()
 
@@ -71,6 +73,25 @@ async def compose_video(
     resolution_map = {"720p": "1280:720", "1080p": "1920:1080", "4k": "3840:2160"}
     scale = resolution_map.get(resolution, "1920:1080")
 
+    # 2.5 生成字幕 SRT 文件
+    subtitle_vf = ""
+    if subtitles:
+        srt_path = os.path.join(tmp_dir, "subtitles.srt")
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            for i, sub in enumerate(subtitles, 1):
+                start_s = sub['start']
+                end_s = sub['end']
+                sh, rem = divmod(start_s, 3600)
+                sm, ss = divmod(rem, 60)
+                sms = int((start_s % 1) * 1000)
+                eh, rem2 = divmod(end_s, 3600)
+                em, es = divmod(rem2, 60)
+                ems = int((end_s % 1) * 1000)
+                f.write(f"{i}\n")
+                f.write(f"{int(sh):02d}:{int(sm):02d}:{int(ss):02d},{sms:03d} --> {int(eh):02d}:{int(em):02d}:{int(es):02d},{ems:03d}\n")
+                f.write(f"{sub['text']}\n\n")
+        subtitle_vf = f"subtitles={srt_path}:force_style='FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2,Alignment=2'"
+
     # 3. 构建 FFmpeg 命令
     output_ext = output_format if output_format in ('mp4', 'mov', 'webm') else 'mp4'
     output_path = os.path.join(tmp_dir, f"output.{output_ext}")
@@ -80,18 +101,25 @@ async def compose_video(
 
     if not video_clips:
         # 没有视频片段，创建黑屏
+        vf = f"scale={scale}"
+        if subtitle_vf:
+            vf += f",{subtitle_vf}"
         cmd = [
             'ffmpeg', '-y',
             '-f', 'lavfi', '-i', f'color=c=black:s={scale.replace(":", "x")}:d={duration}',
+            '-vf', vf,
             '-c:v', 'libx264', '-t', str(duration),
             str(output_path)
         ]
     elif len(video_clips) == 1:
         # 单个视频片段，直接转码
+        vf = f"scale={scale}"
+        if subtitle_vf:
+            vf += f",{subtitle_vf}"
         cmd = [
             'ffmpeg', '-y',
             '-i', str(video_clips[0][1]),
-            '-vf', f'scale={scale}',
+            '-vf', vf,
             '-c:v', 'libx264', '-c:a', 'aac',
             '-t', str(duration),
             str(output_path)
@@ -102,11 +130,14 @@ async def compose_video(
         with open(concat_file, 'w') as f:
             for clip, path in sorted(video_clips, key=lambda x: x[0].get('start', 0)):
                 f.write(f"file '{path}'\n")
+        vf = f"scale={scale}"
+        if subtitle_vf:
+            vf += f",{subtitle_vf}"
         cmd = [
             'ffmpeg', '-y',
             '-f', 'concat', '-safe', '0',
             '-i', concat_file,
-            '-vf', f'scale={scale}',
+            '-vf', vf,
             '-c:v', 'libx264', '-c:a', 'aac',
             '-t', str(duration),
             str(output_path)

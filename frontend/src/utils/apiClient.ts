@@ -589,10 +589,10 @@ export const renderApi = {
   retry: (taskId: string) =>
     request<RenderTaskResponse>(`/render/${taskId}/retry`, { method: 'POST' }),
 
-  exportVideo: async (projectId: string, format: string, resolution: string): Promise<{ task_id: string; status: string }> => {
+  exportVideo: async (projectId: string, format: string, resolution: string, subtitles: Array<{ start: number; end: number; text: string }> = []): Promise<{ task_id: string; status: string }> => {
     const res = await request<{ task_id: string; status: string }>('/render/export', {
       method: 'POST',
-      body: JSON.stringify({ project_id: projectId, format, resolution }),
+      body: JSON.stringify({ project_id: projectId, format, resolution, subtitles }),
     });
     return res;
   },
