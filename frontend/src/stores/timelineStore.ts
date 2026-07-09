@@ -116,7 +116,7 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   addTrack: (type) =>
     set((state) => {
       const count = state.data.tracks.filter((t) => t.type === type).length + 1;
-      const labels: Record<string, string> = { video: '视频轨', audio: '音频轨', subtitle: '字幕轨', effect: '特效轨' };
+      const labels: Record<string, string> = { video: '视频轨', audio: '音频轨', subtitle: '字幕轨' };
       const newTrack: Track = {
         id: `track-${type}-${Date.now()}`,
         type,

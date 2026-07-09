@@ -18,7 +18,7 @@ export function usePreviewContent(
   return useMemo(() => {
     if (isTimelinePlaying) {
       const ct = timelineData.currentTime;
-      const trackPriority: Record<string, number> = { video: 0, audio: 1, subtitle: 2, effect: 3 };
+      const trackPriority: Record<string, number> = { video: 0, audio: 1, subtitle: 2 };
       const activeClips = timelineData.tracks
         .filter((t) => t.visible && !t.muted)
         .flatMap((t) => t.clips.map((c) => ({ ...c, trackType: t.type })))

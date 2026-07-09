@@ -14,7 +14,6 @@ const TRACK_COLORS: Record<TrackType, string> = {
   video: '#7C3AED',
   audio: '#3B82F6',
   subtitle: '#EAB308',
-  effect: '#06B6D4',
 };
 
 // 拖拽类型：移动 / 左边缘 resize / 右边缘 resize
@@ -240,7 +239,7 @@ export default function Timeline({ onClipClick }: TimelineProps) {
               key={type}
               onClick={() => addTrack(type)}
               className="flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-canvas-hover rounded transition-colors"
-              title={`添加${type === 'video' ? '视频' : type === 'audio' ? '音频' : type === 'subtitle' ? '字幕' : '特效'}轨`}
+              title={`添加${type === 'video' ? '视频' : type === 'audio' ? '音频' : '字幕'}轨`}
             >
               <Plus className="w-3 h-3" />
             </button>

@@ -1,5 +1,5 @@
 // 时间轴轨道类型
-export type TrackType = 'video' | 'audio' | 'subtitle' | 'effect';
+export type TrackType = 'video' | 'audio' | 'subtitle';
 
 // 时间轴片段
 export interface Clip {
