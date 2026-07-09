@@ -399,6 +399,26 @@ function PropertyPanelWithHistory({
       nodeId: selectedNode.id,
     };
     addClip(targetTrack.id, clip);
+
+    // TTS 产出：同时往字幕轨添加字幕片段
+    if (artifact.type === 'audio') {
+      const subtitleTrack = timelineTracks.find((t) => t.type === 'subtitle');
+      if (subtitleTrack) {
+        const subtitleClip: Clip = {
+          id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          trackId: subtitleTrack.id,
+          start: clip.start,
+          end: clip.end,
+          mediaType: 'audio',
+          mediaUrl: '',
+          label: data.params?.text || data.params?.prompt || clip.label,
+          color: undefined,
+          nodeId: selectedNode.id,
+        };
+        addClip(subtitleTrack.id, subtitleClip);
+      }
+    }
+
     // 加入时间轴后自动在预览中显示
     const isVideo = artifact.type === 'video';
     onSelectClipPreview?.({ url: clip.mediaUrl, type: isVideo ? 'video' : 'image' });
