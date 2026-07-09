@@ -42,7 +42,7 @@ export default function Timeline({ onClipClick }: TimelineProps) {
   const {
     data, isPlaying, play, pause, seekTo,
     addTrack, removeTrack, toggleTrackMute, toggleTrackLock, toggleTrackVisibility,
-    removeClip, moveClip, resizeClip, setZoom,
+    removeClip, moveClip, resizeClip, setZoom, updateClipText, addClip,
   } = useTimelineStore();
   const { nodes } = useCanvasStore();
   const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
@@ -51,6 +51,8 @@ export default function Timeline({ onClipClick }: TimelineProps) {
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [editingClipId, setEditingClipId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
 
   const PIXELS_PER_SECOND = 80 * data.zoom;
 
@@ -378,8 +380,36 @@ export default function Timeline({ onClipClick }: TimelineProps) {
                 className="h-10 relative border-b border-canvas-border/30"
               >
                 {track.clips.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-[10px] text-slate-600">执行节点后，在属性面板点击「加入时间轴」</span>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    {track.type === 'subtitle' ? (
+                      <>
+                        <span className="text-[10px] text-slate-600">双击编辑字幕</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const { currentTime } = useTimelineStore.getState().data;
+                            const newClip: Clip = {
+                              id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                              trackId: track.id,
+                              start: currentTime,
+                              end: currentTime + 3,
+                              mediaType: 'subtitle',
+                              mediaUrl: '',
+                              label: '新字幕',
+                              subtitleText: '',
+                            };
+                            addClip(track.id, newClip);
+                            setEditingClipId(newClip.id);
+                            setEditingText('');
+                          }}
+                          className="text-[10px] text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-canvas-hover transition-colors"
+                        >
+                          + 添加字幕
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[10px] text-slate-600">执行节点后，在属性面板点击「加入时间轴」</span>
+                    )}
                   </div>
                 )}
                 {track.clips.map((clip) => {
@@ -400,12 +430,46 @@ export default function Timeline({ onClipClick }: TimelineProps) {
                       }}
                       onPointerDown={(e) => handleDragStart(e, track.id, clip, 'move')}
                       onDoubleClick={() => {
+                        if (track.type === 'subtitle') {
+                          setEditingClipId(clip.id);
+                          setEditingText(clip.subtitleText ?? '');
+                          return;
+                        }
                         if (clip.nodeId) setSelectedNodeIds([clip.nodeId]);
                         if (clip.mediaUrl && onClipClick) onClipClick(clip);
                       }}
                       title={clip.nodeId ? `双击: 定位节点 + 预览` : clip.label}
                     >
-                      <span className="text-xs text-slate-300 truncate pointer-events-none">{clip.label}</span>
+                      {editingClipId === clip.id && track.type === 'subtitle' ? (
+                        <input
+                          value={editingText}
+                          onChange={(e) => setEditingText(e.target.value)}
+                          onBlur={() => {
+                            updateClipText(track.id, clip.id, editingText);
+                            setEditingClipId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              updateClipText(track.id, clip.id, editingText);
+                              setEditingClipId(null);
+                            } else if (e.key === 'Escape') {
+                              setEditingClipId(null);
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          autoFocus
+                          className="bg-black/40 text-slate-200 text-[10px] px-1 py-0.5 rounded outline-none border border-white/30 focus:border-white/60 w-full"
+                        />
+                      ) : (
+                        <span className={`truncate pointer-events-none ${track.type === 'subtitle' ? 'text-[10px]' : 'text-xs'} text-slate-300`}>
+                          {track.type === 'subtitle' && clip.subtitleText
+                            ? clip.subtitleText.length > 20
+                              ? clip.subtitleText.slice(0, 20) + '…'
+                              : clip.subtitleText
+                            : clip.label}
+                        </span>
+                      )}
                       <button
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
