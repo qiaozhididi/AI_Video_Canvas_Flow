@@ -112,7 +112,7 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
         <img src={src} alt="预览图片" className="w-full h-full object-contain" />
       ) : src ? (
         <div ref={videoRef} className="w-full h-full flex-1" />
-      ) : (
+      ) : subtitleText ? null : (
         <div className="w-full h-full flex items-center justify-center">
           <div className="text-center space-y-2 px-4">
             <div className="w-16 h-16 mx-auto rounded-full bg-canvas-hover flex items-center justify-center">

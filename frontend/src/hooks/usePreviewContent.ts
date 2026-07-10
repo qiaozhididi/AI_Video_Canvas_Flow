@@ -10,6 +10,7 @@ interface PreviewContent {
 
 export function usePreviewContent(
   selectedClipMedia: { url: string; type: 'image' | 'video' } | null,
+  selectedSubtitleText?: string,
 ): PreviewContent {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
   const timelineData = useTimelineStore((s) => s.data);
@@ -51,7 +52,12 @@ export function usePreviewContent(
     }
 
     if (selectedClipMedia) {
-      return { url: selectedClipMedia.url, type: selectedClipMedia.type };
+      return { url: selectedClipMedia.url, type: selectedClipMedia.type, subtitleText: selectedSubtitleText };
+    }
+
+    // 纯字幕片段（无媒体url）直接显示字幕覆盖层
+    if (selectedSubtitleText) {
+      return { url: undefined, type: undefined, subtitleText: selectedSubtitleText };
     }
 
     if (selectedNodeId) {
@@ -78,5 +84,5 @@ export function usePreviewContent(
     }
 
     return { url: undefined, type: undefined };
-  }, [isTimelinePlaying, selectedClipMedia, selectedNodeId, timelineData.currentTime, timelineData.tracks, nodes]);
+  }, [isTimelinePlaying, selectedClipMedia, selectedSubtitleText, selectedNodeId, timelineData.currentTime, timelineData.tracks, nodes]);
 }

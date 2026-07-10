@@ -48,18 +48,23 @@ export default function Editor() {
   const [activeTab, setActiveTab] = useState<'canvas' | 'preview'>('canvas');
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [selectedClipMedia, setSelectedClipMedia] = useState<{ url: string; type: 'image' | 'video' } | null>(null);
+  const [selectedSubtitleText, setSelectedSubtitleText] = useState<string | undefined>(undefined);
 
   const isTimelinePlaying = useTimelineStore((s) => s.isPlaying);
 
-  // 时间轴播放时自动切换到预览选项卡
+  // 时间轴播放时自动切换到预览选项卡，并清除手动选中
   useEffect(() => {
-    if (isTimelinePlaying) setActiveTab('preview');
+    if (isTimelinePlaying) {
+      setActiveTab('preview');
+      setSelectedClipMedia(null);
+      setSelectedSubtitleText(undefined);
+    }
   }, [isTimelinePlaying]);
 
   // 点击片段/加入时间轴时切换到预览选项卡
   useEffect(() => {
-    if (selectedClipMedia) setActiveTab('preview');
-  }, [selectedClipMedia]);
+    if (selectedClipMedia || selectedSubtitleText) setActiveTab('preview');
+  }, [selectedClipMedia, selectedSubtitleText]);
 
   // 右键菜单「预览」请求时切换到预览选项卡
   const previewRequest = useCanvasStore((s) => s.previewRequest);
@@ -72,7 +77,7 @@ export default function Editor() {
     }
   }, [previewRequest, clearPreviewRequest]);
 
-  const preview = usePreviewContent(selectedClipMedia);
+  const preview = usePreviewContent(selectedClipMedia, selectedSubtitleText);
 
   // 时间轴 ↔ 预览联动
   const timelineCurrentTime = useTimelineStore((s) => s.data.currentTime);
@@ -198,8 +203,14 @@ export default function Editor() {
           {showTimeline && (
             <Timeline
               onClipClick={(clip) => {
-                const mediaType = clip.mediaType || 'video';
-                setSelectedClipMedia({ url: clip.mediaUrl, type: mediaType as 'image' | 'video' });
+                if (clip.subtitleText && !clip.mediaUrl) {
+                  // 纯字幕片段：设置字幕文本，不设媒体
+                  setSelectedClipMedia(null);
+                  setSelectedSubtitleText(clip.subtitleText);
+                } else {
+                  setSelectedClipMedia({ url: clip.mediaUrl, type: (clip.mediaType || 'video') as 'image' | 'video' });
+                  setSelectedSubtitleText(clip.subtitleText);
+                }
                 setActiveTab('preview');
               }}
             />

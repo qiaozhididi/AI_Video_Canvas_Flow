@@ -429,6 +429,9 @@ export default function Timeline({ onClipClick }: TimelineProps) {
                         borderLeft: `3px solid ${TRACK_COLORS[track.type]}`,
                       }}
                       onPointerDown={(e) => handleDragStart(e, track.id, clip, 'move')}
+                      onClick={() => {
+                        if (onClipClick && (clip.mediaUrl || clip.subtitleText)) onClipClick(clip);
+                      }}
                       onDoubleClick={() => {
                         if (track.type === 'subtitle') {
                           setEditingClipId(clip.id);
