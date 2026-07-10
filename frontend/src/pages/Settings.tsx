@@ -452,12 +452,12 @@ function AiConfigTab() {
   }
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-220px)] min-h-[400px]">
+    <div className="flex gap-5 min-h-[400px]">
       {/* 左栏：Provider 列表 */}
-      <div className="w-72 flex-shrink-0 flex flex-col rounded-xl border border-canvas-border bg-canvas-panel">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-canvas-border">
-          <div className="flex items-center gap-2">
-            <Server className="w-4 h-4 text-neon-purple" />
+      <div className="w-56 flex-shrink-0 flex flex-col rounded-xl border border-canvas-border bg-canvas-panel">
+        <div className="flex items-center justify-between px-3 py-2.5 border-b border-canvas-border">
+          <div className="flex items-center gap-1.5">
+            <Server className="w-3.5 h-3.5 text-neon-purple" />
             <span className="text-sm font-medium text-white">Provider</span>
             <span className="text-xs text-slate-500">({providers.length})</span>
           </div>
@@ -473,18 +473,18 @@ function AiConfigTab() {
           {/* "全部"选项 */}
           <button
             onClick={() => setSelectedProviderId(null)}
-            className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors ${
               selectedProviderId === null
                 ? 'bg-neon-purple/10 text-white border-l-2 border-neon-purple'
                 : 'text-slate-400 hover:bg-canvas-hover border-l-2 border-transparent'
             }`}
           >
-            <div className="w-8 h-8 rounded-lg bg-canvas-bg flex items-center justify-center">
-              <Cpu className="w-4 h-4 text-slate-400" />
+            <div className="w-7 h-7 rounded-lg bg-canvas-bg flex items-center justify-center flex-shrink-0">
+              <Cpu className="w-3.5 h-3.5 text-slate-400" />
             </div>
-            <div className="flex-1 text-left">
-              <div className="font-medium">全部 Provider</div>
-              <div className="text-xs text-slate-500">{models.length} 个模型</div>
+            <div className="flex-1 text-left min-w-0">
+              <div className="font-medium text-[13px]">全部 Provider</div>
+              <div className="text-[11px] text-slate-500">{models.length} 个模型</div>
             </div>
           </button>
 
@@ -493,21 +493,21 @@ function AiConfigTab() {
             return (
               <div
                 key={p.id}
-                className={`group flex items-center gap-3 px-4 py-3 text-sm cursor-pointer transition-colors ${
+                className={`group flex items-center gap-2.5 px-3 py-2.5 text-sm cursor-pointer transition-colors ${
                   selectedProviderId === p.id
                     ? 'bg-neon-purple/10 text-white border-l-2 border-neon-purple'
                     : 'text-slate-300 hover:bg-canvas-hover border-l-2 border-transparent'
                 }`}
                 onClick={() => setSelectedProviderId(p.id)}
               >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${
                   p.is_active ? 'bg-neon-purple/20 text-neon-purple' : 'bg-canvas-bg text-slate-500'
                 }`}>
                   {platformIcon(p.platform)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{p.name}</div>
-                  <div className="text-xs text-slate-500">{platformLabel(p.platform)} · {pModels.length} 个模型</div>
+                  <div className="font-medium text-[13px] truncate">{p.name}</div>
+                  <div className="text-[11px] text-slate-500">{platformLabel(p.platform)} · {pModels.length} 个模型</div>
                 </div>
                 <div className="hidden group-hover:flex items-center gap-0.5">
                   <button
@@ -533,7 +533,7 @@ function AiConfigTab() {
 
         {/* 左栏底部：Provider 开关 */}
         {selectedProvider && (
-          <div className="px-4 py-3 border-t border-canvas-border flex items-center justify-between">
+          <div className="px-3 py-2.5 border-t border-canvas-border flex items-center justify-between">
             <span className="text-xs text-slate-500">启用状态</span>
             <Toggle checked={selectedProvider.is_active} onChange={() => handleProviderToggle(selectedProvider)} />
           </div>
@@ -541,11 +541,11 @@ function AiConfigTab() {
       </div>
 
       {/* 右栏：模型按类型分组 */}
-      <div className="flex-1 overflow-y-auto space-y-5">
+      <div className="flex-1 min-w-0 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-neon-purple" />
-            <h2 className="text-lg font-medium text-white font-display">
+            <Cpu className="w-4 h-4 text-neon-purple" />
+            <h2 className="text-base font-medium text-white font-display">
               {selectedProvider ? selectedProvider.name : '全部模型'}
             </h2>
             <span className="text-xs text-slate-500">({filteredModels.length})</span>
@@ -593,6 +593,9 @@ function AiConfigTab() {
             );
           })}
         </div>
+
+        {/* 模型列表区域 - 可滚动 */}
+        <div className="overflow-y-auto max-h-[calc(100vh-320px)] space-y-4">
 
         {providers.length === 0 ? (
           <p className="text-sm text-slate-500 py-8 text-center">请先添加 Provider</p>
@@ -648,6 +651,7 @@ function AiConfigTab() {
             )}
           </>
         )}
+        </div>
       </div>
 
       {/* Provider 模态框 */}
@@ -804,14 +808,14 @@ function ProfileTab() {
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-medium text-white font-display">个人信息</h2>
-      <div className="space-y-3">
+      <div className="rounded-xl border border-canvas-border bg-canvas-panel p-5 space-y-4">
         <div>
           <label className="text-xs text-slate-500 uppercase tracking-wider">显示名称</label>
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
+            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
           />
         </div>
         <div>
@@ -820,7 +824,7 @@ function ProfileTab() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
+            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 focus:outline-none focus:border-neon-purple"
           />
         </div>
         <div>
@@ -830,7 +834,7 @@ function ProfileTab() {
             value={avatarUrl}
             onChange={(e) => setAvatarUrl(e.target.value)}
             placeholder="https://..."
-            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-panel border border-canvas-border rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-neon-purple"
+            className="w-full mt-1 px-3 py-2 text-sm bg-canvas-bg border border-canvas-border rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-neon-purple"
           />
         </div>
       </div>
@@ -949,12 +953,12 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto px-8 py-10">
+      <div className="max-w-7xl mx-auto px-8 py-10">
         <h1 className="text-2xl font-bold text-white font-display mb-6">设置</h1>
 
         <div className="flex gap-6">
           {/* 侧边标签 */}
-          <div className="w-48 space-y-1">
+          <div className="w-40 flex-shrink-0 space-y-1">
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -972,12 +976,10 @@ export default function Settings() {
           </div>
 
           {/* 内容 */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             {activeTab === 'profile' && <ProfileTab />}
             {activeTab === 'ai' && <AiConfigTab />}
-
             {activeTab === 'storage' && <StorageTab />}
-
           </div>
         </div>
       </div>
