@@ -162,7 +162,7 @@ function ProviderForm({
     setSelectedPreset(preset);
     setPlatform(preset.value);
     setBaseUrl(preset.defaultBaseUrl);
-    setName(name || preset.label);
+    setName(preset.label);
     setStep('configure');
   };
 
