@@ -315,7 +315,7 @@ async def _do_ai_call(
 
         await _update_task(db, task_id, progress=20)
 
-        # 获取 owner_id 用于 MinIO 持久化
+        # 获取 owner_id 用于 MinIO 持久化和 AI 模型归属验证
         render_task = await db.get(RenderTask, uuid.UUID(task_id))
         owner_id = str(render_task.owner_id) if render_task else None
 
@@ -336,15 +336,15 @@ async def _do_ai_call(
                 if skip_ai:
                     logger.warning(f"[AI:Img2Img] 无上游图片 URL，跳过 AI 调用走模拟")
                 else:
-                    # 调用对应的 AI 服务
+                    # 调用对应的 AI 服务（传入 user_id=owner_id 验证模型归属）
                     if task_type == "ai_text2img":
-                        result = await call_image_gen(db, model_id, prompt, params={"size": size, "_owner_id": owner_id})
+                        result = await call_image_gen(db, model_id, prompt, params={"size": size, "_owner_id": owner_id}, user_id=owner_id)
                     elif task_type == "ai_img2img":
-                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": size, "_owner_id": owner_id})
+                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": size, "_owner_id": owner_id}, user_id=owner_id)
                     elif task_type in ("ai_img2video", "ai_text2video"):
-                        result = await call_video_gen(db, model_id, prompt, image_url=image_url, params={**(node_params or {}), "_owner_id": owner_id})
+                        result = await call_video_gen(db, model_id, prompt, image_url=image_url, params={**(node_params or {}), "_owner_id": owner_id}, user_id=owner_id)
                     elif task_type == "ai_tts":
-                        result = await call_audio_gen(db, model_id, prompt, params={**(node_params or {}), "_owner_id": owner_id})
+                        result = await call_audio_gen(db, model_id, prompt, params={**(node_params or {}), "_owner_id": owner_id}, user_id=owner_id)
 
                     result_url = result.get(config["result_key"], "")
                     if config["result_key"] == "url":
@@ -360,9 +360,9 @@ async def _do_ai_call(
                 logger.warning(f"[AI:{task_type}] size={size} 不合法，回退到 2k 重试")
                 try:
                     if task_type == "ai_text2img":
-                        result = await call_image_gen(db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id})
+                        result = await call_image_gen(db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id}, user_id=owner_id)
                     elif task_type == "ai_img2img":
-                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": "2k", "_owner_id": owner_id})
+                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": "2k", "_owner_id": owner_id}, user_id=owner_id)
                     result_url = result.get(config["result_key"], "")
                     if config["result_key"] == "url":
                         revised_prompt = result.get("revised_prompt", "")
@@ -401,10 +401,15 @@ async def _do_ai_call(
 async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict:
     """LLM 文本生成"""
     from app.services.ai_service import call_llm
+    from app.models.render_task import RenderTask
 
     sf = _get_celery_session_factory()
     async with sf() as db:
         await _update_task(db, task_id, status="running", progress=10)
+
+        # 获取 owner_id 用于 AI 模型归属验证
+        render_task = await db.get(RenderTask, uuid.UUID(task_id))
+        owner_id = str(render_task.owner_id) if render_task else None
 
         messages = [
             {"role": "system", "content": "你是一个 AI 视频工作流设计助手。根据用户描述生成工作流内容。"},
@@ -414,7 +419,7 @@ async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict
         await _update_task(db, task_id, progress=30)
 
         try:
-            response_text = await call_llm(db, model_id, messages) if model_id else "AI 模拟响应（未指定模型）"
+            response_text = await call_llm(db, model_id, messages, user_id=owner_id) if model_id else "AI 模拟响应（未指定模型）"
         except Exception as e:
             logger.error(f"[AI:LLM] 任务 {task_id} 失败: {e}", exc_info=True)
             await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)

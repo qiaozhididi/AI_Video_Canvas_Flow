@@ -24,11 +24,12 @@ logger = logging.getLogger("app.services.ai")
 DEFAULT_IMAGE_SIZE = "2k"
 
 
-async def _get_provider_and_model(db, model_id: str | UUID, expected_type: str | None = None) -> tuple[AiProvider, AiModel]:
+async def _get_provider_and_model(db, model_id: str | UUID, expected_type: str | None = None, user_id: str | None = None) -> tuple[AiProvider, AiModel]:
     """根据 model_id 获取 Provider 和 Model 配置
 
     Args:
         expected_type: 期望的 model_type，不匹配时抛出 ValueError
+        user_id: 用户 ID（字符串），传入时验证 Model 属于该用户
     """
     if isinstance(model_id, str):
         model_id = UUID(model_id)
@@ -49,13 +50,17 @@ async def _get_provider_and_model(db, model_id: str | UUID, expected_type: str |
     if not provider:
         raise ValueError(f"AI Provider {model.provider_id} 不存在")
 
+    # 验证 Model 属于指定用户
+    if user_id and str(provider.user_id) != user_id:
+        raise ValueError(f"AI Model {model_id} 不属于当前用户")
+
     if not provider.is_active or not model.is_active:
         raise ValueError(f"AI Provider/Model 已禁用")
 
     return provider, model
 
 
-async def call_llm(db, model_id: str | UUID, messages: list[dict], temperature: float = 0.7) -> str:
+async def call_llm(db, model_id: str | UUID, messages: list[dict], temperature: float = 0.7, user_id: str | None = None) -> str:
     """调用 LLM（兼容 OpenAI Chat Completions API 格式）
 
     Args:
@@ -63,11 +68,12 @@ async def call_llm(db, model_id: str | UUID, messages: list[dict], temperature: 
         model_id: AI Model UUID
         messages: OpenAI 格式消息列表 [{"role": "user", "content": "..."}]
         temperature: 生成温度
+        user_id: 用户 ID，用于验证模型归属
 
     Returns:
         LLM 响应文本
     """
-    provider, model = await _get_provider_and_model(db, model_id)
+    provider, model = await _get_provider_and_model(db, model_id, user_id=user_id)
 
     url = f"{provider.base_url.rstrip('/')}/chat/completions"
     headers = {
@@ -164,9 +170,10 @@ async def _call_image_api(
     db, model_id: str | UUID, prompt: str,
     body_extra: dict | None = None,
     params: dict | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """通用图片 API 调用（文生图/图生图共用）"""
-    provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen")
+    provider, model = await _get_provider_and_model(db, model_id, expected_type="image_gen", user_id=user_id)
 
     url = f"{provider.base_url.rstrip('/')}/images/generations"
     headers = {
@@ -206,7 +213,7 @@ async def _call_image_api(
         return await _handle_image_response(db, data, owner_id)
 
 
-async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | None = None) -> dict:
+async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | None = None, user_id: str | None = None) -> dict:
     """文生图：调用兼容 OpenAI Images API 的端点
 
     Args:
@@ -214,14 +221,15 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
         model_id: AI Model UUID（model_type 应为 image_gen）
         prompt: 图片描述提示词
         params: 额外参数（size, n 等）
+        user_id: 用户 ID，用于验证模型归属
 
     Returns:
         {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
-    return await _call_image_api(db, model_id, prompt, body_extra=None, params=params)
+    return await _call_image_api(db, model_id, prompt, body_extra=None, params=params, user_id=user_id)
 
 
-async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None) -> dict:
+async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None, user_id: str | None = None) -> dict:
     """图生图：调用兼容 OpenAI Images API 的端点，通过 image 参数传入参考图片
 
     火山引擎 SeedReam 使用 /images/generations + image 参数实现图生图/图改图
@@ -232,13 +240,14 @@ async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, pa
         prompt: 图片编辑描述提示词
         image_url: 参考图片 URL（公网可访问或内部 MinIO 路径）
         params: 额外参数（size, n 等）
+        user_id: 用户 ID，用于验证模型归属
 
     Returns:
         {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
     api_image = await _resolve_image_url(db, image_url)
     logger.info(f"[AI:Img2Img] 调用, prompt={prompt[:50]}, image={'base64' if api_image.startswith('data:') else api_image[:80]}")
-    return await _call_image_api(db, model_id, prompt, body_extra={"image": api_image}, params=params)
+    return await _call_image_api(db, model_id, prompt, body_extra={"image": api_image}, params=params, user_id=user_id)
 
 
 async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0) -> dict:
@@ -416,6 +425,7 @@ async def _call_ark_async(
     media_type: str,  # "video" 或 "audio"
     image_url: str | None = None,
     params: dict | None = None,
+    user_id: str | None = None,
 ) -> dict:
     """通用 Ark 异步任务调用（视频/音频生成）
 
@@ -426,6 +436,7 @@ async def _call_ark_async(
         media_type: "video" 或 "audio"
         image_url: 可选参考图片 URL（仅 video 使用）
         params: 额外参数
+        user_id: 用户 ID，用于验证模型归属
 
     Returns:
         {"{media_type}_url": persistent_url, "remote_task_id": "..."}
@@ -433,7 +444,7 @@ async def _call_ark_async(
     expected_type = "video_gen" if media_type == "video" else "tts"
     log_tag = f"AI:{media_type.capitalize()}Gen"
 
-    provider, model = await _get_provider_and_model(db, model_id, expected_type=expected_type)
+    provider, model = await _get_provider_and_model(db, model_id, expected_type=expected_type, user_id=user_id)
 
     base_url = provider.base_url.rstrip("/")
     headers = {
@@ -491,7 +502,7 @@ async def _call_ark_async(
     return {f"{media_type}_url": persistent_url, "remote_task_id": remote_task_id}
 
 
-async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str | None = None, params: dict | None = None) -> dict:
+async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str | None = None, params: dict | None = None, user_id: str | None = None) -> dict:
     """图生视频：调用 Ark 异步内容生成 API
 
     Args:
@@ -500,14 +511,15 @@ async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str |
         prompt: 视频描述提示词
         image_url: 可选参考图片 URL
         params: 额外参数
+        user_id: 用户 ID，用于验证模型归属
 
     Returns:
         {"video_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
     """
-    return await _call_ark_async(db, model_id, prompt, "video", image_url=image_url, params=params)
+    return await _call_ark_async(db, model_id, prompt, "video", image_url=image_url, params=params, user_id=user_id)
 
 
-async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | None = None) -> dict:
+async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | None = None, user_id: str | None = None) -> dict:
     """TTS：调用 Ark 异步内容生成 API
 
     Args:
@@ -515,11 +527,12 @@ async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | Non
         model_id: AI Model UUID（model_type 应为 tts）
         text: 待合成文本
         params: 额外参数
+        user_id: 用户 ID，用于验证模型归属
 
     Returns:
         {"audio_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
     """
-    return await _call_ark_async(db, model_id, text, "audio", params=params)
+    return await _call_ark_async(db, model_id, text, "audio", params=params, user_id=user_id)
 
 
 import json
@@ -632,37 +645,53 @@ SYSTEM_PROMPT = """你是 AI 视频工作流编排助手。根据用户描述生
 """
 
 
-async def _get_default_model_for_type(db, model_type: str) -> str | None:
+async def _get_default_model_for_type(db, model_type: str, user_id: str | None = None) -> str | None:
     """查找指定 model_type 的首个 active 模型 UUID(字符串)
 
     用于 AI 推理节点的 model_id 预填。
+    当 user_id 不为 None 时，只查找该用户的模型。
     """
     if db is None:
         return None
-    result = await db.execute(
-        select(AiModel).where(
-            AiModel.model_type == model_type,
-            AiModel.is_active == True,  # noqa: E712
-        ).order_by(AiModel.created_at.asc()).limit(1)
+
+    stmt = select(AiModel).where(
+        AiModel.model_type == model_type,
+        AiModel.is_active == True,  # noqa: E712
     )
+
+    if user_id:
+        user_provider_ids = select(AiProvider.id).where(AiProvider.user_id == uuid.UUID(user_id))
+        stmt = stmt.where(AiModel.provider_id.in_(user_provider_ids))
+
+    stmt = stmt.order_by(AiModel.created_at.asc()).limit(1)
+    result = await db.execute(stmt)
     model = result.scalar_one_or_none()
     return str(model.id) if model else None
 
 
-async def _get_default_llm_model_id(db, model_id: str | None) -> str:
-    """获取 LLM 模型 UUID:优先用传入的 model_id,否则取默认 LLM 模型"""
+async def _get_default_llm_model_id(db, model_id: str | None, user_id: str | None = None) -> str:
+    """获取 LLM 模型 UUID:优先用传入的 model_id,否则取默认 LLM 模型
+
+    Args:
+        user_id: 用户 ID，传入时只查找该用户的模型
+    """
     if model_id:
         return model_id
 
     if db is None:
         raise RuntimeError("未传入 model_id 且 db 不可用")
 
-    result = await db.execute(
-        select(AiModel).where(
-            AiModel.model_type == "llm",
-            AiModel.is_active == True,  # noqa: E712
-        ).order_by(AiModel.created_at.asc()).limit(1)
+    stmt = select(AiModel).where(
+        AiModel.model_type == "llm",
+        AiModel.is_active == True,  # noqa: E712
     )
+
+    if user_id:
+        user_provider_ids = select(AiProvider.id).where(AiProvider.user_id == uuid.UUID(user_id))
+        stmt = stmt.where(AiModel.provider_id.in_(user_provider_ids))
+
+    stmt = stmt.order_by(AiModel.created_at.asc()).limit(1)
+    result = await db.execute(stmt)
     model = result.scalar_one_or_none()
     if not model:
         raise RuntimeError("未找到可用的 LLM 模型,请先在设置页配置 model_type='llm' 的 active 模型")
@@ -769,13 +798,14 @@ def _compute_layout(valid_nodes: list[dict]) -> None:
             n["position_y"] = idx * 150
 
 
-async def generate_workflow(db, description: str, model_id: str | None = None) -> dict:
+async def generate_workflow(db, description: str, model_id: str | None = None, user_id: str | None = None) -> dict:
     """AI 快速生成工作流
 
     Args:
         db: 数据库 session
         description: 自然语言工作流描述
         model_id: LLM 模型 UUID(可选,不传则取默认 LLM 模型)
+        user_id: 用户 ID，传入时只查找该用户的模型
 
     Returns:
         {"nodes": [NodeCreateRequest 兼容 dict], "edges": [EdgeCreateRequest 兼容 dict]}
@@ -784,7 +814,7 @@ async def generate_workflow(db, description: str, model_id: str | None = None) -
         RuntimeError: 无可用 LLM 模型 / LLM 调用失败 / JSON 解析失败 / 全部节点非法
     """
     # 1. 获取 LLM 模型
-    llm_model_id = await _get_default_llm_model_id(db, model_id)
+    llm_model_id = await _get_default_llm_model_id(db, model_id, user_id=user_id)
 
     # 2. 调 LLM
     messages = [
@@ -792,7 +822,7 @@ async def generate_workflow(db, description: str, model_id: str | None = None) -
         {"role": "user", "content": description},
     ]
     logger.info(f"[AI:Generate] 调用 LLM 生成工作流, description={description[:50]}...")
-    raw_response = await call_llm(db, llm_model_id, messages, temperature=0.3)
+    raw_response = await call_llm(db, llm_model_id, messages, temperature=0.3, user_id=user_id)
 
     # 3. 解析 JSON
     data = _parse_llm_json(raw_response)
@@ -849,7 +879,7 @@ async def generate_workflow(db, description: str, model_id: str | None = None) -
             params["prompt"] = description
             model_type = AI_INFERENCE_MODEL_TYPE.get(subtype)
             if model_type:
-                default_model = await _get_default_model_for_type(db, model_type)
+                default_model = await _get_default_model_for_type(db, model_type, user_id=user_id)
                 if default_model:
                     params["model_id"] = default_model
 

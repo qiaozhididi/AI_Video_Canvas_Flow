@@ -87,6 +87,7 @@ def _model_to_dict(m: AiModel) -> dict:
 @router.post("/providers", summary="创建 AI Provider")
 async def create_provider(body: ProviderCreate, db: DBSession, user: CurrentUser):
     provider = AiProvider(
+        user_id=uuid.UUID(user),
         name=body.name,
         platform=body.platform,
         base_url=body.base_url,
@@ -96,20 +97,32 @@ async def create_provider(body: ProviderCreate, db: DBSession, user: CurrentUser
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
-    logger.info(f"[AI:Provider:Create] id={provider.id} name={body.name}")
+    logger.info(f"[AI:Provider:Create] user={user} id={provider.id} name={body.name}")
     return _provider_to_dict(provider)
 
 
 @router.get("/providers", summary="列出 AI Providers")
 async def list_providers(db: DBSession, user: CurrentUser):
-    result = await db.execute(select(AiProvider).order_by(AiProvider.created_at.desc()))
+    # 自动初始化：如果该用户还没有任何 Provider，尝试创建默认配置
+    await ensure_default_ai_config(db, user_id=user)
+
+    result = await db.execute(
+        select(AiProvider)
+        .where(AiProvider.user_id == uuid.UUID(user))
+        .order_by(AiProvider.created_at.desc())
+    )
     providers = result.scalars().all()
     return [_provider_to_dict(p) for p in providers]
 
 
 @router.put("/providers/{provider_id}", summary="更新 AI Provider")
 async def update_provider(provider_id: str, body: ProviderUpdate, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(provider_id)))
+    result = await db.execute(
+        select(AiProvider).where(
+            AiProvider.id == uuid.UUID(provider_id),
+            AiProvider.user_id == uuid.UUID(user),
+        )
+    )
     provider = result.scalar_one_or_none()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider 不存在")
@@ -128,13 +141,18 @@ async def update_provider(provider_id: str, body: ProviderUpdate, db: DBSession,
 
     await db.commit()
     await db.refresh(provider)
-    logger.info(f"[AI:Provider:Update] id={provider_id}")
+    logger.info(f"[AI:Provider:Update] user={user} id={provider_id}")
     return _provider_to_dict(provider)
 
 
 @router.delete("/providers/{provider_id}", summary="删除 AI Provider")
 async def delete_provider(provider_id: str, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(provider_id)))
+    result = await db.execute(
+        select(AiProvider).where(
+            AiProvider.id == uuid.UUID(provider_id),
+            AiProvider.user_id == uuid.UUID(user),
+        )
+    )
     provider = result.scalar_one_or_none()
     if not provider:
         raise HTTPException(status_code=404, detail="Provider 不存在")
@@ -146,7 +164,7 @@ async def delete_provider(provider_id: str, db: DBSession, user: CurrentUser):
         deleted_count += 1
     await db.delete(provider)
     await db.commit()
-    logger.info(f"[AI:Provider:Delete] id={provider_id}")
+    logger.info(f"[AI:Provider:Delete] user={user} id={provider_id}")
     return {"message": f"已删除 Provider 及其关联的 {deleted_count} 个模型"}
 
 
@@ -154,7 +172,13 @@ async def delete_provider(provider_id: str, db: DBSession, user: CurrentUser):
 
 @router.post("/models", summary="创建 AI Model")
 async def create_model(body: ModelCreate, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(AiProvider).where(AiProvider.id == uuid.UUID(body.provider_id)))
+    # 验证 Provider 属于当前用户
+    result = await db.execute(
+        select(AiProvider).where(
+            AiProvider.id == uuid.UUID(body.provider_id),
+            AiProvider.user_id == uuid.UUID(user),
+        )
+    )
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Provider 不存在")
 
@@ -167,16 +191,18 @@ async def create_model(body: ModelCreate, db: DBSession, user: CurrentUser):
         is_default=body.is_default,
     )
     db.add(model)
-    # 如果设为默认，清除同类型其他默认
+    # 如果设为默认，清除同用户同类型其他默认
     if body.is_default:
+        user_provider_ids = select(AiProvider.id).where(AiProvider.user_id == uuid.UUID(user))
         await db.execute(
             update(AiModel)
             .where(AiModel.model_type == body.model_type, AiModel.id != model.id)
+            .where(AiModel.provider_id.in_(user_provider_ids))
             .values(is_default=False)
         )
     await db.commit()
     await db.refresh(model)
-    logger.info(f"[AI:Model:Create] id={model.id} model_id={body.model_id}")
+    logger.info(f"[AI:Model:Create] user={user} id={model.id} model_id={body.model_id}")
     return _model_to_dict(model)
 
 
@@ -187,7 +213,9 @@ async def list_models(
     provider_id: str | None = Query(None),
     model_type: str | None = Query(None),
 ):
-    stmt = select(AiModel)
+    # 通过 JOIN provider 过滤用户
+    user_provider_ids = select(AiProvider.id).where(AiProvider.user_id == uuid.UUID(user))
+    stmt = select(AiModel).where(AiModel.provider_id.in_(user_provider_ids))
     if provider_id:
         stmt = stmt.where(AiModel.provider_id == uuid.UUID(provider_id))
     if model_type:
@@ -200,12 +228,28 @@ async def list_models(
 
 @router.put("/models/{model_id}", summary="更新 AI Model")
 async def update_model(model_id: str, body: ModelUpdate, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(AiModel).where(AiModel.id == uuid.UUID(model_id)))
+    # 验证 Model 属于当前用户（通过 provider 间接验证）
+    user_provider_ids = select(AiProvider.id).where(AiProvider.user_id == uuid.UUID(user))
+    result = await db.execute(
+        select(AiModel).where(
+            AiModel.id == uuid.UUID(model_id),
+            AiModel.provider_id.in_(user_provider_ids),
+        )
+    )
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="Model 不存在")
 
+    # 如果更换 provider_id，验证新 provider 也属于当前用户
     if body.provider_id is not None:
+        new_provider_result = await db.execute(
+            select(AiProvider).where(
+                AiProvider.id == uuid.UUID(body.provider_id),
+                AiProvider.user_id == uuid.UUID(user),
+            )
+        )
+        if not new_provider_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Provider 不存在")
         model.provider_id = uuid.UUID(body.provider_id)
     if body.model_id is not None:
         model.model_id = body.model_id
@@ -217,45 +261,56 @@ async def update_model(model_id: str, body: ModelUpdate, db: DBSession, user: Cu
         model.is_active = body.is_active
     if body.is_default is not None:
         model.is_default = body.is_default
-        # 如果设为默认，清除同类型其他默认
+        # 如果设为默认，清除同用户同类型其他默认
         if body.is_default:
             await db.execute(
                 update(AiModel)
                 .where(AiModel.model_type == model.model_type, AiModel.id != model.id)
+                .where(AiModel.provider_id.in_(user_provider_ids))
                 .values(is_default=False)
             )
     model.updated_at = datetime.utcnow()
 
     await db.commit()
     await db.refresh(model)
-    logger.info(f"[AI:Model:Update] id={model_id}")
+    logger.info(f"[AI:Model:Update] user={user} id={model_id}")
     return _model_to_dict(model)
 
 
 @router.delete("/models/{model_id}", summary="删除 AI Model")
 async def delete_model(model_id: str, db: DBSession, user: CurrentUser):
-    result = await db.execute(select(AiModel).where(AiModel.id == uuid.UUID(model_id)))
+    user_provider_ids = select(AiProvider.id).where(AiProvider.user_id == uuid.UUID(user))
+    result = await db.execute(
+        select(AiModel).where(
+            AiModel.id == uuid.UUID(model_id),
+            AiModel.provider_id.in_(user_provider_ids),
+        )
+    )
     model = result.scalar_one_or_none()
     if not model:
         raise HTTPException(status_code=404, detail="Model 不存在")
     await db.delete(model)
     await db.commit()
-    logger.info(f"[AI:Model:Delete] id={model_id}")
+    logger.info(f"[AI:Model:Delete] user={user} id={model_id}")
     return {"message": "已删除模型"}
 
 
 @router.get("/models/default", summary="获取默认 AI 模型")
 async def get_default_model(db: DBSession, user: CurrentUser, model_type: str | None = None):
-    """返回默认 AI Model（is_default=True 优先），否则第一个 active 模型
+    """返回当前用户的默认 AI Model（is_default=True 优先），否则第一个 active 模型
 
     可通过 model_type 参数过滤模型类型（如 image_gen, video_gen, llm, tts）
     """
+    user_provider_ids = select(AiProvider.id).where(
+        AiProvider.user_id == uuid.UUID(user),
+        AiProvider.is_active == True,
+    )
+
     # 优先查找 is_default=True 的模型
     stmt = (
         select(AiModel)
         .where(AiModel.is_active == True, AiModel.is_default == True)
-        .join(AiProvider, AiModel.provider_id == AiProvider.id)
-        .where(AiProvider.is_active == True)
+        .where(AiModel.provider_id.in_(user_provider_ids))
     )
     if model_type:
         stmt = stmt.where(AiModel.model_type == model_type)
@@ -267,8 +322,7 @@ async def get_default_model(db: DBSession, user: CurrentUser, model_type: str | 
         stmt = (
             select(AiModel)
             .where(AiModel.is_active == True)
-            .join(AiProvider, AiModel.provider_id == AiProvider.id)
-            .where(AiProvider.is_active == True)
+            .where(AiModel.provider_id.in_(user_provider_ids))
         )
         if model_type:
             stmt = stmt.where(AiModel.model_type == model_type)
@@ -284,9 +338,21 @@ async def get_default_model(db: DBSession, user: CurrentUser, model_type: str | 
 
 # ── 默认配置初始化 ──
 
-async def ensure_default_ai_config(db):
-    """首次启动时自动创建默认 Provider 和 Model"""
-    count_result = await db.execute(select(func.count()).select_from(AiProvider))
+async def ensure_default_ai_config(db, user_id: str | None = None):
+    """首次启动时自动创建默认 Provider 和 Model
+
+    Args:
+        db: 数据库 session
+        user_id: 用户 ID（字符串），新注册用户首次访问时传入
+    """
+    if not user_id:
+        # 无用户上下文时跳过（如系统启动时无用户登录）
+        return
+
+    # 检查该用户是否已有 provider
+    count_result = await db.execute(
+        select(func.count()).select_from(AiProvider).where(AiProvider.user_id == uuid.UUID(user_id))
+    )
     count = count_result.scalar()
     if count > 0:
         return
@@ -296,6 +362,7 @@ async def ensure_default_ai_config(db):
         return
 
     provider = AiProvider(
+        user_id=uuid.UUID(user_id),
         name=settings.DEFAULT_AI_PROVIDER_NAME,
         platform=settings.DEFAULT_AI_PLATFORM,
         base_url=settings.DEFAULT_AI_BASE_URL,
@@ -314,7 +381,7 @@ async def ensure_default_ai_config(db):
     )
     db.add(model)
     await db.commit()
-    logger.info(f"[AI:Init] 已创建默认 Provider: {provider.name}, Model: {model.display_name}")
+    logger.info(f"[AI:Init] user={user_id} 已创建默认 Provider: {provider.name}, Model: {model.display_name}")
 
 
 # ── AI 快速生成 ──
@@ -350,7 +417,7 @@ async def generate_workflow_endpoint(
         raise HTTPException(status_code=422, detail="description 不能为空")
 
     try:
-        result = await _generate_workflow(db, body.description, body.model_id)
+        result = await _generate_workflow(db, body.description, body.model_id, user_id=user)
     except RuntimeError as e:
         # 区分错误类型返回合适的状态码
         msg = str(e)
@@ -396,12 +463,12 @@ async def generate_subtitles(body: GenerateSubtitlesRequest, db: DBSession, user
     from app.services.ai_service import call_llm, _get_default_llm_model_id
     import json
 
-    model_id = await _get_default_llm_model_id(db, body.model_id)
+    model_id = await _get_default_llm_model_id(db, body.model_id, user_id=user)
     messages = [
         {"role": "system", "content": SUBTITLE_SYSTEM_PROMPT},
         {"role": "user", "content": f"文本内容：{body.prompt}\n总时长（秒）：{body.duration}"},
     ]
-    logger.info(f"[AI:Subtitle] 生成字幕, duration={body.duration}, prompt={body.prompt[:50]}")
+    logger.info(f"[AI:Subtitle] user={user} 生成字幕, duration={body.duration}, prompt={body.prompt[:50]}")
 
     raw = await call_llm(db, model_id, messages, temperature=0.3)
 
