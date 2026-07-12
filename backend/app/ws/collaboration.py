@@ -346,6 +346,12 @@ async def node_update(sid, data):
     if action == "delete":
         lock = _node_locks.pop(_lock_key(project_id, node_id), None)
         if lock:
+            # 广播 lock_changed(node, null) 通知持锁者清理本地 myLocks（设计 §8.2）
+            await sio.emit("lock_changed", {
+                "project_id": project_id,
+                "node_id": node_id,
+                "lock": None,
+            }, room=room)
             logger.debug(f"[WS:Lock] 节点删除清理锁 node={node_id} holder={lock.username}")
 
     elapsed = (time.time() - t0) * 1000

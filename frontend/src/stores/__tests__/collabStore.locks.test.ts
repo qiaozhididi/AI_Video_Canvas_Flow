@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import type { Socket } from 'socket.io-client';
 import { useCollabStore } from '../collabStore';
 
 describe('collabStore 锁状态', () => {
@@ -50,6 +51,66 @@ describe('collabStore 锁状态', () => {
 
     it('无锁时返回 null', () => {
       expect(useCollabStore.getState().getNodeLockHolder('unknown')).toBeNull();
+    });
+  });
+
+  describe('renewLock', () => {
+    // 捕获 renew_lock 的 ack 回调，便于在测试中模拟后端响应
+    let renewAckCb: ((ack: { ok: boolean; expires_at?: number }) => void) | null;
+    let mockSocket: { emit: (event: string, data: unknown, cb: (ack: { ok: boolean; expires_at?: number }) => void) => void };
+
+    beforeEach(() => {
+      renewAckCb = null;
+      mockSocket = {
+        emit: (_event, _data, cb) => {
+          renewAckCb = cb;
+        },
+      };
+    });
+
+    it('续租失败（ack.ok=false）时清理 myLocks 和 nodeLocks', async () => {
+      const lock = { node_id: 'n1', project_id: 'p1', sid: 'me', user_id: 'u1', username: 'me', acquired_at: 0, expires_at: 100 };
+      useCollabStore.setState({
+        socket: mockSocket as unknown as Socket,
+        currentProjectId: 'p1',
+        myLocks: { n1: lock },
+        nodeLocks: { n1: lock },
+      });
+
+      const promise = useCollabStore.getState().renewLock('n1');
+      // 模拟后端返回 ok: false（锁已丢失）
+      renewAckCb!({ ok: false });
+      const result = await promise;
+
+      expect(result).toBe(false);
+      expect(useCollabStore.getState().myLocks['n1']).toBeUndefined();
+      expect(useCollabStore.getState().nodeLocks['n1']).toBeUndefined();
+      expect(useCollabStore.getState().isNodeLockedByMe('n1')).toBe(false);
+      expect(useCollabStore.getState().isNodeLocked('n1')).toBe(false);
+    });
+
+    it('续租成功时更新 expires_at 并保留 myLocks', async () => {
+      const lock = { node_id: 'n1', project_id: 'p1', sid: 'me', user_id: 'u1', username: 'me', acquired_at: 0, expires_at: 100 };
+      useCollabStore.setState({
+        socket: mockSocket as unknown as Socket,
+        currentProjectId: 'p1',
+        myLocks: { n1: lock },
+        nodeLocks: { n1: lock },
+      });
+
+      const promise = useCollabStore.getState().renewLock('n1');
+      renewAckCb!({ ok: true, expires_at: 200 });
+      const result = await promise;
+
+      expect(result).toBe(true);
+      expect(useCollabStore.getState().myLocks['n1'].expires_at).toBe(200);
+      expect(useCollabStore.getState().isNodeLockedByMe('n1')).toBe(true);
+    });
+
+    it('无锁时不发起请求', async () => {
+      const result = await useCollabStore.getState().renewLock('n1');
+      expect(result).toBe(false);
+      expect(renewAckCb).toBeNull();
     });
   });
 });

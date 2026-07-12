@@ -337,6 +337,15 @@ export const useCollabStore = create<CollabState>((set, get) => ({
                 [nodeId]: { ...state.myLocks[nodeId], expires_at: ack.expires_at! },
               },
             }));
+          } else if (!ack.ok) {
+            // 续租失败（锁已丢失）：立即清理 myLocks/nodeLocks，停止本地编辑（设计 §8.3）
+            set((state) => {
+              const myLocks = { ...state.myLocks };
+              const nodeLocks = { ...state.nodeLocks };
+              delete myLocks[nodeId];
+              delete nodeLocks[nodeId];
+              return { myLocks, nodeLocks };
+            });
           }
           resolve(ack.ok);
         },

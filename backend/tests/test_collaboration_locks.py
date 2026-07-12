@@ -313,3 +313,87 @@ class TestLockLifecycleIntegration:
         ]
         assert len(result) == 1
         assert result[0]["node_id"] == "n1"
+
+
+class TestNodeUpdateDeleteBroadcast:
+    """测试 node_update delete 时清理锁并广播 lock_changed（设计 §8.2）"""
+
+    async def test_delete_broadcasts_lock_changed(self, monkeypatch):
+        """节点删除持锁节点时应广播 lock_changed(node, null) 通知持锁者"""
+        from app.ws.collaboration import (
+            _node_locks, _lock_key, node_update, NodeLock, sio,
+        )
+        _node_locks.clear()
+        now = time.time()
+        lock = NodeLock("n1", "p1", "s1", "u1", "alice", now, now + 5, now)
+        _node_locks[_lock_key("p1", "n1")] = lock
+
+        # 捕获 sio.emit 调用
+        emitted: list[tuple] = []
+
+        async def fake_emit(event, data, room=None, skip_sid=None):
+            emitted.append((event, data, room, skip_sid))
+
+        monkeypatch.setattr(sio, "emit", fake_emit)
+
+        # mock session 与权限检查，避免依赖真实 DB / Socket.IO session
+        async def fake_session(sid):
+            return {"user_id": "u1", "username": "alice"}
+
+        async def fake_perm(project_id, user_id):
+            return True
+
+        monkeypatch.setattr("app.ws.collaboration._get_session_info", fake_session)
+        monkeypatch.setattr("app.ws.collaboration._check_edit_permission", fake_perm)
+
+        await node_update("s1", {
+            "project_id": "p1",
+            "node_id": "n1",
+            "action": "delete",
+        })
+
+        # 锁被清理
+        assert _lock_key("p1", "n1") not in _node_locks
+
+        # lock_changed 被广播一次，payload 为 lock=null
+        lock_changed_events = [e for e in emitted if e[0] == "lock_changed"]
+        assert len(lock_changed_events) == 1
+        _, data, room, _ = lock_changed_events[0]
+        assert data["project_id"] == "p1"
+        assert data["node_id"] == "n1"
+        assert data["lock"] is None
+        assert room == "project:p1"
+
+    async def test_delete_without_lock_does_not_broadcast_lock_changed(self, monkeypatch):
+        """节点删除时无锁则不广播 lock_changed（但仍广播 node_update）"""
+        from app.ws.collaboration import _node_locks, node_update, sio
+        _node_locks.clear()
+
+        emitted: list[tuple] = []
+
+        async def fake_emit(event, data, room=None, skip_sid=None):
+            emitted.append((event, data, room, skip_sid))
+
+        monkeypatch.setattr(sio, "emit", fake_emit)
+
+        async def fake_session(sid):
+            return {"user_id": "u1", "username": "alice"}
+
+        async def fake_perm(project_id, user_id):
+            return True
+
+        monkeypatch.setattr("app.ws.collaboration._get_session_info", fake_session)
+        monkeypatch.setattr("app.ws.collaboration._check_edit_permission", fake_perm)
+
+        await node_update("s1", {
+            "project_id": "p1",
+            "node_id": "n1",
+            "action": "delete",
+        })
+
+        # 无锁时不应广播 lock_changed
+        lock_changed_events = [e for e in emitted if e[0] == "lock_changed"]
+        assert len(lock_changed_events) == 0
+        # node_update 仍正常广播
+        node_update_events = [e for e in emitted if e[0] == "node_update"]
+        assert len(node_update_events) == 1
