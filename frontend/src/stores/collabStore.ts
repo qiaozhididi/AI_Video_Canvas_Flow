@@ -230,10 +230,15 @@ export const useCollabStore = create<CollabState>((set, get) => ({
   disconnect: () => {
     const { socket, _renewTimer } = get();
     if (_renewTimer) clearInterval(_renewTimer);
-    socket?.disconnect();
+    if (socket) {
+      socket.removeAllListeners();
+      socket.disconnect();
+    }
+    lastCursorEmitAt = 0;
     set({
       socket: null,
       isConnected: false,
+      connectionError: null,
       currentProjectId: null,
       onlineUsers: [],
       remoteCursors: [],
