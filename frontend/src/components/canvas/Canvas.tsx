@@ -16,6 +16,7 @@ import {
   type Edge,
   type ReactFlowInstance,
   type OnSelectionChangeFunc,
+  type OnNodeDrag,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -55,7 +56,13 @@ const ICON_MAP_LUCIDE: Record<string, React.ComponentType<{ className?: string }
 
 const nodeTypes = { canvasNode: CanvasNodeComponent };
 
-export default function Canvas() {
+// 可选的拖动回调（由 Editor 传入，用于协作锁加锁/延迟释放）
+interface CanvasProps {
+  onNodeDragStart?: OnNodeDrag<Node>;
+  onNodeDragStop?: OnNodeDrag<Node>;
+}
+
+export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps = {}) {
   const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken, selectedNodeIds, setSelectedNodeIds } = useCanvasStore();
   const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const markDirty = useAutoSaveStore((s) => s.markDirty);
@@ -448,6 +455,8 @@ export default function Canvas() {
         onPaneContextMenu={onPaneContextMenu}
         onMouseMove={onMouseMove}
         onSelectionChange={onSelectionChange}
+        onNodeDragStart={onNodeDragStart}
+        onNodeDragStop={onNodeDragStop}
         nodeTypes={nodeTypes}
         onDragOver={onDragOver}
         onDrop={onDrop}

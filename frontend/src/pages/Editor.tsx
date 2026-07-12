@@ -5,6 +5,7 @@ import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useTimelineStore } from '@/stores/timelineStore';
+import { useCollabStore } from '@/stores/collabStore';
 import { usePreviewContent } from '@/hooks/usePreviewContent';
 import Canvas from '@/components/canvas/Canvas';
 import NodePanel from '@/components/panels/NodePanel';
@@ -14,6 +15,7 @@ import { loadMockData } from '@/mock';
 import { ChevronDown, ChevronUp, Database, Plus, RotateCcw, RotateCw, LayoutDashboard, PlayCircle } from 'lucide-react';
 import type { CanvasNodeData, Artifact } from '@/types/canvas';
 import type { Clip, TrackType } from '@/types/timeline';
+import type { Node, OnNodeDrag } from '@xyflow/react';
 import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import { aiApi } from '@/utils/apiClient';
 import type { AiModelResponse } from '@/utils/apiClient';
@@ -87,6 +89,106 @@ export default function Editor() {
   }, [setTimelineCurrentTime]);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  // ===== 协作锁集成（拖动 + 属性面板） =====
+  const { acquireLock, releaseLock, isNodeLocked, isNodeLockedByMe, getNodeLockHolder, onLockChanged } = useCollabStore();
+
+  // 每个节点的延迟释放定时器（node_id → timer），避免连续拖动/编辑时误释放
+  const releaseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // 订阅 lock_changed 事件，触发节点重渲染（更新 _locked/_lockHolder）
+  // 注意：canvasStore.setNodes 接收直接数组（非 updater 函数），故从 getState 读取最新节点
+  useEffect(() => {
+    const unsub = onLockChanged(() => {
+      const currentNodes = useCanvasStore.getState().nodes;
+      setNodes(
+        currentNodes.map((n) => {
+          const locked = isNodeLocked(n.id) && !isNodeLockedByMe(n.id);
+          const holder = getNodeLockHolder(n.id);
+          return {
+            ...n,
+            data: { ...n.data, _locked: locked, _lockHolder: holder?.username || null },
+          };
+        }),
+      );
+    });
+    return unsub;
+  }, [onLockChanged, isNodeLocked, isNodeLockedByMe, getNodeLockHolder, setNodes]);
+
+  // 拖动开始：清除该节点待执行的延迟释放定时器，并尝试加锁
+  const onNodeDragStart = useCallback<OnNodeDrag<Node>>(async (_evt, node) => {
+    const oldTimer = releaseTimersRef.current[node.id];
+    if (oldTimer) {
+      clearTimeout(oldTimer);
+      delete releaseTimersRef.current[node.id];
+    }
+    // 检查是否被他人锁定
+    if (isNodeLocked(node.id) && !isNodeLockedByMe(node.id)) {
+      const holder = getNodeLockHolder(node.id);
+      toast.warning(`节点正被 ${holder?.username} 编辑`);
+      return;
+    }
+    const result = await acquireLock(node.id);
+    // 非 strict 模式下需用 === false 显式收窄判别联合（与 collabStore 一致）
+    if (result.ok === false && result.reason === 'locked_by_other') {
+      toast.info(`节点正被 ${result.holder.username} 编辑，请稍后`);
+    }
+  }, [acquireLock, isNodeLocked, isNodeLockedByMe, getNodeLockHolder]);
+
+  // 拖动结束：3s 后延迟释放（给连续微调留时间）
+  const onNodeDragStop = useCallback<OnNodeDrag<Node>>((_evt, node) => {
+    // 清除旧的待执行定时器
+    const oldTimer = releaseTimersRef.current[node.id];
+    if (oldTimer) clearTimeout(oldTimer);
+    releaseTimersRef.current[node.id] = setTimeout(async () => {
+      if (isNodeLockedByMe(node.id)) {
+        await releaseLock(node.id);
+      }
+      delete releaseTimersRef.current[node.id];
+    }, 3000);
+  }, [releaseLock, isNodeLockedByMe]);
+
+  // 属性面板获焦加锁（设计文档 §7.2 onPropertyFocus）
+  const onPropertyFocus = useCallback(async (nodeId: string): Promise<boolean> => {
+    // 清除该节点待执行的延迟释放定时器（与拖动共用）
+    const oldTimer = releaseTimersRef.current[nodeId];
+    if (oldTimer) {
+      clearTimeout(oldTimer);
+      delete releaseTimersRef.current[nodeId];
+    }
+    if (isNodeLocked(nodeId) && !isNodeLockedByMe(nodeId)) {
+      const holder = getNodeLockHolder(nodeId);
+      toast.warning(`节点正被 ${holder?.username} 编辑`);
+      return false;
+    }
+    const result = await acquireLock(nodeId);
+    // 非 strict 模式下需用 === false 显式收窄判别联合（与 collabStore 一致）
+    if (result.ok === false && result.reason === 'locked_by_other') {
+      toast.info(`节点正被 ${result.holder.username} 编辑，请稍后`);
+      return false;
+    }
+    return result.ok;
+  }, [acquireLock, isNodeLocked, isNodeLockedByMe, getNodeLockHolder]);
+
+  // 属性面板失焦延迟释放（与拖动共用延迟释放逻辑）
+  const onPropertyBlur = useCallback((nodeId: string) => {
+    const oldTimer = releaseTimersRef.current[nodeId];
+    if (oldTimer) clearTimeout(oldTimer);
+    releaseTimersRef.current[nodeId] = setTimeout(async () => {
+      if (isNodeLockedByMe(nodeId)) {
+        await releaseLock(nodeId);
+      }
+      delete releaseTimersRef.current[nodeId];
+    }, 3000);
+  }, [releaseLock, isNodeLockedByMe]);
+
+  // 组件卸载时清理所有延迟释放定时器
+  useEffect(() => {
+    return () => {
+      Object.values(releaseTimersRef.current).forEach(clearTimeout);
+      releaseTimersRef.current = {};
+    };
+  }, []);
 
   // ===== Mock 数据加载（仅用于开发调试，已移至调试面板手动触发） =====
 
@@ -176,7 +278,7 @@ export default function Editor() {
         <div className="flex-1 overflow-hidden">
           {activeTab === 'canvas' ? (
             <div ref={reactFlowWrapper} className="h-full">
-              <Canvas />
+              <Canvas onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop} />
             </div>
           ) : (
             <div className="h-full">
@@ -243,6 +345,8 @@ export default function Editor() {
         onUpdateData={handleNodeDataUpdate}
         onRemoveNode={handleNodeRemove}
         onSelectClipPreview={setSelectedClipMedia}
+        onPropertyFocus={onPropertyFocus}
+        onPropertyBlur={onPropertyBlur}
       />
 
       {/* 调试面板 - 撤销/重做操作历史 */}
@@ -344,10 +448,15 @@ function PropertyPanelWithHistory({
   onUpdateData,
   onRemoveNode,
   onSelectClipPreview,
+  onPropertyFocus,
+  onPropertyBlur,
 }: {
   onUpdateData: (id: string, updates: Partial<CanvasNodeData>) => void;
   onRemoveNode: (id: string) => void;
   onSelectClipPreview?: (media: { url: string; type: 'image' | 'video' } | null) => void;
+  // 协作锁：输入获焦时加锁、失焦时延迟释放（nodeId 为当前选中节点）
+  onPropertyFocus?: (nodeId: string) => Promise<boolean>;
+  onPropertyBlur?: (nodeId: string) => void;
 }) {
   const nodes = useCanvasStore((s) => s.nodes);
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId);
@@ -449,6 +558,8 @@ function PropertyPanelWithHistory({
     if (!(key in paramSnapshotRef.current)) {
       paramSnapshotRef.current[key] = data.params[key];
     }
+    // 协作锁：获焦时加锁（fire-and-forget，结果仅用于 toast 提示）
+    void onPropertyFocus?.(selectedNode.id);
   };
 
   const handleParamBlur = (key: string) => {
@@ -467,6 +578,8 @@ function PropertyPanelWithHistory({
         to: { params: { [key]: newValue } },
       });
     }
+    // 协作锁：失焦时延迟释放（与拖动共用定时器）
+    onPropertyBlur?.(selectedNode.id);
   };
 
   const handleExecute = async () => {
@@ -508,8 +621,8 @@ function PropertyPanelWithHistory({
             type="text"
             value={data.label}
             onChange={(e) => onUpdateData(selectedNode.id, { label: e.target.value })}
-            onFocus={() => { if (!paramSnapshotRef.current) paramSnapshotRef.current = {}; if (!('label' in paramSnapshotRef.current)) paramSnapshotRef.current['label'] = data.label; }}
-            onBlur={() => { if (paramSnapshotRef.current && 'label' in paramSnapshotRef.current) { const old = paramSnapshotRef.current['label']; delete paramSnapshotRef.current['label']; if (Object.keys(paramSnapshotRef.current).length === 0) paramSnapshotRef.current = null; if (old !== data.label) { useHistoryStore.getState().pushUpdateNodeData({ nodeId: selectedNode.id, from: { label: old as string }, to: { label: data.label } }); } } }}
+            onFocus={() => { if (!paramSnapshotRef.current) paramSnapshotRef.current = {}; if (!('label' in paramSnapshotRef.current)) paramSnapshotRef.current['label'] = data.label; void onPropertyFocus?.(selectedNode.id); }}
+            onBlur={() => { if (paramSnapshotRef.current && 'label' in paramSnapshotRef.current) { const old = paramSnapshotRef.current['label']; delete paramSnapshotRef.current['label']; if (Object.keys(paramSnapshotRef.current).length === 0) paramSnapshotRef.current = null; if (old !== data.label) { useHistoryStore.getState().pushUpdateNodeData({ nodeId: selectedNode.id, from: { label: old as string }, to: { label: data.label } }); } } onPropertyBlur?.(selectedNode.id); }}
             className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
           />
         </div>
