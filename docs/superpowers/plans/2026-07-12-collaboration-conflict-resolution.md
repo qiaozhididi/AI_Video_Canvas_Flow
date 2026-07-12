@@ -331,12 +331,12 @@ class TestReleaseLockLogic:
         assert _lock_key("p1", "n1") not in _node_locks
 ```
 
-- [ ] **Step 2: 运行测试验证失败**
+- [ ] **Step 2: 运行测试验证逻辑正确**
 
 Run: `cd backend && .venv/bin/python -m pytest tests/test_collaboration_locks.py::TestAcquireLockLogic -v --tb=short`
-Expected: PASS（因为测试直接操作 _node_locks，验证逻辑而非事件处理函数）
+Expected: PASS（测试直接操作 _node_locks 验证 Task 1 已实现的逻辑，事件处理函数的集成测试在 Task 7 覆盖）
 
-> 注：这些测试验证锁状态逻辑，事件处理函数的集成测试在 Task 8 覆盖。先确保逻辑正确。
+> 注：这些测试验证锁状态逻辑在 acquire/renew/release 场景下的正确性，作为回归测试。
 
 - [ ] **Step 3: 实现 3 个事件处理函数**
 
