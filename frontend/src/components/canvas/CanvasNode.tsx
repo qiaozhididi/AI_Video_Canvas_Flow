@@ -29,7 +29,11 @@ const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
   failed: XCircle,
 };
 
-type CanvasNodeProps = { data: CanvasNodeData; selected: boolean; id: string };
+type CanvasNodeProps = {
+  data: CanvasNodeData & { _locked?: boolean; _lockHolder?: string | null };
+  selected: boolean;
+  id: string;
+};
 
 function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
   const category = NODE_CATEGORIES[data.type];
@@ -68,7 +72,10 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
     setEditingNodeId(null);
   };
 
-  const borderColor = data.status === 'running'
+  // 锁定时优先显示橙色边框（强信号：节点不可编辑）
+  const borderColor = data._locked
+    ? 'border-orange-400'
+    : data.status === 'running'
     ? 'border-status-running animate-pulse-neon'
     : data.status === 'completed'
     ? 'border-status-success'
@@ -81,12 +88,22 @@ function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
   return (
     <div
       className={`
-        min-w-[180px] rounded-lg border-2 bg-canvas-panel
+        relative min-w-[180px] rounded-lg border-2 bg-canvas-panel
         shadow-lg transition-all duration-200
         ${borderColor}
+        ${data._locked ? 'cursor-not-allowed' : ''}
         ${selected ? 'shadow-neon-purple/20' : ''}
       `}
     >
+      {/* 锁定角标：橙色边框 + 🔒 + 持有者名称 */}
+      {data._locked && (
+        <div className="absolute -top-2 -right-2 flex items-center gap-1 rounded-full bg-orange-500 px-2 py-0.5 text-xs text-white shadow pointer-events-none z-10">
+          <span>🔒</span>
+          {data._lockHolder && (
+            <span className="max-w-[80px] truncate">{data._lockHolder}</span>
+          )}
+        </div>
+      )}
       {/* 输入端口 */}
       {data.type !== 'input' && (
         <Handle
