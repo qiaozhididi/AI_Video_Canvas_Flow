@@ -3,6 +3,7 @@
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from urllib.parse import parse_qs
 
 import socketio
@@ -24,6 +25,84 @@ sio = socketio.AsyncServer(
     logger=False,
     engineio_logger=False,
 )
+
+# ── 节点锁配置 ──
+LOCK_TTL: float = 5.0           # 锁存活时长（秒）
+LOCK_RENEW_INTERVAL: float = 2.0   # 客户端续租间隔（秒）
+LOCK_CLEANUP_INTERVAL: float = 1.0  # 后端清理协程扫描间隔（秒）
+
+
+@dataclass
+class NodeLock:
+    """节点锁信息（租约模型）"""
+    node_id: str
+    project_id: str
+    sid: str              # 持锁者 Socket.IO sid
+    user_id: str
+    username: str
+    acquired_at: float    # 获取时间戳（秒）
+    expires_at: float     # 过期时间戳（秒）
+    last_renewed: float   # 最后续租时间
+
+    def is_expired(self, now: float | None = None) -> bool:
+        now = now if now is not None else time.time()
+        return now >= self.expires_at
+
+    def renew(self, ttl: float) -> None:
+        """续租：刷新过期时间"""
+        self.last_renewed = time.time()
+        self.expires_at = self.last_renewed + ttl
+
+
+# 全局锁状态：key = (project_id, node_id)，value = NodeLock
+_node_locks: dict[tuple[str, str], NodeLock] = {}
+
+
+def _lock_key(project_id: str, node_id: str) -> tuple[str, str]:
+    return (project_id, node_id)
+
+
+def _get_active_lock(project_id: str, node_id: str) -> NodeLock | None:
+    """获取节点的有效锁（已过期的视为无锁并清理）"""
+    key = _lock_key(project_id, node_id)
+    lock = _node_locks.get(key)
+    if lock is None:
+        return None
+    if lock.is_expired():
+        _node_locks.pop(key, None)
+        return None
+    return lock
+
+
+def _purge_expired_locks() -> list[NodeLock]:
+    """清理所有过期锁，返回被清理的锁列表（用于广播释放事件）"""
+    now = time.time()
+    expired = [lock for lock in _node_locks.values() if lock.is_expired(now)]
+    for lock in expired:
+        _node_locks.pop(_lock_key(lock.project_id, lock.node_id), None)
+    return expired
+
+
+def _remove_locks_by_sid(sid: str) -> list[NodeLock]:
+    """移除某 sid 持有的所有锁（断线清理），返回被移除的锁列表"""
+    removed = [lock for lock in _node_locks.values() if lock.sid == sid]
+    for lock in removed:
+        _node_locks.pop(_lock_key(lock.project_id, lock.node_id), None)
+    return removed
+
+
+def _lock_to_dict(lock: NodeLock) -> dict:
+    """NodeLock → 可序列化 dict（用于事件 payload）"""
+    return {
+        "node_id": lock.node_id,
+        "project_id": lock.project_id,
+        "sid": lock.sid,
+        "user_id": lock.user_id,
+        "username": lock.username,
+        "acquired_at": lock.acquired_at,
+        "expires_at": lock.expires_at,
+    }
+
 
 # 全局房间成员清单：key=room_id, value=[{sid, user_id, username}, ...]
 _room_members: dict[str, list[dict]] = {}
