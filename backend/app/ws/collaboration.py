@@ -379,6 +379,100 @@ async def cursor_move(sid, data):
     logger.debug(f"[WS:CursorMove] sid={sid} user={user_id} project={project_id}")
 
 
+# ── 节点锁事件 ──
+
+@sio.on("acquire_lock")
+async def acquire_lock(sid, data):
+    """申请节点锁
+
+    流程：权限检查 → 检查现有锁 → 创建或拒绝
+    ack 返回: {ok: true, lock} | {ok: false, reason, holder?} | {ok: false, reason: 'permission_denied'}
+    """
+    project_id = data.get("project_id")
+    node_id = data.get("node_id")
+    if not project_id or not node_id:
+        return {"ok": False, "reason": "error", "message": "缺少 project_id 或 node_id"}
+
+    session = await _get_session_info(sid)
+    user_id = session.get("user_id", "unknown")
+    username = session.get("username", "unknown")
+
+    # 权限检查（viewer 不可锁）
+    if not await _check_edit_permission(project_id, user_id):
+        return {"ok": False, "reason": "permission_denied"}
+
+    # 检查现有锁
+    existing = _get_active_lock(project_id, node_id)
+    if existing:
+        if existing.sid == sid:
+            # 自己已持锁，续租并返回
+            existing.renew(LOCK_TTL)
+            return {"ok": True, "lock": _lock_to_dict(existing)}
+        # 他人持锁
+        return {"ok": False, "reason": "locked_by_other", "holder": _lock_to_dict(existing)}
+
+    # 创建新锁
+    now = time.time()
+    lock = NodeLock(
+        node_id=node_id,
+        project_id=project_id,
+        sid=sid,
+        user_id=user_id,
+        username=username,
+        acquired_at=now,
+        expires_at=now + LOCK_TTL,
+        last_renewed=now,
+    )
+    _node_locks[_lock_key(project_id, node_id)] = lock
+
+    room = f"project:{project_id}"
+    await sio.emit("lock_changed", {
+        "project_id": project_id,
+        "node_id": node_id,
+        "lock": _lock_to_dict(lock),
+    }, room=room)
+
+    logger.debug(f"[WS:Lock] acquire sid={sid} user={username} node={node_id}")
+    return {"ok": True, "lock": _lock_to_dict(lock)}
+
+
+@sio.on("renew_lock")
+async def renew_lock(sid, data):
+    """续租节点锁"""
+    project_id = data.get("project_id")
+    node_id = data.get("node_id")
+    lock = _node_locks.get(_lock_key(project_id, node_id))
+
+    if not lock or lock.sid != sid:
+        return {"ok": False}
+
+    lock.renew(LOCK_TTL)
+    return {"ok": True, "expires_at": lock.expires_at}
+
+
+@sio.on("release_lock")
+async def release_lock(sid, data):
+    """主动释放节点锁"""
+    project_id = data.get("project_id")
+    node_id = data.get("node_id")
+    key = _lock_key(project_id, node_id)
+    lock = _node_locks.get(key)
+
+    if not lock or lock.sid != sid:
+        return {"ok": False}
+
+    _node_locks.pop(key, None)
+    room = f"project:{project_id}"
+    await sio.emit("lock_changed", {
+        "project_id": project_id,
+        "node_id": node_id,
+        "lock": None,
+    }, room=room)
+
+    logger.debug(f"[WS:Lock] release sid={sid} node={node_id}")
+    return {"ok": True}
+
+
 @sio.on("ping")
 async def ping(sid, data):
     """心跳/延迟检测"""
