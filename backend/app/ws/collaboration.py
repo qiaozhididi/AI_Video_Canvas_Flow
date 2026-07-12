@@ -1,5 +1,6 @@
 """Socket.IO 协作处理 — 含详细日志"""
 
+import asyncio
 import logging
 import time
 import uuid
@@ -226,6 +227,18 @@ async def disconnect(sid):
                 room=room,
             )
 
+    # 2. 清理该 sid 持有的所有锁（新增）
+    released = _remove_locks_by_sid(sid)
+    for lock in released:
+        room = f"project:{lock.project_id}"
+        await sio.emit("lock_changed", {
+            "project_id": lock.project_id,
+            "node_id": lock.node_id,
+            "lock": None,
+        }, room=room)
+    if released:
+        logger.info(f"[WS:Lock] 断线清理 sid={sid} 释放 {len(released)} 个锁")
+
 
 # ── 房间管理 ──
 
@@ -264,8 +277,16 @@ async def join_project(sid, data):
         skip_sid=sid,
     )
 
-    # 返回当前房间在线用户快照（ack 数据）
-    return {"users": _room_members.get(room, [])}
+    # 返回当前房间在线用户 + 所有锁状态（新增）
+    project_locks = [
+        _lock_to_dict(lock)
+        for lock in _node_locks.values()
+        if lock.project_id == project_id and not lock.is_expired()
+    ]
+    return {
+        "users": _room_members.get(room, []),
+        "locks": project_locks,
+    }
 
 
 @sio.on("leave_project")
@@ -320,6 +341,12 @@ async def node_update(sid, data):
 
     room = f"project:{project_id}"
     await sio.emit("node_update", data, room=room, skip_sid=sid)
+
+    # 删除节点时清理关联锁（新增）
+    if action == "delete":
+        lock = _node_locks.pop(_lock_key(project_id, node_id), None)
+        if lock:
+            logger.debug(f"[WS:Lock] 节点删除清理锁 node={node_id} holder={lock.username}")
 
     elapsed = (time.time() - t0) * 1000
     logger.debug(
@@ -471,6 +498,55 @@ async def release_lock(sid, data):
 
     logger.debug(f"[WS:Lock] release sid={sid} node={node_id}")
     return {"ok": True}
+
+
+@sio.on("force_release")
+async def force_release(sid, data):
+    """强制解锁（仅 owner 可操作）"""
+    project_id = data.get("project_id")
+    node_id = data.get("node_id")
+    session = await _get_session_info(sid)
+    user_id = session.get("user_id", "unknown")
+
+    # 检查是否为项目 owner
+    async with async_session_factory() as db:
+        project = await db.get(Project, uuid.UUID(project_id))
+        if not project or str(project.owner_id) != user_id:
+            return {"ok": False, "message": "仅项目所有者可强制解锁"}
+
+    key = _lock_key(project_id, node_id)
+    lock = _node_locks.pop(key, None)
+    if lock:
+        room = f"project:{project_id}"
+        await sio.emit("lock_changed", {
+            "project_id": project_id,
+            "node_id": node_id,
+            "lock": None,
+        }, room=room)
+        logger.info(f"[WS:Lock] force_release by owner sid={sid} node={node_id} old_holder={lock.username}")
+    return {"ok": True}
+
+
+async def _lock_cleanup_loop():
+    """后台协程：定期清理过期锁并广播释放事件"""
+    logger.info("[WS:Lock] TTL 清理协程已启动")
+    while True:
+        await asyncio.sleep(LOCK_CLEANUP_INTERVAL)
+        try:
+            expired = _purge_expired_locks()
+            for lock in expired:
+                room = f"project:{lock.project_id}"
+                await sio.emit("lock_changed", {
+                    "project_id": lock.project_id,
+                    "node_id": lock.node_id,
+                    "lock": None,
+                }, room=room)
+                logger.debug(
+                    f"[WS:Lock] TTL 过期释放 node={lock.node_id} "
+                    f"user={lock.username} held={time.time() - lock.acquired_at:.1f}s"
+                )
+        except Exception as e:
+            logger.warning(f"[WS:Lock] 清理协程异常: {e}")
 
 
 @sio.on("ping")

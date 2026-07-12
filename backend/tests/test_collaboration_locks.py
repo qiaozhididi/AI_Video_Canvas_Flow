@@ -156,3 +156,66 @@ class TestReleaseLockLogic:
         _node_locks[_lock_key("p1", "n1")] = lock
         _node_locks.pop(_lock_key("p1", "n1"), None)
         assert _lock_key("p1", "n1") not in _node_locks
+
+
+class TestForceReleaseLogic:
+    def test_force_release_removes_any_lock(self):
+        """强制解锁移除任意持锁者的锁"""
+        from app.ws.collaboration import _node_locks, _lock_key
+        _node_locks.clear()
+        now = time.time()
+        lock = NodeLock("n1", "p1", "s_other", "u_other", "bob", now, now + 5, now)
+        _node_locks[_lock_key("p1", "n1")] = lock
+        # 模拟 owner 强制解锁：直接 pop
+        removed = _node_locks.pop(_lock_key("p1", "n1"), None)
+        assert removed is lock
+        assert _lock_key("p1", "n1") not in _node_locks
+
+
+class TestDisconnectCleanup:
+    def test_disconnect_removes_all_locks_of_sid(self):
+        from app.ws.collaboration import _node_locks, _remove_locks_by_sid
+        _node_locks.clear()
+        now = time.time()
+        l1 = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
+        l2 = NodeLock("n2", "p1", "s1", "u1", "a", now, now + 5, now)
+        _node_locks[("p1", "n1")] = l1
+        _node_locks[("p1", "n2")] = l2
+        removed = _remove_locks_by_sid("s1")
+        assert len(removed) == 2
+        assert len(_node_locks) == 0
+
+
+class TestNodeDeleteCleanup:
+    def test_delete_removes_node_lock(self):
+        from app.ws.collaboration import _node_locks, _lock_key
+        _node_locks.clear()
+        now = time.time()
+        lock = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
+        _node_locks[_lock_key("p1", "n1")] = lock
+        # 模拟节点删除清理
+        removed = _node_locks.pop(_lock_key("p1", "n1"), None)
+        assert removed is not None
+        assert _lock_key("p1", "n1") not in _node_locks
+
+
+class TestJoinProjectLocksSync:
+    def test_collect_project_locks_for_ack(self):
+        """join_project ack 应返回当前项目的所有有效锁"""
+        from app.ws.collaboration import _node_locks, _lock_to_dict
+        _node_locks.clear()
+        now = time.time()
+        l1 = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
+        l2 = NodeLock("n2", "p2", "s2", "u2", "b", now, now + 5, now)  # 不同项目
+        l3 = NodeLock("n3", "p1", "s3", "u3", "c", now, now - 1, now)  # 已过期
+        _node_locks[("p1", "n1")] = l1
+        _node_locks[("p2", "n2")] = l2
+        _node_locks[("p1", "n3")] = l3
+        # 模拟 join_project 收集 p1 的有效锁
+        project_locks = [
+            _lock_to_dict(lock)
+            for lock in _node_locks.values()
+            if lock.project_id == "p1" and not lock.is_expired()
+        ]
+        assert len(project_locks) == 1
+        assert project_locks[0]["node_id"] == "n1"

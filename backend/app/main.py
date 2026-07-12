@@ -1,5 +1,6 @@
 """FastAPI 应用入口，挂载路由、CORS、生命周期"""
 
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -42,6 +43,10 @@ async def lifespan(app: FastAPI):
     from app.api.ai import ensure_default_ai_config
     async with async_session_factory() as db:
         await ensure_default_ai_config(db)
+
+    # 启动锁 TTL 清理协程
+    from app.ws.collaboration import _lock_cleanup_loop
+    asyncio.create_task(_lock_cleanup_loop())
 
     start_time = time.time()
 
