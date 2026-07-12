@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown, Users } from 'lucide-react';
 import CollaboratorPanel from './CollaboratorPanel';
+import { CollaborationStatusBar } from './CollaborationStatusBar';
 import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
@@ -518,6 +519,9 @@ export default function EditorLayout() {
           />
         )}
       </div>
+
+      {/* 协作状态提示条：显示持锁数与在线人数（无锁时自动隐藏） */}
+      <CollaborationStatusBar />
 
       {/* 主内容区 - 由子路由渲染 */}
       <div className="flex-1 overflow-hidden">

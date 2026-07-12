@@ -30,6 +30,7 @@ import {
   alignHorizontalCenter, alignVerticalCenter,
 } from '@/utils/alignment';
 import CanvasNodeComponent from './CanvasNode';
+import LockedNode from './LockedNodeStyle';
 import RemoteCursors from './RemoteCursors';
 import AlignmentToolbar from './AlignmentToolbar';
 import ContextMenu, { type MenuItem } from './ContextMenu';
@@ -54,7 +55,8 @@ const ICON_MAP_LUCIDE: Record<string, React.ComponentType<{ className?: string }
   Film, ImageDown, Volume2,
 };
 
-const nodeTypes = { canvasNode: CanvasNodeComponent };
+// 注册自定义节点类型：canvasNode 为业务节点，default 提供锁定样式（橙色边框 + 🔒 角标）
+const nodeTypes = { canvasNode: CanvasNodeComponent, default: LockedNode };
 
 // 可选的拖动回调（由 Editor 传入，用于协作锁加锁/延迟释放）
 interface CanvasProps {
