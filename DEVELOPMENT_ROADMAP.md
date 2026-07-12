@@ -31,6 +31,15 @@
 | 前端 | 跨 Tab 认证同步 | ✅ 完成 | AuthGuard + storage 事件 + Login 自动跳转 + 登出按钮 |
 | 前端 | 首页快捷操作 | ✅ 完成 | "从模板创建"弹窗 + "AI 快速生成"弹窗（Home.tsx） |
 | 后端 | Token 刷新 | ✅ 完成 | POST /auth/refresh 端点 + 前端自动续期（防并发锁） |
+| 前端 | 协作者权限管理 | ✅ 完成 | CollaboratorPanel + 三级角色（owner/editor/viewer）+ WebSocket 权限检查 |
+| 前端 | 邀请链接 | ✅ 完成 | InviteModal + AcceptInvite 页面 + /invite/:token 路由 |
+| 前端 | 视频导出 | ✅ 完成 | ExportModal（格式/分辨率/字幕烧录开关）+ Timeline 导出按钮 |
+| 前端 | 字幕轨 | ✅ 完成 | AI 字幕生成 + 内联编辑 + 字幕覆盖层 + 烧录导出 |
+| 后端 | 存储用量 API | ✅ 完成 | GET /media/stats/usage（按文件类型分组统计） |
+| 后端 | 视频导出 | ✅ 完成 | FFmpeg 混流 + 字幕烧录 + Celery run_export_task |
+| 后端 | 协作者权限 | ✅ 完成 | 3 端点 CRUD + WebSocket _check_edit_permission |
+| 后端 | 邀请链接 | ✅ 完成 | 3 端点（生成/查看/接受）+ token + 过期校验 |
+| 后端 | AI 字幕生成 | ✅ 完成 | POST /ai/generate-subtitles（LLM 解析文本生成时间轴分段） |
 
 ---
 
@@ -41,7 +50,7 @@
 | 后端 API | **100%** | 全部核心端点已实现（含 templates/snapshots/collaboration WS 鉴权 + AI 工作流生成） |
 | 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates + snapshots + generateWorkflow） |
 | 前端 Store 对接 | **90%** | authStore/projectStore/canvasStore(间接)/autoSaveStore/collabStore 已对接；timelineStore 通过快照恢复部分对接 |
-| 前端页面对接 | **100%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴+AI 生成) 全部对接；MediaLibrary 有 Mock 降级；Settings 存储用量使用硬编码数据（待后端API） |
+| 前端页面对接 | **100%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴+AI 生成+字幕轨+协作面板+导出+邀请) 全部对接；MediaLibrary 有 Mock 降级；Settings 存储用量已对接真实 API |
 
 ---
 
@@ -293,6 +302,60 @@
 - **合并**: commit f153309
 - **涉及文件**: Home.tsx
 
+### 17. 存储用量 API + 处理/控制节点提示（F1 + F2）
+- **后端**: media.py 新增 `GET /media/stats/usage` 端点，返回 `{total_size, total_count, quota, categories}`，按文件类型前缀分组统计
+- **前端**: apiClient.ts 新增 `mediaApi.getStorageUsage()` + `getStorageStats()`（usageToStats 转换器兼容旧字段）
+- **前端**: Settings.tsx StorageTab 改用 `mediaApi.getStorageUsage()` 替换硬编码假数据
+- **前端**: PropertyPanel.tsx 控制节点（condition/loop/merge）显示「控制节点」徽章 + "此节点用于工作流逻辑控制，不可单独执行"提示，禁用执行按钮
+- **涉及文件**: media.py, Settings.tsx, PropertyPanel.tsx, apiClient.ts
+
+### 18. 协作者权限管理（F5：三级角色 + WebSocket 权限检查）
+- **后端**: project_collaborator.py 模型定义 `role` 字段（editor/viewer，owner 隐式）+ `joined_at`
+- **后端**: collaboration.py 新增 3 端点（GET 列表 + PUT 修改权限 + DELETE 移除，仅 owner 可操作）
+- **后端**: ws/collaboration.py 新增 `_check_edit_permission()`，node_update/edge_update 事件拒绝 viewer 变更并返回 `{"error": "查看者无法编辑"}`
+- **前端**: CollaboratorPanel.tsx 协作者列表 + 权限修改下拉 + 移除按钮（仅 owner 可操作）
+- **前端**: EditorLayout.tsx 接入 CollaboratorPanel（在线用户头像区域展开）
+- **数据库迁移**: 18e962ca68fb_add_collaborators_invitations_and_.py
+- **涉及文件**: project_collaborator.py, collaboration.py, ws/collaboration.py, CollaboratorPanel.tsx, EditorLayout.tsx
+
+### 19. 邀请链接功能（F6）
+- **后端**: project_invitation.py 模型定义 `token`/`expires_at`/`role`/`used_by` 字段
+- **后端**: invitations.py 新增 3 端点（POST 生成 + GET 查看[无需登录] + POST 接受），校验不能邀请自己（409）、不能重复接受（409）、过期/已用（410）
+- **前端**: InviteModal.tsx 权限选择 + 有效期选择 + 生成链接 + 复制按钮
+- **前端**: AcceptInvite.tsx 页面：访问 `/invite/:token` → 查看邀请 → 登录 → 接受邀请 → 跳转编辑器
+- **前端**: App.tsx 注册 `/invite/:token` 路由（在 AuthGuard 外，懒加载）
+- **涉及文件**: project_invitation.py, invitations.py, InviteModal.tsx, AcceptInvite.tsx, App.tsx, apiClient.ts
+
+### 20. 视频导出（F3：FFmpeg 混流 + 字幕烧录）
+- **后端**: export_service.py 实现 FFmpeg 多轨混流（单片段转码 / 多片段 concat / 黑屏兜底），支持 720p/1080p/4k + mp4/mov/webm
+- **后端**: export_service.py 字幕烧录：生成 SRT 临时文件 + `subtitles=` 滤镜 + `force_style`（FontSize/PrimaryColour/Outline）
+- **后端**: render.py 新增 `POST /render/export` 端点，从最新快照读取 timeline_data，触发 Celery `run_export_task`
+- **后端**: render_tasks.py 新增 `run_export_task` 函数，下载素材→FFmpeg 合成→上传 MinIO→创建 MediaAsset→回写 result_url
+- **后端**: export_service.py 使用参数注入的 `session_factory`（Celery 场景传入专用实例，避免事件循环不匹配）
+- **前端**: ExportModal.tsx 格式选择 + 分辨率选择 + 字幕烧录开关（仅字幕轨有片段时显示）+ 进度条 + 下载按钮
+- **前端**: Timeline.tsx 时间轴工具栏新增「导出」按钮接入 ExportModal
+- **涉及文件**: export_service.py, render.py, render_tasks.py, ExportModal.tsx, Timeline.tsx, apiClient.ts
+
+### 21. 字幕轨功能（AI 字幕生成 + 内联编辑 + 烧录导出）
+- **后端**: ai.py 新增 `POST /ai/generate-subtitles` 端点，LLM 解析文本生成带时间轴字幕分段 `[{start, end, text}]`
+- **前端**: types/timeline.ts Clip 类型新增 `subtitleText` 字段，TrackType 支持 `subtitle`
+- **前端**: timelineStore.ts 新增 `updateClipText()` 方法支持字幕内联编辑
+- **前端**: usePreviewContent.ts 处理 `subtitleText`，非播放状态下纯字幕片段返回 `{subtitleText}` 触发覆盖层渲染
+- **前端**: VideoPreview.tsx HTML absolute 定位字幕覆盖层（pointer-events-none）
+- **前端**: Timeline.tsx 字幕轨空区域显示「+ 添加字幕」按钮，双击进入内联编辑（Enter 保存/Esc 取消）
+- **前端**: ExportModal.tsx 「烧录字幕」开关默认开启（仅字幕轨有片段时显示）
+- **后端**: export_service.py 导出时生成 SRT + FFmpeg subtitles 滤镜烧录
+- **涉及文件**: ai.py, ai_service.py, types/timeline.ts, timelineStore.ts, usePreviewContent.ts, VideoPreview.tsx, Timeline.tsx, ExportModal.tsx, export_service.py
+- **设计文档**: docs/superpowers/specs/2026-07-09-subtitle-track-design.md
+
+### 22. 项目审查与代码质量修复
+- **问题 1**: project_snapshots 表迁移缺失 `name` 列（模型已定义但建表迁移遗漏）→ 新建迁移 `f1a2b3c4d5e6_add_name_to_project_snapshots.py`
+- **问题 2**: tasks/__init__.py 未显式导入 `run_export_task`（违反 Celery 任务显式导入约束）→ 补充导入
+- **问题 3**: export_service.py 使用 FastAPI 的 `async_session_factory`（Celery 事件循环不匹配风险）→ 改为参数注入 `session_factory`
+- **问题 4**: render.py `ExportRequest.subtitles` 使用可变默认值 `[]` → 改为 `Field(default_factory=list)`
+- **问题 5**: DEVELOPMENT_ROADMAP.md 待实现功能清单过时（P1/P2 多项已实现但未勾选）→ 更新文档
+- **涉及文件**: f1a2b3c4d5e6_add_name_to_project_snapshots.py, tasks/__init__.py, export_service.py, render.py, render_tasks.py, DEVELOPMENT_ROADMAP.md
+
 ---
 
 ## 后端 API 完整清单
@@ -347,6 +410,15 @@
 | `/api/v1/ai/generate-workflow` | POST | ✅ | AI 快速生成工作流（mode: replace/append，LLM 解析描述生成节点/边） |
 | `/api/v1/projects/{id}/cover` | POST | ✅ | 上传项目封面截图（data URL → MinIO，覆盖旧文件，不创建 MediaAsset） |
 | `/api/v1/projects/{id}/cover/download` | GET | ✅ | 下载项目封面图片 |
+| `/api/v1/media/stats/usage` | GET | ✅ | 存储用量统计（total_size/total_count/quota/categories） |
+| `/api/v1/render/export` | POST | ✅ | 导出时间轴视频（FFmpeg 混流 + 字幕烧录，触发 Celery run_export_task） |
+| `/api/v1/ai/generate-subtitles` | POST | ✅ | AI 生成字幕（LLM 解析文本生成带时间轴分段） |
+| `/api/v1/projects/{id}/collaborators` | GET | ✅ | 协作者列表（含 owner 隐式角色） |
+| `/api/v1/projects/{id}/collaborators/{user_id}` | PUT | ✅ | 修改协作者权限（仅 owner，editor/viewer） |
+| `/api/v1/projects/{id}/collaborators/{user_id}` | DELETE | ✅ | 移除协作者（仅 owner） |
+| `/api/v1/projects/{id}/invitations` | POST | ✅ | 生成邀请链接（token + role + expires_at） |
+| `/api/v1/invitations/{token}` | GET | ✅ | 查看邀请信息（无需登录） |
+| `/api/v1/invitations/{token}/accept` | POST | ✅ | 接受邀请（校验不能邀请自己/重复接受/过期） |
 
 ## 数据库表结构
 
@@ -360,7 +432,9 @@
 | `render_tasks` | RenderTask | ✅ 已创建（含 node_id 列） |
 | `ai_providers` | AiProvider | ✅ 已创建 |
 | `ai_models` | AiModel | ✅ 已创建 |
-| `project_snapshots` | ProjectSnapshot | ✅ 已创建（JSONB 存 nodes/edges/timelineData + source 索引 + 5 auto 上限） |
+| `project_snapshots` | ProjectSnapshot | ✅ 已创建（JSONB 存 nodes/edges/timelineData + source 索引 + 5 auto 上限 + name 字段[迁移 f1a2b3c4d5e6]） |
+| `project_collaborators` | ProjectCollaborator | ✅ 已创建（project_id + user_id 唯一约束 + role + joined_at） |
+| `project_invitations` | ProjectInvitation | ✅ 已创建（token 唯一索引 + expires_at + role + used_by） |
 
 ## 前端 Store 数据持久化现状
 
@@ -405,13 +479,11 @@ cd backend
 
 | 优先级 | 功能 | 说明 |
 |--------|------|------|
-| P1 | 设置页"存储用量"对接真实数据 | 当前使用硬编码假数据，需后端存储统计 API |
-| P1 | PropertyPanel 处理/控制节点提示 | 处理节点显示"演示模式"提示，控制节点显示"不可执行"提示 |
 | P2 | OT/CRDT 协作冲突解决 | 当前协作仅广播不仲裁，同时修改同一节点可能冲突 |
 | P2 | 离线缓冲与重连同步 | 短暂断线期间操作缓存到本地，重连后自动同步 |
-| P2 | 协作者权限管理（编辑/只读） | 当前无权限分级，所有在线用户均可编辑 |
-| P2 | 邀请链接功能 | 支持生成带过期时间和权限级别的邀请链接 |
 | P2 | 操作历史面板可视化 | 分支式撤销树 + 操作者标注 + 时间线展示 |
 | P3 | 节点级自动重试（3次指数退避） | 当前仅支持手动重试 |
 | P3 | 媒体版本历史 | 素材多版本管理与回滚 |
 | P3 | 工作流状态快照存入 Redis | 断点续执行中间状态缓存 |
+
+> 已完成项已迁移至上方「已完成任务」区：~~P1 存储用量 API~~（#17）、~~P1 处理/控制节点提示~~（#17）、~~P2 协作者权限管理~~（#18）、~~P2 邀请链接~~（#19）、~~视频导出~~（#20）、~~字幕轨~~（#21）、~~渲染任务重试/断点续执行~~（#12）

@@ -557,6 +557,7 @@ def run_export_task(task_id: str):
                     resolution=params.get('resolution', '1080p'),
                     duration=duration,
                     task_id=task_id,
+                    session_factory=sf,
                     subtitles=params.get('subtitles'),
                 )
 

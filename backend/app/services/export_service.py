@@ -1,4 +1,10 @@
-"""视频导出服务：FFmpeg 多轨混流合成"""
+"""视频导出服务：FFmpeg 多轨混流合成
+
+注意：compose_video 被 Celery 任务 run_export_task 调用，运行在 Celery 独立事件循环中。
+调用方必须通过 session_factory 参数传入 Celery 专用的 session factory，
+不能复用 FastAPI 的 async_session_factory（事件循环不匹配会导致
+`Future attached to a different loop` 错误）。
+"""
 import asyncio
 import os
 import tempfile
@@ -7,23 +13,32 @@ from pathlib import Path
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.database import async_session_factory
 from app.models.media_asset import MediaAsset
 from app.models.render_task import RenderTask
 from app.services.media_service import get_minio_client, get_presigned_url
 from app.config import settings
 
 
-async def _download_to_temp(url: str, tmp_dir: str, filename: str) -> str:
-    """下载 URL 到临时目录"""
+async def _download_to_temp(
+    url: str,
+    tmp_dir: str,
+    filename: str,
+    session_factory: async_sessionmaker,
+) -> str:
+    """下载 URL 到临时目录
+
+    Args:
+        session_factory: 数据库 session factory（Celery 场景需传入 Celery 专用实例）
+    """
     local_path = os.path.join(tmp_dir, filename)
     # 处理内部 MinIO 路径
     if url.startswith('/api/v1/media/'):
         # 通过 presigned URL 下载
         parts = url.strip('/').split('/')
         media_id = parts[3] if len(parts) > 3 else parts[-1].split('?')[0]
-        async with async_session_factory() as db:
+        async with session_factory() as db:
             result = await db.execute(select(MediaAsset).where(MediaAsset.id == uuid.UUID(media_id)))
             asset = result.scalar_one_or_none()
             if asset:
@@ -42,6 +57,7 @@ async def compose_video(
     resolution: str,
     duration: float,
     task_id: str,
+    session_factory: async_sessionmaker,
     subtitles: list[dict] | None = None,
 ) -> Path:
     """将时间轴素材合成为最终视频
@@ -52,6 +68,8 @@ async def compose_video(
         resolution: 720p/1080p/4k
         duration: 总时长（秒）
         task_id: 渲染任务 ID，用于更新进度
+        session_factory: 数据库 session factory（Celery 场景必须传入 Celery 专用实例，
+            避免复用 FastAPI 的 async_session_factory 触发事件循环不匹配）
         subtitles: [{start, end, text}] 字幕数据，可选
     """
     tmp_dir = tempfile.mkdtemp()
@@ -60,10 +78,10 @@ async def compose_video(
     local_paths = []
     for i, clip in enumerate(clips):
         ext = '.mp4' if clip.get('media_type') == 'video' else '.png' if clip.get('media_type') == 'image' else '.mp3'
-        path = await _download_to_temp(clip['url'], tmp_dir, f"clip_{i}{ext}")
+        path = await _download_to_temp(clip['url'], tmp_dir, f"clip_{i}{ext}", session_factory)
         local_paths.append(path)
         # 更新进度
-        async with async_session_factory() as db:
+        async with session_factory() as db:
             task = await db.get(RenderTask, uuid.UUID(task_id))
             if task:
                 task.progress = int((i + 1) / len(clips) * 30)
@@ -156,7 +174,7 @@ async def compose_video(
         raise RuntimeError(f"FFmpeg failed: {error_msg}")
 
     # 更新进度 90%
-    async with async_session_factory() as db:
+    async with session_factory() as db:
         task = await db.get(RenderTask, uuid.UUID(task_id))
         if task:
             task.progress = 90

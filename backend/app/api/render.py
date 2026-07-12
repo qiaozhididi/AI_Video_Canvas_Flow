@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
@@ -251,7 +251,7 @@ class ExportRequest(BaseModel):
     project_id: str
     format: str = "mp4"  # mp4/mov/webm
     resolution: str = "1080p"  # 720p/1080p/4k
-    subtitles: list[dict] = []  # [{start, end, text}]
+    subtitles: list[dict] = Field(default_factory=list)  # [{start, end, text}]
 
 
 @router.post("/export", summary="导出时间轴视频")
