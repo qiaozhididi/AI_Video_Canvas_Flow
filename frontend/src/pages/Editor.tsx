@@ -718,7 +718,8 @@ function PropertyPanelWithHistory({
             <label className="text-xs text-slate-500 uppercase tracking-wider">AI 模型</label>
             <select
               value={(data.params.model_id as string) || ''}
-              onFocus={loadAiModels}
+              onFocus={() => { loadAiModels(); void onPropertyFocus?.(selectedNode.id); }}
+              onBlur={() => onPropertyBlur?.(selectedNode.id)}
               onChange={(e) => handleParamChange('model_id', e.target.value || undefined)}
               className="w-full px-2 py-1.5 text-sm bg-canvas-bg border border-canvas-border rounded-md text-slate-300 focus:outline-none focus:border-neon-purple"
             >
