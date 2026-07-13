@@ -11,6 +11,7 @@ import { QueueModule } from './queue/queue.module';
 import { RenderModule } from './modules/render/render.module';
 import { AiModule } from './modules/ai/ai.module';
 import { SnapshotsModule } from './modules/snapshots/snapshots.module';
+import { TemplatesModule } from './modules/templates/templates.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { SnapshotsModule } from './modules/snapshots/snapshots.module';
     RenderModule,
     AiModule,
     SnapshotsModule,
+    TemplatesModule,
   ],
 })
 export class AppModule {}
