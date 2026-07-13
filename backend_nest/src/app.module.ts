@@ -9,6 +9,7 @@ import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { MediaModule } from './modules/media/media.module';
 import { QueueModule } from './queue/queue.module';
 import { RenderModule } from './modules/render/render.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { RenderModule } from './modules/render/render.module';
     MediaModule,
     QueueModule,
     RenderModule,
+    AiModule,
   ],
 })
 export class AppModule {}
