@@ -112,7 +112,12 @@ export class SnapshotsService {
       }
     });
 
-    return { detail: '已恢复' };
+    return {
+      restored: true,
+      project_id: snapshot.projectId,
+      nodes_count: nodes.length,
+      edges_count: edges.length,
+    };
   }
 
   private toResponse(s: ProjectSnapshot) {
