@@ -70,9 +70,6 @@ export class RenderService {
       status: 'pending',
       progress: 0,
       nodeId: dto.node_id || undefined,
-      modelId: dto.model_id || undefined,
-      prompt: dto.prompt || undefined,
-      inputArtifacts: dto.input_artifacts || undefined,
     });
     await this.taskRepo.save(task);
 
@@ -181,7 +178,7 @@ export class RenderService {
       taskType: 'export',
       status: 'pending',
       progress: 0,
-      inputArtifacts: {
+      nodeParams: {
         format: dto.format,
         resolution: dto.resolution,
         timeline_data: timelineData,
@@ -190,7 +187,7 @@ export class RenderService {
     });
     await this.taskRepo.save(task);
 
-    await this.queueService.enqueueRenderTask(task.id, { nodeParams: task.inputArtifacts });
+    await this.queueService.enqueueRenderTask(task.id, { nodeParams: task.nodeParams });
     return { task_id: task.id, status: 'pending' };
   }
 
