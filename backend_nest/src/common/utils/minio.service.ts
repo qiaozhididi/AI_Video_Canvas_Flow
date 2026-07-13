@@ -13,12 +13,12 @@ export class MinioService implements OnModuleInit {
 
   onModuleInit() {
     this.client = new Minio.Client({
-      endPoint: this.config.get<string>('minio.endpoint'),
+      endPoint: this.config.get<string>('minio.endpoint')!,
       accessKey: this.config.get<string>('minio.accessKey'),
       secretKey: this.config.get<string>('minio.secretKey'),
       useSSL: this.config.get<boolean>('minio.secure'),
     });
-    this.bucket = this.config.get<string>('minio.bucket');
+    this.bucket = this.config.get<string>('minio.bucket')!;
   }
 
   async ensureBucket(): Promise<void> {
