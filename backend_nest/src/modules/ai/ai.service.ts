@@ -77,10 +77,13 @@ export class AiService {
 
     // 如果设为默认，先取消同类型的其他默认
     if (dto.is_default) {
-      await this.modelRepo.update(
-        { modelType: dto.model_type, isDefault: true },
-        { isDefault: false },
-      );
+      await this.modelRepo
+        .createQueryBuilder()
+        .update(AiModel)
+        .set({ isDefault: false })
+        .where('model_type = :modelType', { modelType: dto.model_type })
+        .andWhere(`provider_id IN (SELECT id FROM ai_providers WHERE user_id = :userId)`, { userId })
+        .execute();
     }
 
     const model = this.modelRepo.create({
@@ -96,14 +99,24 @@ export class AiService {
   }
 
   async updateModel(userId: string, modelId: string, dto: ModelUpdateDto) {
-    const model = await this.modelRepo.findOne({ where: { id: modelId } });
+    const model = await this.modelRepo
+      .createQueryBuilder('model')
+      .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
+      .where('model.id = :modelId', { modelId })
+      .andWhere('provider.user_id = :userId', { userId })
+      .getOne();
     if (!model) throw new NotFoundException('AI 模型不存在');
 
     if (dto.is_default) {
-      await this.modelRepo.update(
-        { modelType: model.modelType, isDefault: true },
-        { isDefault: false },
-      );
+      // 按用户过滤，仅取消当前用户同类型的其他默认模型
+      await this.modelRepo
+        .createQueryBuilder()
+        .update(AiModel)
+        .set({ isDefault: false })
+        .where('model_type = :modelType', { modelType: model.modelType })
+        .andWhere('id != :modelId', { modelId })
+        .andWhere(`provider_id IN (SELECT id FROM ai_providers WHERE user_id = :userId)`, { userId })
+        .execute();
     }
 
     if (dto.display_name !== undefined) model.displayName = dto.display_name;
@@ -114,6 +127,13 @@ export class AiService {
   }
 
   async deleteModel(userId: string, modelId: string) {
+    const model = await this.modelRepo
+      .createQueryBuilder('model')
+      .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
+      .where('model.id = :modelId', { modelId })
+      .andWhere('provider.user_id = :userId', { userId })
+      .getOne();
+    if (!model) throw new NotFoundException('AI 模型不存在');
     await this.modelRepo.delete({ id: modelId });
   }
 
