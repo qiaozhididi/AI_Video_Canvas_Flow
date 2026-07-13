@@ -10,6 +10,7 @@ import { MediaModule } from './modules/media/media.module';
 import { QueueModule } from './queue/queue.module';
 import { RenderModule } from './modules/render/render.module';
 import { AiModule } from './modules/ai/ai.module';
+import { SnapshotsModule } from './modules/snapshots/snapshots.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AiModule } from './modules/ai/ai.module';
     QueueModule,
     RenderModule,
     AiModule,
+    SnapshotsModule,
   ],
 })
 export class AppModule {}
