@@ -42,7 +42,7 @@ export class MediaService {
       fileName: file.originalname,
       fileType: file.mimetype || 'application/octet-stream',
       fileSize: file.size,
-      storagePath: objectName,
+      storageKey: objectName,
     });
     await this.mediaRepo.save(media);
     return this.toResponse(media);
@@ -59,7 +59,7 @@ export class MediaService {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
     if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
-    const url = await this.minioService.getPresignedUrl(media.storagePath, 1);
+    const url = await this.minioService.getPresignedUrl(media.storageKey, 1);
     return { url };
   }
 
@@ -67,7 +67,7 @@ export class MediaService {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
     if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
-    const buffer = await this.minioService.downloadObject(media.storagePath);
+    const buffer = await this.minioService.downloadObject(media.storageKey);
     return { buffer, contentType: media.fileType, fileName: media.fileName };
   }
 
@@ -76,7 +76,7 @@ export class MediaService {
     if (!media) throw new NotFoundException('媒体资产不存在');
     if (media.ownerId !== userId) throw new ForbiddenException('无权删除此资产');
 
-    await this.minioService.deleteObject(media.storagePath);
+    await this.minioService.deleteObject(media.storageKey);
     await this.mediaRepo.delete({ id: mediaId });
   }
 
@@ -88,9 +88,10 @@ export class MediaService {
       file_name: m.fileName,
       file_type: m.fileType,
       file_size: Number(m.fileSize),
-      storage_path: m.storagePath,
-      thumbnail_url: m.thumbnailUrl,
+      storage_key: m.storageKey,
+      thumbnail_key: m.thumbnailKey,
       created_at: m.createdAt?.toISOString(),
+      updated_at: m.updatedAt?.toISOString(),
     };
   }
 }

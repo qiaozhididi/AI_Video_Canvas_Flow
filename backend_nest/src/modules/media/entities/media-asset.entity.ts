@@ -1,5 +1,5 @@
 // src/modules/media/entities/media-asset.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
 @Entity('media_assets')
 export class MediaAsset {
@@ -9,7 +9,8 @@ export class MediaAsset {
   @Column({ name: 'file_name', length: 255 }) fileName: string;
   @Column({ name: 'file_type', length: 64 }) fileType: string;
   @Column({ name: 'file_size', type: 'bigint' }) fileSize: number;
-  @Column({ name: 'storage_path', length: 512 }) storagePath: string;
-  @Column({ name: 'thumbnail_url', length: 512, nullable: true }) thumbnailUrl: string;
+  @Column({ name: 'storage_key', length: 512 }) storageKey: string;
+  @Column({ name: 'thumbnail_key', length: 512, nullable: true }) thumbnailKey: string;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
 }
