@@ -6,6 +6,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { AuthBusinessModule } from './modules/auth/auth.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { WorkflowsModule } from './modules/workflows/workflows.module';
     AuthBusinessModule,
     ProjectsModule,
     WorkflowsModule,
+    MediaModule,
   ],
 })
 export class AppModule {}
