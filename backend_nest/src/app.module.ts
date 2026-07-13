@@ -7,6 +7,8 @@ import { AuthBusinessModule } from './modules/auth/auth.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
 import { MediaModule } from './modules/media/media.module';
+import { QueueModule } from './queue/queue.module';
+import { RenderModule } from './modules/render/render.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { MediaModule } from './modules/media/media.module';
     ProjectsModule,
     WorkflowsModule,
     MediaModule,
+    QueueModule,
+    RenderModule,
   ],
 })
 export class AppModule {}
