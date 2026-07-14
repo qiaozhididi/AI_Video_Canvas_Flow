@@ -14,17 +14,33 @@ export class MediaService {
   ) {}
 
   async list(userId: string, limit = 50, offset = 0) {
-    const [items, total] = await this.mediaRepo.findAndCount({
+    const [items] = await this.mediaRepo.findAndCount({
       where: { ownerId: userId },
       order: { createdAt: 'DESC' },
       take: limit,
       skip: offset,
     });
+    return items.map(m => this.toResponse(m));
+  }
+
+  async getStorageUsage(userId: string) {
+    const assets = await this.mediaRepo.find({ where: { ownerId: userId } });
+    const categories: Record<string, { count: number; size: number }> = {};
+    let totalSize = 0;
+    for (const asset of assets) {
+      const cat = (asset.fileType || 'other').split('/')[0];
+      const size = Number(asset.fileSize) || 0;
+      totalSize += size;
+      if (!categories[cat]) categories[cat] = { count: 0, size: 0 };
+      categories[cat].count += 1;
+      categories[cat].size += size;
+    }
+    const quota = 10 * 1024 * 1024 * 1024; // 10 GB
     return {
-      items: items.map(m => this.toResponse(m)),
-      total,
-      limit,
-      offset,
+      total_size: totalSize,
+      total_count: assets.length,
+      quota,
+      categories,
     };
   }
 

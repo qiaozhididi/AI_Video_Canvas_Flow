@@ -7,6 +7,7 @@ import { Repository } from 'typeorm';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { RenderTask } from '../modules/render/entities/render-task.entity';
+import { MediaAsset } from '../modules/media/entities/media-asset.entity';
 import { AiService } from '../modules/ai/ai.service';
 import { MinioService } from '../common/utils/minio.service';
 
@@ -16,6 +17,7 @@ export class RenderProcessor extends WorkerHost {
 
   constructor(
     @InjectRepository(RenderTask) private taskRepo: Repository<RenderTask>,
+    @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
     private aiService: AiService,
     private minioService: MinioService,
   ) {
@@ -117,17 +119,13 @@ export class RenderProcessor extends WorkerHost {
       const base64Audio = await this.aiService.callAudioGen(modelId, audioParams, userId);
       await job.updateProgress(60);
       const buffer = Buffer.from(base64Audio.split(',')[1], 'base64');
-      const objectName = `results/${userId}/${uuidv4()}.mp3`;
-      await this.minioService.uploadFile(objectName, buffer, 'audio/mpeg');
-      resultUrl = `/api/v1/media/download/${objectName}`;
+      resultUrl = await this.uploadResultAndBuildUrl(buffer, userId, 'mp3', 'audio/mpeg');
     } else {
       const messages = [{ role: 'user', content: prompt }];
       const content = await this.aiService.callLlm(modelId, messages, userId);
       await job.updateProgress(60);
       const buffer = Buffer.from(content, 'utf-8');
-      const objectName = `results/${userId}/${uuidv4()}.txt`;
-      await this.minioService.uploadFile(objectName, buffer, 'text/plain');
-      resultUrl = `/api/v1/media/download/${objectName}`;
+      resultUrl = await this.uploadResultAndBuildUrl(buffer, userId, 'txt', 'text/plain');
     }
 
     await job.updateProgress(100);
@@ -169,14 +167,29 @@ export class RenderProcessor extends WorkerHost {
   }
 
   // ── 工具方法 ──
+  private async uploadResultAndBuildUrl(
+    buffer: Buffer, userId: string, ext: string, contentType: string,
+  ): Promise<string> {
+    const objectName = `results/${userId}/${uuidv4()}.${ext}`;
+    await this.minioService.uploadFile(objectName, buffer, contentType);
+    const mediaAsset = this.mediaRepo.create({
+      id: uuidv4(),
+      ownerId: userId,
+      fileName: `result.${ext}`,
+      fileType: contentType,
+      fileSize: buffer.length,
+      storageKey: objectName,
+    });
+    await this.mediaRepo.save(mediaAsset);
+    return `/api/v1/media/${mediaAsset.id}/download`;
+  }
+
   private async downloadAndUpload(url: string, userId: string, ext: string): Promise<string> {
     const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
     const buffer = Buffer.from(resp.data);
     const rawContentType = resp.headers['content-type'];
     const contentType = typeof rawContentType === 'string' ? rawContentType : `image/${ext}`;
-    const objectName = `results/${userId}/${uuidv4()}.${ext}`;
-    await this.minioService.uploadFile(objectName, buffer, contentType);
-    return `/api/v1/media/download/${objectName}`;
+    return this.uploadResultAndBuildUrl(buffer, userId, ext, contentType);
   }
 
   private async generateSimulatedResult(userId: string, ext: string): Promise<string> {
@@ -185,9 +198,7 @@ export class RenderProcessor extends WorkerHost {
       ext === 'mp4' ? 'utf-8' : 'base64',
     );
     const contentType = ext === 'mp4' ? 'video/mp4' : 'image/png';
-    const objectName = `results/${userId}/${uuidv4()}.${ext}`;
-    await this.minioService.uploadFile(objectName, buffer, contentType);
-    return `/api/v1/media/download/${objectName}`;
+    return this.uploadResultAndBuildUrl(buffer, userId, ext, contentType);
   }
 
   private normalizeSize(size: string | undefined): string {

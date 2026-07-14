@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { QueueService } from './queue.service';
 import { RenderProcessor } from './render.processor';
 import { RenderTask } from '../modules/render/entities/render-task.entity';
+import { MediaAsset } from '../modules/media/entities/media-asset.entity';
 import { AiModule } from '../modules/ai/ai.module';
 import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
 
@@ -26,7 +27,7 @@ import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
       }),
     }),
     BullModule.registerQueue({ name: 'render-tasks' }),
-    TypeOrmModule.forFeature([RenderTask]),
+    TypeOrmModule.forFeature([RenderTask, MediaAsset]),
     AuthModule,
     AiModule,
   ],

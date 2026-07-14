@@ -145,7 +145,9 @@ export class AiService {
       .andWhere('model.is_default = true')
       .andWhere('model.is_active = true');
     if (modelType) qb.andWhere('model.model_type = :modelType', { modelType });
-    return qb.getOne();
+    const model = await qb.getOne();
+    if (!model) throw new NotFoundException('未找到可用的 AI 模型');
+    return this.modelToResponse(model);
   }
 
   // ── 首次启动自动创建默认 AI 配置 ──

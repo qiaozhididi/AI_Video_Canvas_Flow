@@ -31,6 +31,12 @@ export class MediaController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('stats/usage')
+  getStorageUsage(@CurrentUser() userId: string) {
+    return this.mediaService.getStorageUsage(userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   get(@CurrentUser() userId: string, @Param('id') mediaId: string) {
     return this.mediaService.get(userId, mediaId);
