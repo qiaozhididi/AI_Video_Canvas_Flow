@@ -108,6 +108,16 @@ export class NodeLockService implements OnModuleInit {
     return result;
   }
 
+  getLock(projectId: string, nodeId: string): NodeLock | null {
+    const key = this.lockKey(projectId, nodeId);
+    const lock = this.locks.get(key);
+    if (!lock || this.isExpired(lock)) {
+      if (lock) this.locks.delete(key);
+      return null;
+    }
+    return lock;
+  }
+
   purgeSidLocks(sid: string): NodeLock[] {
     const removed: NodeLock[] = [];
     for (const [key, lock] of this.locks) {

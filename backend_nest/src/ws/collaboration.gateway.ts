@@ -74,6 +74,9 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     for (const [projectId, members] of this.roomMembers) {
       if (members.has(client.id)) {
         members.delete(client.id);
+        if (members.size === 0) {
+          this.roomMembers.delete(projectId);
+        }
         this.server.to(`project:${projectId}`).emit('user_left', {
           sid: client.id,
           user_id: userId,
@@ -96,7 +99,12 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     }
     this.roomMembers.get(projectId)!.set(client.id, { userId, username });
 
-    const users = Array.from(this.roomMembers.get(projectId)!.values());
+    const members = this.roomMembers.get(projectId)!;
+    const users = Array.from(members.entries()).map(([sid, info]) => ({
+      sid,
+      user_id: info.userId,
+      username: info.username,
+    }));
     const locks = this.nodeLockService.getActiveLocks(projectId).map(l => this.nodeLockService.lockToDict(l));
 
     client.to(room).emit('user_joined', { sid: client.id, user_id: userId, username });
@@ -115,6 +123,9 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     const members = this.roomMembers.get(projectId);
     if (members) {
       members.delete(client.id);
+      if (members.size === 0) {
+        this.roomMembers.delete(projectId);
+      }
       client.to(room).emit('user_left', {
         sid: client.id,
         user_id: client.data.userId,
@@ -148,9 +159,10 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
 
   @SubscribeMessage('cursor_move')
   async handleCursorMove(@ConnectedSocket() client: Socket, @MessageBody() payload: any) {
+    const { userId, username } = client.data;
     const { project_id } = payload;
     const room = `project:${project_id}`;
-    client.to(room).emit('cursor_move', { ...payload, sid: client.id });
+    client.to(room).emit('cursor_move', { ...payload, sid: client.id, user_id: userId, username });
   }
 
   @SubscribeMessage('acquire_lock')
@@ -160,12 +172,16 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
 
     const { canEdit } = await this.invitationsService.checkEditPermission(userId, project_id);
     if (!canEdit) {
-      return { ok: false, error: '无编辑权限' };
+      return { ok: false, reason: 'permission_denied' };
     }
 
     const lock = this.nodeLockService.acquireLock(project_id, node_id, client.id, userId, username);
     if (!lock) {
-      return { ok: false, error: '节点已被锁定' };
+      const holder = this.nodeLockService.getLock(project_id, node_id);
+      if (holder) {
+        return { ok: false, reason: 'locked_by_other', holder: this.nodeLockService.lockToDict(holder) };
+      }
+      return { ok: false, reason: 'error', message: '节点已被锁定' };
     }
 
     this.broadcastLockChanged(project_id, node_id, this.nodeLockService.lockToDict(lock));
@@ -177,9 +193,9 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     const { project_id, node_id } = payload;
     const lock = this.nodeLockService.renew(project_id, node_id, client.id);
     if (!lock) {
-      return { ok: false, error: '锁已失效' };
+      return { ok: false };
     }
-    return { ok: true };
+    return { ok: true, expires_at: lock.expiresAt };
   }
 
   @SubscribeMessage('release_lock')
@@ -216,6 +232,6 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
 
   private broadcastLockChanged(projectId: string, nodeId: string, lock: any) {
     const room = `project:${projectId}`;
-    this.server.to(room).emit('lock_changed', { node_id: nodeId, lock });
+    this.server.to(room).emit('lock_changed', { project_id: projectId, node_id: nodeId, lock });
   }
 }
