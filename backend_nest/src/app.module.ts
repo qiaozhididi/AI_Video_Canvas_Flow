@@ -14,6 +14,7 @@ import { SnapshotsModule } from './modules/snapshots/snapshots.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
 import { CollaborationModule } from './modules/collaboration/collaboration.module';
+import { WsModule } from './ws/ws.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { CollaborationModule } from './modules/collaboration/collaboration.modul
     TemplatesModule,
     InvitationsModule,
     CollaborationModule,
+    WsModule,
   ],
 })
 export class AppModule {}
