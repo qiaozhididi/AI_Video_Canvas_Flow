@@ -13,6 +13,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { SnapshotsModule } from './modules/snapshots/snapshots.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { CollaborationModule } from './modules/collaboration/collaboration.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { InvitationsModule } from './modules/invitations/invitations.module';
     SnapshotsModule,
     TemplatesModule,
     InvitationsModule,
+    CollaborationModule,
   ],
 })
 export class AppModule {}
