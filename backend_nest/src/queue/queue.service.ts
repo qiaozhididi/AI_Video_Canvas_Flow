@@ -1,15 +1,23 @@
-// src/queue/queue.service.ts (占位，Task 15 完善实现)
+// src/queue/queue.service.ts
 import { Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { IQueueService } from '../modules/render/render.service';
 
 @Injectable()
 export class QueueService implements IQueueService {
+  constructor(@InjectQueue('render-tasks') private renderQueue: Queue) {}
+
   async enqueueRenderTask(taskId: string, params: any): Promise<string> {
-    // Task 15 实现: BullMQ queue.add
-    throw new Error('QueueService 尚未实现，请完成 Task 15');
+    const job = await this.renderQueue.add('render', { taskId, params });
+    return job.id!;
   }
 
   async cancelTask(jobId: string): Promise<void> {
-    // Task 15 实现: BullMQ job.remove
+    const job = await this.renderQueue.getJob(jobId);
+    if (job) {
+      await job.discard();
+      await job.remove();
+    }
   }
 }

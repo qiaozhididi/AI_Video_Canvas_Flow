@@ -5,6 +5,7 @@ import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { RenderTask } from './entities/render-task.entity';
 import { RenderTaskCreateDto, ExportRequestDto } from './dto/render.dto';
+import { QueueService } from '../../queue/queue.service';
 
 // 队列服务接口 (Task 15 实现，此处通过依赖注入)
 export interface IQueueService {
@@ -17,7 +18,7 @@ export class RenderService {
   constructor(
     @InjectRepository(RenderTask) private taskRepo: Repository<RenderTask>,
     private dataSource: DataSource,
-    private queueService: IQueueService,
+    private queueService: QueueService,
   ) {}
 
   async list(userId: string, status?: string, limit = 50) {

@@ -1,10 +1,36 @@
-// src/queue/queue.module.ts (占位，Task 15 完善实现)
+// src/queue/queue.module.ts
 import { Module, Global } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { QueueService } from './queue.service';
+import { RenderProcessor } from './render.processor';
+import { RenderTask } from '../modules/render/entities/render-task.entity';
+import { AiModule } from '../modules/ai/ai.module';
+import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
 
 @Global()
 @Module({
-  providers: [QueueService],
+  imports: [
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: { url: config.get<string>('redis.url') },
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: 100,
+          removeOnFail: 200,
+        },
+      }),
+    }),
+    BullModule.registerQueue({ name: 'render-tasks' }),
+    TypeOrmModule.forFeature([RenderTask]),
+    AuthModule,
+    AiModule,
+  ],
+  providers: [QueueService, RenderProcessor],
   exports: [QueueService],
 })
 export class QueueModule {}
