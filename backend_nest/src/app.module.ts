@@ -12,6 +12,7 @@ import { RenderModule } from './modules/render/render.module';
 import { AiModule } from './modules/ai/ai.module';
 import { SnapshotsModule } from './modules/snapshots/snapshots.module';
 import { TemplatesModule } from './modules/templates/templates.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { TemplatesModule } from './modules/templates/templates.module';
     AiModule,
     SnapshotsModule,
     TemplatesModule,
+    InvitationsModule,
   ],
 })
 export class AppModule {}
