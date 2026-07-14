@@ -20,20 +20,22 @@ export class TemplatesService {
       .createQueryBuilder('p')
       .where('p.is_template = true');
     if (q) {
-      qb.andWhere('(p.name ILIKE :q OR p.description ILIKE :q)', { q: `%${q}%` });
+      qb.andWhere('(p.name ILIKE :q OR p.template_tags::text ILIKE :q)', { q: `%${q}%` });
     }
     if (category) {
       qb.andWhere('p.template_category = :category', { category });
     }
-    qb.orderBy('p.updated_at', 'DESC');
+    qb.orderBy('p.created_at', 'DESC');
     const templates = await qb.getMany();
     return templates.map(t => ({
       id: t.id,
       name: t.name,
       description: t.description,
       cover_url: t.coverUrl,
-      category: t.templateCategory,
-      tags: t.templateTags,
+      owner_id: t.ownerId,
+      is_template: true,
+      template_category: t.templateCategory,
+      template_tags: t.templateTags,
       created_at: t.createdAt?.toISOString(),
       updated_at: t.updatedAt?.toISOString(),
     }));
@@ -49,6 +51,7 @@ export class TemplatesService {
       id: newProjectId,
       name: `${template.name} (副本)`,
       description: template.description,
+      coverUrl: template.coverUrl,
       ownerId: userId,
       isTemplate: false,
     });
@@ -86,7 +89,15 @@ export class TemplatesService {
       await this.dataSource.createQueryBuilder().insert().into(WorkflowEdge).values(edgeRows).execute();
     }
 
-    return { id: newProjectId, name: newProject.name };
+    return {
+      id: newProjectId,
+      name: newProject.name,
+      description: newProject.description,
+      cover_url: newProject.coverUrl,
+      owner_id: newProject.ownerId,
+      created_at: newProject.createdAt?.toISOString(),
+      updated_at: newProject.updatedAt?.toISOString(),
+    };
   }
 
   async publish(userId: string, projectId: string, dto: TemplatePublishDto) {
@@ -103,13 +114,14 @@ export class TemplatesService {
   }
 
   async unpublish(userId: string, templateId: string) {
-    const project = await this.projectRepo.findOne({ where: { id: templateId, ownerId: userId } });
+    const project = await this.projectRepo.findOne({ where: { id: templateId, ownerId: userId, isTemplate: true } });
     if (!project) throw new NotFoundException('模板不存在');
 
     project.isTemplate = false;
     project.templateCategory = null as any;
     project.templateTags = null;
     await this.projectRepo.save(project);
-    return { detail: '已取消发布' };
+    // 不返回 body，配合 @HttpCode(204)
+    return;
   }
 }

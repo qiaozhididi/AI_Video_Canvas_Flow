@@ -1,6 +1,6 @@
 // src/modules/templates/templates.controller.ts
 import {
-  Controller, Get, Post, Delete, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Delete, Body, Param, Query, UseGuards, HttpCode,
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
 import { TemplatePublishDto } from './dto/template.dto';
@@ -13,7 +13,7 @@ export class TemplatesController {
   constructor(private templatesService: TemplatesService) {}
 
   // 模板列表 (公开路由，但仍需登录)
-  @Get('templates')
+  @Get('templates/')
   list(@Query('q') q?: string, @Query('category') category?: string) {
     return this.templatesService.list(q, category);
   }
@@ -24,6 +24,7 @@ export class TemplatesController {
   }
 
   @Delete('templates/:id')
+  @HttpCode(204)
   unpublish(@CurrentUser() userId: string, @Param('id') templateId: string) {
     return this.templatesService.unpublish(userId, templateId);
   }
