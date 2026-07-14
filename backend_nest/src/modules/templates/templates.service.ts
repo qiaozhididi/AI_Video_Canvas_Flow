@@ -110,7 +110,18 @@ export class TemplatesService {
     project.templateTags = dto.tags || [];
     await this.projectRepo.save(project);
 
-    return { id: project.id, is_template: true, category: dto.category, tags: dto.tags };
+    return {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      cover_url: project.coverUrl,
+      owner_id: project.ownerId,
+      is_template: true,
+      template_category: project.templateCategory,
+      template_tags: project.templateTags,
+      created_at: project.createdAt?.toISOString(),
+      updated_at: project.updatedAt?.toISOString(),
+    };
   }
 
   async unpublish(userId: string, templateId: string) {
