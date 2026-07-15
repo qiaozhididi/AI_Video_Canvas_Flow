@@ -1,7 +1,8 @@
 // src/modules/render/entities/render-task.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Check } from 'typeorm';
 
 @Entity('render_tasks')
+@Check(`status IN ('pending', 'running', 'completed', 'failed', 'cancelled')`)
 export class RenderTask {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;
@@ -9,7 +10,7 @@ export class RenderTask {
   @Column({ name: 'node_id', length: 128, nullable: true }) nodeId: string;
   @Column({ name: 'node_params', type: 'jsonb', nullable: true }) nodeParams: any;
   @Column({ name: 'task_type', length: 64 }) taskType: string;
-  @Column({ length: 32 }) status: string;  // pending/running/completed/failed/cancelled
+  @Column({ length: 32, default: 'pending' }) status: string;  // pending/running/completed/failed/cancelled
   @Column({ type: 'int', default: 0 }) progress: number;  // 0-100 整数
   @Column({ name: 'celery_task_id', length: 256, nullable: true }) celeryTaskId: string;  // 复用列名，存储 BullMQ job ID
   @Column({ name: 'result_url', length: 512, nullable: true }) resultUrl: string;
