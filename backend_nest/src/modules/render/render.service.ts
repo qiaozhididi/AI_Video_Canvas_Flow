@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { RenderTask } from './entities/render-task.entity';
+import { Project } from '../projects/entities/project.entity';
 import { RenderTaskCreateDto, ExportRequestDto } from './dto/render.dto';
 import { QueueService } from '../../queue/queue.service';
 
@@ -17,6 +18,7 @@ export interface IQueueService {
 export class RenderService {
   constructor(
     @InjectRepository(RenderTask) private taskRepo: Repository<RenderTask>,
+    @InjectRepository(Project) private projectRepo: Repository<Project>,
     private dataSource: DataSource,
     private queueService: QueueService,
   ) {}
@@ -162,6 +164,12 @@ export class RenderService {
   }
 
   async exportVideo(userId: string, dto: ExportRequestDto) {
+    // C4: 项目所有权校验（对齐 Python render.py:260-262，使用 404 避免泄露存在性）
+    const project = await this.projectRepo.findOne({ where: { id: dto.project_id } });
+    if (!project || project.ownerId !== userId) {
+      throw new NotFoundException('项目不存在');
+    }
+
     // 从最新快照获取 timeline_data
     const snapshotRows = await this.dataSource.query(
       `SELECT snapshot_data FROM project_snapshots WHERE project_id = $1 ORDER BY created_at DESC LIMIT 1`,

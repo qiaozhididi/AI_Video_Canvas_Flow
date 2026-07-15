@@ -76,7 +76,7 @@ export class MediaService {
     if (!media) throw new NotFoundException('媒体资产不存在');
     if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
     const url = await this.minioService.getPresignedUrl(media.storageKey, 1);
-    return { url };
+    return { url, expires_in: 3600 };
   }
 
   async download(userId: string, mediaId: string) {

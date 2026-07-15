@@ -53,11 +53,15 @@ export class MediaController {
   async download(
     @CurrentUser() userId: string,
     @Param('id') mediaId: string,
+    @Query('download') download: string,
     @Res() res: any,
   ) {
     const result = await this.mediaService.download(userId, mediaId);
+    // C6: download=true 强制下载(attachment)，否则 inline（对齐 Python media.py:165）
+    const disposition = download === 'true' ? 'attachment' : 'inline';
+    const encodedFilename = encodeURIComponent(result.fileName);
     res.set('Content-Type', result.contentType);
-    res.set('Content-Disposition', `attachment; filename="${encodeURIComponent(result.fileName)}"`);
+    res.set('Content-Disposition', `${disposition}; filename*=UTF-8''${encodedFilename}`);
     res.send(result.buffer);
   }
 
