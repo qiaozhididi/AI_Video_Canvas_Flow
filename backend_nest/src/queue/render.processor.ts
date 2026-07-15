@@ -78,9 +78,12 @@ export class RenderProcessor extends WorkerHost {
 
       this.logger.log(`任务完成: ${taskId} type=${task.taskType}`);
     } catch (err) {
-      this.logger.error(`任务失败: ${taskId} err=${(err as Error).message}`);
-      task.status = 'failed';
-      task.errorMessage = (err as Error).message || '任务执行失败';
+      const isCancelled = (err as Error).message === '任务已被取消';
+      if (!isCancelled) {
+        this.logger.error(`任务失败: ${taskId} err=${(err as Error).message}`);
+      }
+      task.status = isCancelled ? 'cancelled' : 'failed';
+      task.errorMessage = isCancelled ? null : ((err as Error).message || '任务执行失败');
       await this.taskRepo.save(task);
       throw err;
     }

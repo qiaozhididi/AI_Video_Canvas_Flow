@@ -13,7 +13,7 @@ export class RenderTask {
   @Column({ type: 'int', default: 0 }) progress: number;  // 0-100 整数
   @Column({ name: 'celery_task_id', length: 256, nullable: true }) celeryTaskId: string;  // 复用列名，存储 BullMQ job ID
   @Column({ name: 'result_url', length: 512, nullable: true }) resultUrl: string;
-  @Column({ name: 'error_message', type: 'text', nullable: true }) errorMessage: string;
+  @Column({ name: 'error_message', type: 'text', nullable: true }) errorMessage: string | null;
   @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
   @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
 }
