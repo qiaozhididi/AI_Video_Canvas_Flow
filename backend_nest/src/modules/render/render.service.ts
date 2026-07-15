@@ -1,5 +1,5 @@
 // src/modules/render/render.service.ts
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -95,14 +95,14 @@ export class RenderService {
   async get(userId: string, taskId: string) {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new NotFoundException('渲染任务不存在');
-    if (task.ownerId !== userId) throw new ForbiddenException('无权访问此任务');
+    if (task.ownerId !== userId) throw new NotFoundException('渲染任务不存在');
     return this.toResponse(task);
   }
 
   async cancel(userId: string, taskId: string) {
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) throw new NotFoundException('渲染任务不存在');
-    if (task.ownerId !== userId) throw new ForbiddenException('无权操作此任务');
+    if (task.ownerId !== userId) throw new NotFoundException('渲染任务不存在');
     if (!['pending', 'running'].includes(task.status)) {
       throw new ConflictException('任务已完成，无法取消');
     }
@@ -120,7 +120,7 @@ export class RenderService {
   async retry(userId: string, taskId: string) {
     const original = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!original) throw new NotFoundException('渲染任务不存在');
-    if (original.ownerId !== userId) throw new ForbiddenException('无权操作此任务');
+    if (original.ownerId !== userId) throw new NotFoundException('渲染任务不存在');
     if (!['failed', 'cancelled'].includes(original.status)) {
       throw new ConflictException('只能重试失败或已取消的任务');
     }

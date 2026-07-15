@@ -1,5 +1,5 @@
 // src/modules/ai/ai.service.ts
-import { Injectable, NotFoundException, ConflictException, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, HttpException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -929,12 +929,12 @@ export class AiService {
     try {
       data = JSON.parse(text);
     } catch (e) {
-      throw new HttpException({ detail: `AI 返回格式异常: ${(e as Error).message}` }, 422);
+      throw new HttpException(`AI 返回格式异常: ${(e as Error).message}`, 422);
     }
 
     const segments = data.segments || [];
     if (segments.length === 0) {
-      throw new HttpException({ detail: 'AI 未生成字幕分段' }, 422);
+      throw new HttpException('AI 未生成字幕分段', 422);
     }
     return { segments };
   }
