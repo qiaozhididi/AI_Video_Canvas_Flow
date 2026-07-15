@@ -50,10 +50,17 @@ export class AiService {
   }
 
   async deleteProvider(userId: string, providerId: string) {
-    // 检查是否有关联模型
-    const models = await this.modelRepo.count({ where: { providerId } });
-    if (models > 0) throw new ConflictException('该服务商下还有模型，无法删除');
-    await this.providerRepo.delete({ id: providerId, userId });
+    // C5: 级联删除关联模型（对齐 Python ai.py:148-168）
+    const provider = await this.providerRepo.findOne({ where: { id: providerId, userId } });
+    if (!provider) throw new NotFoundException('AI 服务商不存在');
+
+    // 删除关联模型
+    const models = await this.modelRepo.find({ where: { providerId } });
+    if (models.length > 0) {
+      await this.modelRepo.remove(models);
+    }
+    await this.providerRepo.remove(provider);
+    return { message: `已删除 Provider 及其关联的 ${models.length} 个模型` };
   }
 
   // ── Model CRUD ──
@@ -179,12 +186,12 @@ export class AiService {
   }
 
   // ── AI API 调用 ──
-  async callLlm(modelId: string, messages: any[], userId: string): Promise<string> {
-    const { provider, model } = await this.getProviderAndModel(modelId, userId);
+  async callLlm(modelId: string, messages: any[], userId: string, temperature = 0.7): Promise<string> {
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'llm');
     try {
       const resp = await axios.post(
         `${provider.baseUrl}/chat/completions`,
-        { model: model.modelId, messages, stream: false },
+        { model: model.modelId, messages, temperature, stream: false },
         { headers: { Authorization: `Bearer ${provider.apiKey}` }, timeout: 60000 },
       );
       return resp.data.choices[0].message.content;
@@ -195,7 +202,7 @@ export class AiService {
   }
 
   async callImageGen(modelId: string, params: any, userId: string): Promise<string> {
-    const { provider, model } = await this.getProviderAndModel(modelId, userId);
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'image_gen');
     try {
       const resp = await axios.post(
         `${provider.baseUrl}/images/generations`,
@@ -216,7 +223,7 @@ export class AiService {
 
   async callVideoGen(modelId: string, params: any, userId: string): Promise<string> {
     // Ark 异步 API: 提交任务 → 轮询 → 获取结果
-    const { provider, model } = await this.getProviderAndModel(modelId, userId);
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'video_gen');
     try {
       // 1. 提交任务
       const submitResp = await axios.post(
@@ -252,7 +259,7 @@ export class AiService {
   }
 
   async callAudioGen(modelId: string, params: any, userId: string): Promise<string> {
-    const { provider, model } = await this.getProviderAndModel(modelId, userId);
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'tts');
     try {
       const resp = await axios.post(
         `${provider.baseUrl}/audio/speech`,
@@ -271,11 +278,29 @@ export class AiService {
     }
   }
 
-  private async getProviderAndModel(modelId: string, userId: string) {
+  private async getProviderAndModel(
+    modelId: string,
+    userId: string,
+    expectedType?: string,
+  ): Promise<{ provider: AiProvider; model: AiModel }> {
     const model = await this.modelRepo.findOne({ where: { id: modelId } });
     if (!model) throw new NotFoundException('AI 模型不存在');
+
+    // C15: 校验 model_type（对齐 Python ai_service.py:42-46）
+    if (expectedType && model.modelType !== expectedType) {
+      throw new ConflictException(
+        `模型 ${model.displayName} 类型为 ${model.modelType}，期望 ${expectedType}。请在设置页配置 ${expectedType} 类型的模型。`,
+      );
+    }
+
     const provider = await this.providerRepo.findOne({ where: { id: model.providerId, userId } });
     if (!provider) throw new NotFoundException('AI 服务商不存在');
+
+    // C15: 校验 is_active（对齐 Python ai_service.py:57-58）
+    if (!provider.isActive || !model.isActive) {
+      throw new ConflictException('AI Provider/Model 已禁用');
+    }
+
     return { provider, model };
   }
 

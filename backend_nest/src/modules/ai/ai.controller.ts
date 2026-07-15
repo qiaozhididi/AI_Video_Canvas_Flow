@@ -29,9 +29,8 @@ export class AiController {
   }
 
   @Delete('providers/:id')
-  async deleteProvider(@CurrentUser() userId: string, @Param('id') id: string) {
-    await this.aiService.deleteProvider(userId, id);
-    return { detail: '已删除' };
+  deleteProvider(@CurrentUser() userId: string, @Param('id') id: string) {
+    return this.aiService.deleteProvider(userId, id);
   }
 
   // Model
