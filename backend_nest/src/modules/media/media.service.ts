@@ -1,5 +1,5 @@
 // src/modules/media/media.service.ts
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -67,14 +67,14 @@ export class MediaService {
   async get(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
+    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
     return this.toResponse(media);
   }
 
   async getPresign(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
+    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
     const url = await this.minioService.getPresignedUrl(media.storageKey, 1);
     return { url, expires_in: 3600 };
   }
@@ -82,7 +82,7 @@ export class MediaService {
   async download(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
+    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
     const buffer = await this.minioService.downloadObject(media.storageKey);
     return { buffer, contentType: media.fileType, fileName: media.fileName };
   }
@@ -90,7 +90,7 @@ export class MediaService {
   async delete(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new ForbiddenException('无权删除此资产');
+    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
 
     await this.minioService.deleteObject(media.storageKey);
     await this.mediaRepo.delete({ id: mediaId });

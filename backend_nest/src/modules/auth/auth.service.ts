@@ -1,5 +1,5 @@
 // src/modules/auth/auth.service.ts
-import { Injectable, ConflictException, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -20,11 +20,11 @@ export class AuthService {
   async register(dto: RegisterDto) {
     // 检查用户名唯一
     const existUsername = await this.userRepo.findOne({ where: { username: dto.username } });
-    if (existUsername) throw new ConflictException('用户名已存在');
+    if (existUsername) throw new BadRequestException('用户名已存在');
 
     // 检查邮箱唯一
     const existEmail = await this.userRepo.findOne({ where: { email: dto.email } });
-    if (existEmail) throw new ConflictException('邮箱已被注册');
+    if (existEmail) throw new BadRequestException('邮箱已被注册');
 
     // 创建用户 (bcryptjs 兼容 Python bcrypt)
     const hashedPassword = bcrypt.hashSync(dto.password, bcrypt.genSaltSync());

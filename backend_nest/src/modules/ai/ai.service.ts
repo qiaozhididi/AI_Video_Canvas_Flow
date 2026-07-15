@@ -1,5 +1,5 @@
 // src/modules/ai/ai.service.ts
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -121,7 +121,12 @@ export class AiService {
 
   // ── Provider CRUD ──
   async listProviders(userId: string) {
-    const providers = await this.providerRepo.find({ where: { userId } });
+    // I-16: 自动初始化默认配置（对齐 Python ai.py:107 ensure_default_ai_config）
+    await this.ensureDefaultAiConfig(userId);
+    const providers = await this.providerRepo.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
     return providers.map(p => this.providerToResponse(p));
   }
 
@@ -164,16 +169,15 @@ export class AiService {
   }
 
   // ── Model CRUD ──
-  async listModels(userId: string, providerId?: string) {
-    const where: any = {};
-    if (providerId) where.providerId = providerId;
-    // 关联查询 provider 获取 userId 过滤
-    const models = await this.modelRepo
+  async listModels(userId: string, providerId?: string, modelType?: string) {
+    const qb = this.modelRepo
       .createQueryBuilder('model')
       .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
-      .where('provider.user_id = :userId', { userId })
-      .andWhere(providerId ? 'model.provider_id = :providerId' : '1=1', { providerId })
-      .getMany();
+      .where('provider.user_id = :userId', { userId });
+    if (providerId) qb.andWhere('model.provider_id = :providerId', { providerId });
+    if (modelType) qb.andWhere('model.model_type = :modelType', { modelType });
+    qb.orderBy('model.created_at', 'DESC');
+    const models = await qb.getMany();
     return models.map(m => this.modelToResponse(m));
   }
 
@@ -214,8 +218,19 @@ export class AiService {
       .getOne();
     if (!model) throw new NotFoundException('AI 模型不存在');
 
+    // I-18: 支持修改 provider_id（对齐 Python ai.py:243-253）
+    if (dto.provider_id !== undefined) {
+      const newProvider = await this.providerRepo.findOne({
+        where: { id: dto.provider_id, userId },
+      });
+      if (!newProvider) throw new NotFoundException('AI 服务商不存在');
+      model.providerId = dto.provider_id;
+    }
+    if (dto.model_id !== undefined) model.modelId = dto.model_id;
+    if (dto.display_name !== undefined) model.displayName = dto.display_name;
+    if (dto.model_type !== undefined) model.modelType = dto.model_type;
+
     if (dto.is_default) {
-      // 按用户过滤，仅取消当前用户同类型的其他默认模型
       await this.modelRepo
         .createQueryBuilder()
         .update(AiModel)
@@ -225,8 +240,6 @@ export class AiService {
         .andWhere(`provider_id IN (SELECT id FROM ai_providers WHERE user_id = :userId)`, { userId })
         .execute();
     }
-
-    if (dto.display_name !== undefined) model.displayName = dto.display_name;
     if (dto.is_active !== undefined) model.isActive = dto.is_active;
     if (dto.is_default !== undefined) model.isDefault = dto.is_default;
     await this.modelRepo.save(model);
@@ -245,15 +258,34 @@ export class AiService {
   }
 
   async getDefaultModel(userId: string, modelType?: string) {
+    // 1. 优先查找 is_default=True 的模型
     const qb = this.modelRepo
       .createQueryBuilder('model')
       .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
       .where('provider.user_id = :userId', { userId })
+      .andWhere('provider.is_active = true')
       .andWhere('model.is_default = true')
       .andWhere('model.is_active = true');
     if (modelType) qb.andWhere('model.model_type = :modelType', { modelType });
-    const model = await qb.getOne();
-    if (!model) throw new NotFoundException('未找到可用的 AI 模型');
+    let model = await qb.getOne();
+
+    // I-17: 无默认模型则回退到第一个 active 模型（对齐 Python ai.py:320-331）
+    if (!model) {
+      const fallbackQb = this.modelRepo
+        .createQueryBuilder('model')
+        .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
+        .where('provider.user_id = :userId', { userId })
+        .andWhere('provider.is_active = true')
+        .andWhere('model.is_active = true');
+      if (modelType) fallbackQb.andWhere('model.model_type = :modelType', { modelType });
+      fallbackQb.orderBy('model.created_at', 'DESC').limit(1);
+      model = await fallbackQb.getOne();
+    }
+
+    if (!model) {
+      const typeHint = modelType ? `（类型: ${modelType}）` : '';
+      throw new NotFoundException(`未找到可用的 AI 模型${typeHint}，请先在设置页配置`);
+    }
     return this.modelToResponse(model);
   }
 
@@ -896,12 +928,12 @@ export class AiService {
     try {
       data = JSON.parse(text);
     } catch (e) {
-      throw new ConflictException(`AI 返回格式异常: ${(e as Error).message}`);
+      throw new HttpException({ detail: `AI 返回格式异常: ${(e as Error).message}` }, 422);
     }
 
     const segments = data.segments || [];
     if (segments.length === 0) {
-      throw new ConflictException('AI 未生成字幕分段');
+      throw new HttpException({ detail: 'AI 未生成字幕分段' }, 422);
     }
     return { segments };
   }

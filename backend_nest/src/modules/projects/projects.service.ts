@@ -1,5 +1,5 @@
 // src/modules/projects/projects.service.ts
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -57,7 +57,7 @@ export class ProjectsService {
   async get(userId: string, projectId: string) {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new ForbiddenException('无权访问此项目');
+    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     const nodeCountRow = await this.dataSource.query(
       `SELECT COUNT(*) as cnt FROM workflow_nodes WHERE project_id = $1`,
@@ -70,7 +70,7 @@ export class ProjectsService {
   async update(userId: string, projectId: string, dto: ProjectUpdateDto) {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new ForbiddenException('无权修改此项目');
+    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     if (dto.name !== undefined) project.name = dto.name;
     if (dto.description !== undefined) project.description = dto.description;
@@ -83,7 +83,7 @@ export class ProjectsService {
   async delete(userId: string, projectId: string) {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new ForbiddenException('无权删除此项目');
+    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     // 事务级联删除: edges → nodes → snapshots → render_tasks → media_assets → project
     await this.dataSource.transaction(async (manager) => {
@@ -99,7 +99,7 @@ export class ProjectsService {
   async uploadCover(userId: string, projectId: string, file: Express.Multer.File) {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new ForbiddenException('无权修改此项目');
+    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     // 封面上传到 MinIO covers/{pid}.png (覆盖旧文件)
     const objectName = `covers/${projectId}.png`;

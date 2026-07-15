@@ -24,7 +24,10 @@ export class ModelCreateDto {
 }
 
 export class ModelUpdateDto {
+  @IsString() @IsOptional() provider_id?: string;
+  @IsString() @IsOptional() model_id?: string;
   @IsString() @IsOptional() display_name?: string;
+  @IsString() @IsOptional() model_type?: string;
   @IsBoolean() @IsOptional() is_active?: boolean;
   @IsBoolean() @IsOptional() is_default?: boolean;
 }

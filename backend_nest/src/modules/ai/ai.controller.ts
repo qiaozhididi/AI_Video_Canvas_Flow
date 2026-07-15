@@ -37,8 +37,12 @@ export class AiController {
 
   // Model
   @Get('models')
-  listModels(@CurrentUser() userId: string, @Query('provider_id') providerId?: string) {
-    return this.aiService.listModels(userId, providerId);
+  listModels(
+    @CurrentUser() userId: string,
+    @Query('provider_id') providerId?: string,
+    @Query('model_type') modelType?: string,
+  ) {
+    return this.aiService.listModels(userId, providerId, modelType);
   }
 
   @Post('models')

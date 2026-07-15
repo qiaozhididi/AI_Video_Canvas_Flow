@@ -7,6 +7,7 @@ import { ProjectSnapshot } from './entities/project-snapshot.entity';
 import { SnapshotCreateDto } from './dto/snapshot.dto';
 import { WorkflowNode } from '../../modules/workflows/entities/workflow-node.entity';
 import { WorkflowEdge } from '../../modules/workflows/entities/workflow-edge.entity';
+import { Project } from '../projects/entities/project.entity';
 
 @Injectable()
 export class SnapshotsService {
@@ -110,6 +111,9 @@ export class SnapshotsService {
         }));
         await manager.insert(WorkflowEdge, edgeEntities);
       }
+
+      // I-20: 刷新 project.updated_at（对齐 Python snapshots.py:264-270）
+      await manager.update(Project, { id: snapshot.projectId }, { updatedAt: new Date() });
     });
 
     return {
