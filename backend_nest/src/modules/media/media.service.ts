@@ -92,8 +92,14 @@ export class MediaService {
     if (!media) throw new NotFoundException('媒体资产不存在');
     if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
 
-    await this.minioService.deleteObject(media.storageKey);
+    // I-25: 先删 DB 再删 MinIO（容错，对齐 Python：DB 删除不被 MinIO 失败阻止）
     await this.mediaRepo.delete({ id: mediaId });
+    try {
+      await this.minioService.deleteObject(media.storageKey);
+    } catch (err) {
+      // MinIO 删除失败仅记录日志，不阻止 DB 删除
+      console.warn(`MinIO 删除失败 mediaId=${mediaId}: ${(err as Error).message}`);
+    }
   }
 
   private toResponse(m: MediaAsset) {

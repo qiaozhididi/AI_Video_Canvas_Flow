@@ -17,18 +17,17 @@ export class SnapshotsService {
   ) {}
 
   async create(userId: string, projectId: string, dto: SnapshotCreateDto) {
-    // auto 源受 5 条上限
+    // I-26: auto 源受 5 条上限，只删 1 条最旧的（对齐 Python snapshots.py:91-97）
     if (dto.source === 'auto') {
       const autoCount = await this.snapshotRepo.count({ where: { projectId, source: 'auto' } });
       if (autoCount >= 5) {
-        // 删除最旧的 auto 快照
-        const oldest = await this.snapshotRepo.find({
+        // 删除最旧的 1 条 auto 快照
+        const oldest = await this.snapshotRepo.findOne({
           where: { projectId, source: 'auto' },
           order: { createdAt: 'ASC' },
-          take: autoCount - 4,
         });
-        for (const s of oldest) {
-          await this.snapshotRepo.delete({ id: s.id });
+        if (oldest) {
+          await this.snapshotRepo.delete({ id: oldest.id });
         }
       }
     }

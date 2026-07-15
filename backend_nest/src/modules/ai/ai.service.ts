@@ -147,6 +147,7 @@ export class AiService {
     const provider = await this.providerRepo.findOne({ where: { id: providerId, userId } });
     if (!provider) throw new NotFoundException('AI 服务商不存在');
     if (dto.name !== undefined) provider.name = dto.name;
+    if (dto.platform !== undefined) provider.platform = dto.platform;  // I-28
     if (dto.base_url !== undefined) provider.baseUrl = dto.base_url;
     if (dto.api_key !== undefined) provider.apiKey = dto.api_key;
     if (dto.is_active !== undefined) provider.isActive = dto.is_active;
@@ -412,7 +413,7 @@ export class AiService {
       return { video_url: persistentUrl, remote_task_id: remoteTaskId };
     } catch (err) {
       this.logger.error(`视频生成失败: ${(err as Error).message}`);
-      throw new Error(`AI 服务暂时不可用，请稍后重试`);
+      throw new Error(`视频生成 API 调用失败: ${(err as Error).message}`);
     }
   }
 
@@ -450,7 +451,7 @@ export class AiService {
       return { audio_url: persistentUrl, remote_task_id: remoteTaskId };
     } catch (err) {
       this.logger.error(`TTS 失败: ${(err as Error).message}`);
-      throw new Error(`AI 服务暂时不可用，请稍后重试`);
+      throw new Error(`TTS API 调用失败: ${(err as Error).message}`);
     }
   }
 
@@ -466,7 +467,7 @@ export class AiService {
       return resp.data.choices[0].message.content;
     } catch (err) {
       this.logger.error(`LLM 调用失败: ${(err as Error).message}`);
-      throw new Error(`AI 服务暂时不可用，请稍后重试`);
+      throw new Error(`LLM API 调用失败: ${(err as Error).message}`);
     }
   }
 

@@ -10,6 +10,7 @@ export class ProviderCreateDto {
 
 export class ProviderUpdateDto {
   @IsString() @IsOptional() name?: string;
+  @IsString() @IsOptional() platform?: string;
   @IsString() @IsOptional() base_url?: string;
   @IsString() @IsOptional() api_key?: string;
   @IsBoolean() @IsOptional() is_active?: boolean;

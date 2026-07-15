@@ -1,5 +1,5 @@
 // src/modules/projects/projects.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -16,8 +16,9 @@ export class ProjectsService {
   ) {}
 
   async list(userId: string) {
+    // I-21: 移除 isTemplate: false 过滤（对齐 Python projects.py 不过滤）
     const projects = await this.projectRepo.find({
-      where: { ownerId: userId, isTemplate: false },
+      where: { ownerId: userId },
       order: { updatedAt: 'DESC' },
     });
     // 批量查询 node_count
@@ -100,6 +101,16 @@ export class ProjectsService {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
     if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
+
+    // I-22: 文件类型与大小校验（对齐 Python projects.py:158-169）
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.mimetype)) {
+      throw new BadRequestException('封面必须是图片格式(png/jpeg/webp/gif)');
+    }
+    const maxSize = 5 * 1024 * 1024;  // 5MB
+    if (file.size > maxSize) {
+      throw new BadRequestException('封面图片大小不能超过 5MB');
+    }
 
     // 封面上传到 MinIO covers/{pid}.png (覆盖旧文件)
     const objectName = `covers/${projectId}.png`;

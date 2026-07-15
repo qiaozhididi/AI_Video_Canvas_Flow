@@ -1,5 +1,6 @@
 import {
   Injectable, NotFoundException, ForbiddenException, ConflictException, HttpException, HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
@@ -21,6 +22,14 @@ export class InvitationsService {
     private dataSource: DataSource,
   ) {}
 
+  // I-27: 校验 role 合法性（对齐 project_memory: 3 permission levels）
+  private validateRole(role: string): void {
+    const validRoles = ['editor', 'viewer'];
+    if (!validRoles.includes(role)) {
+      throw new BadRequestException('角色必须是 editor 或 viewer');
+    }
+  }
+
   // 创建邀请（owner only）
   async createInvitation(userId: string, projectId: string, dto: CreateInvitationDto): Promise<{
     id: string; token: string; role: string; expires_at: string | null;
@@ -29,6 +38,8 @@ export class InvitationsService {
     if (!project || project.ownerId !== userId) {
       throw new ForbiddenException('仅项目所有者可生成邀请链接');
     }
+
+    this.validateRole(dto.role);
 
     const token = crypto.randomBytes(32).toString('base64url');
     const expiresAt = dto.expires_in_hours
@@ -182,6 +193,8 @@ export class InvitationsService {
     if (!project || project.ownerId !== userId) {
       throw new ForbiddenException('仅项目所有者可修改权限');
     }
+
+    this.validateRole(role);
 
     const collab = await this.collaboratorRepo.findOne({
       where: { projectId, userId: targetUserId },
