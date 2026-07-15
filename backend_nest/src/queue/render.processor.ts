@@ -104,11 +104,27 @@ export class RenderProcessor extends WorkerHost {
     const userId = task.ownerId;
     const nodeParams = params.nodeParams || {};
     const prompt = params.prompt || nodeParams.prompt || nodeParams.text || '';
-    const modelId = params.modelId || nodeParams.model_id;
+    let modelId = params.modelId || nodeParams.model_id;
     const inputArtifacts = params.inputArtifacts || [];
 
+    // I-32: 无 model_id 时尝试获取默认模型（对齐 Python：不直接报错）
     if (!modelId) {
-      throw new Error('AI 任务缺少 model_id');
+      // 根据 task_type 推断 model_type
+      const taskTypeToModelType: Record<string, string> = {
+        ai_text2img: 'image_gen',
+        ai_img2img: 'image_gen',
+        ai_text2video: 'video_gen',
+        ai_img2video: 'video_gen',
+        ai_tts: 'tts',
+      };
+      const modelType = taskTypeToModelType[task.taskType] || 'llm';
+      try {
+        const defaultModel = await this.aiService.getDefaultModel(userId, modelType);
+        modelId = defaultModel.id;
+        this.logger.log(`任务 ${task.id} 无 model_id，使用默认 ${modelType} 模型: ${modelId}`);
+      } catch (err) {
+        throw new Error(`AI 任务缺少 model_id 且无默认模型可用: ${(err as Error).message}`);
+      }
     }
 
     await job.updateProgress(10);

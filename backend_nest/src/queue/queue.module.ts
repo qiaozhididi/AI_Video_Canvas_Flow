@@ -21,8 +21,8 @@ import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
       useFactory: (config: ConfigService) => ({
         connection: { url: config.get<string>('redis.url') },
         defaultJobOptions: {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 2000 },
+          // I-29: 不重试（对齐 Python Celery 默认不重试），同时解决 I-30 status 跳变
+          attempts: 1,
           removeOnComplete: 100,
           removeOnFail: 200,
         },

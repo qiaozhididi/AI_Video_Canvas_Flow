@@ -71,7 +71,9 @@ export class NodeLockService implements OnModuleInit, OnModuleDestroy {
   renew(projectId: string, nodeId: string, sid: string): NodeLock | null {
     const key = this.lockKey(projectId, nodeId);
     const lock = this.locks.get(key);
-    if (!lock || lock.sid !== sid || this.isExpired(lock)) {
+    // I-34: 移除 isExpired 检查，允许续租过期锁（对齐 Python collaboration.py:472-483）
+    // Python renew_lock 直接从 _node_locks.get() 取锁，不检查过期，只要 sid 匹配就续租
+    if (!lock || lock.sid !== sid) {
       if (lock) this.locks.delete(key);
       return null;
     }
