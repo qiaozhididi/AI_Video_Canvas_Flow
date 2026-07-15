@@ -11,6 +11,102 @@ import { MediaAsset } from '../media/entities/media-asset.entity';
 import { MinioService } from '../../common/utils/minio.service';
 import { ProviderCreateDto, ProviderUpdateDto, ModelCreateDto, ModelUpdateDto, GenerateWorkflowDto, GenerateSubtitlesDto } from './dto/ai.dto';
 
+// ── AI 工作流生成常量（对齐 Python ai_service.py:545-645）──
+
+const NODE_WHITELIST: Record<string, string> = {
+  text_input: 'input',
+  image_input: 'input',
+  audio_input: 'input',
+  text_to_image: 'ai_inference',
+  image_to_image: 'ai_inference',
+  image_to_video: 'ai_inference',
+  text_to_speech: 'ai_inference',
+  text_to_video: 'ai_inference',
+  text_to_subtitle: 'ai_inference',
+  upscale: 'processing',
+  style_transfer: 'processing',
+  remove_bg: 'processing',
+  extend_image: 'processing',
+  if_else: 'control',
+  loop: 'control',
+  merge: 'control',
+  video_output: 'output',
+  image_output: 'output',
+  audio_output: 'output',
+};
+
+const NODE_DEFAULT_LABELS: Record<string, string> = {
+  text_input: '文本输入',
+  image_input: '图片输入',
+  audio_input: '音频输入',
+  text_to_image: '文生图',
+  image_to_image: '图生图',
+  image_to_video: '图生视频',
+  text_to_speech: '文生语音',
+  text_to_video: '文生视频',
+  text_to_subtitle: 'AI 字幕',
+  upscale: '高清放大',
+  style_transfer: '风格化',
+  remove_bg: '抠图',
+  extend_image: '扩图',
+  if_else: '条件分支',
+  loop: '循环',
+  merge: '合并',
+  video_output: '视频输出',
+  image_output: '图片输出',
+  audio_output: '音频输出',
+};
+
+const NODE_DEFAULT_PARAMS: Record<string, any> = {
+  text_input: { text: '' },
+  image_input: { url: '' },
+  audio_input: { url: '' },
+  text_to_image: { prompt: '', size: '1024x1024' },
+  image_to_image: { prompt: '', size: '1024x1024' },
+  image_to_video: { prompt: '', duration: 5 },
+  text_to_speech: { text: '', voice: 'default' },
+  text_to_video: { prompt: '', duration: 5 },
+  text_to_subtitle: { prompt: '', duration: 30 },
+  upscale: { scale: 2 },
+  style_transfer: { style: '' },
+  remove_bg: {},
+  extend_image: { direction: 'all' },
+  if_else: { condition: '' },
+  loop: { count: 1 },
+  merge: {},
+  video_output: { format: 'mp4' },
+  image_output: { format: 'png' },
+  audio_output: { format: 'mp3' },
+};
+
+const AI_INFERENCE_MODEL_TYPE: Record<string, string> = {
+  text_to_image: 'image_gen',
+  image_to_image: 'image_gen',
+  image_to_video: 'video_gen',
+  text_to_speech: 'tts',
+  text_to_video: 'video_gen',
+  text_to_subtitle: 'llm',
+};
+
+const SYSTEM_PROMPT = `你是 AI 视频工作流编排助手。根据用户描述生成工作流节点和连接。
+
+合法节点类型(仅可使用以下 subtype):
+- 输入:text_input(文本输入), image_input(图片输入), audio_input(音频输入)
+- AI 推理:text_to_image(文生图), image_to_image(图生图), image_to_video(图生视频), text_to_speech(文生语音), text_to_video(文生视频)
+- 处理:upscale(高清放大), style_transfer(风格化), remove_bg(抠图), extend_image(扩图)
+- 控制:if_else(条件分支), loop(循环), merge(合并)
+- 输出:video_output(视频输出), image_output(图片输出), audio_output(音频输出)
+
+输出严格 JSON 格式(不要 markdown 代码块,不要额外文字):
+{"nodes":[{"id":"n1","subtype":"text_input","label":"文本输入"}],"edges":[{"from":"n1","to":"n2"}]}
+
+规则:
+1. 节点 id 用简单标识(n1, n2, n3...)
+2. 连接需符合数据流方向:输入 → AI推理/处理 → 输出
+3. label 用中文
+4. 不要填 params(由系统自动填充)
+`;
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger('AiService');
@@ -505,46 +601,309 @@ export class AiService {
     return { provider, model };
   }
 
-  // ── AI 生成工作流 ──
+  // ── AI 生成工作流（对齐 Python ai_service.py:801-916）──
   async generateWorkflow(userId: string, dto: GenerateWorkflowDto) {
-    const model = dto.model_id
-      ? await this.modelRepo.findOne({ where: { id: dto.model_id } })
-      : await this.getDefaultModel(userId, 'llm');
-    if (!model) throw new NotFoundException('未找到可用的 LLM 模型');
+    // 1. 获取 LLM 模型（dto.model_id 或默认 LLM）
+    const llmModelId = await this.getDefaultLlmModelId(userId, dto.model_id);
 
-    const systemPrompt = '你是一个工作流生成助手，根据用户描述生成 AI Canvas Flow 工作流 JSON。';
-    const userPrompt = `请根据以下描述生成工作流: ${dto.description}`;
-    const content = await this.callLlm(model.id, [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
-    ], userId);
+    // 2. 调 LLM
+    const messages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'user', content: dto.description },
+    ];
+    this.logger.log(`[AI:Generate] 调用 LLM 生成工作流, description=${dto.description.slice(0, 50)}`);
+    const rawResponse = await this.callLlm(llmModelId, messages, userId, 0.3);
 
-    // 解析 JSON (容错处理)
+    // 3. 解析 JSON
+    const data = this.parseLlmJson(rawResponse);
+
+    // 4. 校验 subtype 白名单 + 生成新 ID
+    const validNodes: any[] = [];
+    const origToNew: Record<string, string> = {};
+    let skipped = 0;
+
+    for (const n of data.nodes) {
+      const origId = n.id || `n${validNodes.length + 1}`;
+      const subtype = n.subtype || '';
+      if (!NODE_WHITELIST[subtype]) {
+        this.logger.warn(`[AI:Generate] 跳过非法 subtype: id=${origId}, subtype=${subtype}`);
+        skipped++;
+        continue;
+      }
+      const newId = this.generateNodeId();
+      validNodes.push({
+        orig_id: origId,
+        subtype,
+        label: n.label || NODE_DEFAULT_LABELS[subtype] || subtype,
+        new_id: newId,
+      });
+      origToNew[origId] = newId;
+    }
+
+    if (validNodes.length === 0) {
+      throw new ConflictException('AI 生成内容无效:全部节点 subtype 非法');
+    }
+
+    // 5. 过滤 edges + 重映射 id
+    const validEdges: any[] = [];
+    for (const e of data.edges) {
+      const src = e.from || '';
+      const tgt = e.to || '';
+      if (origToNew[src] && origToNew[tgt]) {
+        validEdges.push({ from: src, to: tgt });
+      }
+    }
+
+    // 6. 计算布局（Kahn 拓扑分层）
+    this.computeLayout(validNodes, validEdges);
+
+    // 7. 预填参数 + 组装最终节点
+    const resultNodes: any[] = [];
+    for (const n of validNodes) {
+      const nodeType = NODE_WHITELIST[n.subtype];
+      const params = { ...NODE_DEFAULT_PARAMS[n.subtype] };
+
+      // 预填: text_input.params.text = description
+      if (n.subtype === 'text_input') {
+        params.text = dto.description;
+      }
+      // 预填: AI 推理节点 params.prompt = description + model_id
+      else if (['text_to_image', 'image_to_image', 'image_to_video', 'text_to_speech'].includes(n.subtype)) {
+        params.prompt = dto.description;
+        const modelType = AI_INFERENCE_MODEL_TYPE[n.subtype];
+        if (modelType) {
+          const defaultModel = await this.getDefaultModelForType(userId, modelType);
+          if (defaultModel) {
+            params.model_id = defaultModel;
+          }
+        }
+      }
+
+      resultNodes.push({
+        id: n.new_id,
+        node_type: nodeType,
+        label: n.label,
+        position_x: n.position_x,
+        position_y: n.position_y,
+        config: {
+          type: nodeType,
+          subtype: n.subtype,
+          label: n.label,
+          params,
+          status: 'idle',
+          progress: 0,
+          outputArtifacts: [],
+        },
+      });
+    }
+
+    // 8. 组装最终边
+    const resultEdges = validEdges.map(e => ({
+      id: this.generateEdgeId(),
+      source_node_id: origToNew[e.from],
+      target_node_id: origToNew[e.to],
+      source_port: null,
+      target_port: null,
+    }));
+
+    this.logger.log(`[AI:Generate] 生成完成: ${resultNodes.length} 节点, ${resultEdges.length} 边, 跳过 ${skipped} 非法`);
+    return { nodes: resultNodes, edges: resultEdges };
+  }
+
+  /** 获取默认 LLM 模型 ID（对齐 Python _get_default_llm_model_id）*/
+  private async getDefaultLlmModelId(userId: string, modelId?: string): Promise<string> {
+    if (modelId) return modelId;
+
+    const model = await this.modelRepo
+      .createQueryBuilder('model')
+      .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
+      .where('provider.user_id = :userId', { userId })
+      .andWhere('model.model_type = :modelType', { modelType: 'llm' })
+      .andWhere('model.is_active = true')
+      .orderBy('model.created_at', 'ASC')
+      .limit(1)
+      .getOne();
+
+    if (!model) {
+      throw new NotFoundException('未找到可用的 LLM 模型,请先在设置页配置 model_type=llm 的 active 模型');
+    }
+    return model.id;
+  }
+
+  /** 查找指定 model_type 的首个 active 模型 ID（对齐 Python _get_default_model_for_type）*/
+  private async getDefaultModelForType(userId: string, modelType: string): Promise<string | null> {
+    const model = await this.modelRepo
+      .createQueryBuilder('model')
+      .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
+      .where('provider.user_id = :userId', { userId })
+      .andWhere('model.model_type = :modelType', { modelType })
+      .andWhere('model.is_active = true')
+      .orderBy('model.created_at', 'ASC')
+      .limit(1)
+      .getOne();
+    return model?.id || null;
+  }
+
+  /** 解析 LLM 返回的 JSON（容忍 markdown 代码块）*/
+  private parseLlmJson(raw: string): any {
+    let text = raw.trim();
+    if (text.startsWith('```')) {
+      const lines = text.split('\n');
+      text = lines[lines.length - 1].trim() === '```'
+        ? lines.slice(1, -1).join('\n')
+        : lines.slice(1).join('\n');
+      text = text.trim();
+    }
+
+    let data: any;
     try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : { nodes: [], edges: [], raw: content };
-    } catch {
-      return { nodes: [], edges: [], raw: content };
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new ConflictException(`AI 返回格式异常,无法解析为 JSON: ${(e as Error).message}`);
+    }
+
+    if (typeof data !== 'object' || data === null) {
+      throw new ConflictException('AI 返回格式异常:顶层应为 JSON 对象');
+    }
+    if (!Array.isArray(data.nodes)) {
+      throw new ConflictException('AI 返回格式异常:缺少 nodes 数组');
+    }
+    if (!Array.isArray(data.edges)) {
+      throw new ConflictException('AI 返回格式异常:缺少 edges 数组');
+    }
+    return data;
+  }
+
+  /** 生成节点 ID: node-{timestamp_ms}-{rand6} */
+  private generateNodeId(): string {
+    const ts = Date.now();
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `node-${ts}-${rand}`;
+  }
+
+  /** 生成边 ID: edge-{timestamp_ms}-{rand6} */
+  private generateEdgeId(): string {
+    const ts = Date.now();
+    const rand = Math.random().toString(36).slice(2, 8);
+    return `edge-${ts}-${rand}`;
+  }
+
+  /** Kahn 拓扑分层计算 position（对齐 Python _compute_layout）*/
+  private computeLayout(validNodes: any[], edges: any[]): void {
+    const idToIdx: Record<string, number> = {};
+    validNodes.forEach((n, i) => { idToIdx[n.orig_id] = i; });
+
+    // 入度 + 邻接表
+    const inDegree: Record<string, number> = {};
+    const adj: Record<string, string[]> = {};
+    validNodes.forEach(n => {
+      inDegree[n.orig_id] = 0;
+      adj[n.orig_id] = [];
+    });
+
+    for (const e of edges) {
+      const src = e.from;
+      const tgt = e.to;
+      if (src in inDegree && tgt in inDegree) {
+        adj[src].push(tgt);
+        inDegree[tgt]++;
+      }
+    }
+
+    // Kahn 分层
+    const layer: Record<string, number> = {};
+    validNodes.forEach(n => { layer[n.orig_id] = 0; });
+
+    const queue: string[] = [];
+    for (const id in inDegree) {
+      if (inDegree[id] === 0) queue.push(id);
+    }
+
+    let processed = 0;
+    while (queue.length > 0) {
+      const nid = queue.shift()!;
+      processed++;
+      for (const child of adj[nid]) {
+        layer[child] = Math.max(layer[child], layer[nid] + 1);
+        inDegree[child]--;
+        if (inDegree[child] === 0) queue.push(child);
+      }
+    }
+
+    // 环检测
+    if (processed < validNodes.length) {
+      this.logger.warn('[AI:Generate] 检测到环,使用 fallback 布局');
+      validNodes.forEach((n, i) => {
+        n.position_x = i * 300;
+        n.position_y = 0;
+      });
+      return;
+    }
+
+    // 按 layer 分组
+    const byLayer: Record<string, any[]> = {};
+    validNodes.forEach(n => {
+      const l = layer[n.orig_id];
+      if (!byLayer[l]) byLayer[l] = [];
+      byLayer[l].push(n);
+    });
+
+    for (const layerNum in byLayer) {
+      byLayer[layerNum].sort((a, b) => a.orig_id.localeCompare(b.orig_id));
+      byLayer[layerNum].forEach((n, idx) => {
+        n.position_x = Number(layerNum) * 300;
+        n.position_y = idx * 150;
+      });
     }
   }
 
+  // ── AI 生成字幕（对齐 Python ai.py:460-490）──
   async generateSubtitles(userId: string, dto: GenerateSubtitlesDto) {
-    const model = dto.model_id
-      ? await this.modelRepo.findOne({ where: { id: dto.model_id } })
-      : await this.getDefaultModel(userId, 'llm');
-    if (!model) throw new NotFoundException('未找到可用的 LLM 模型');
+    const modelId = await this.getDefaultLlmModelId(userId, dto.model_id);
+    const duration = dto.duration || 30;
 
-    const content = await this.callLlm(model.id, [
-      { role: 'system', content: '你是字幕生成助手，根据文本生成带时间戳的字幕分段 JSON。返回格式: {segments: [{start, end, text}]}' },
-      { role: 'user', content: dto.prompt },
-    ], userId);
+    const subtitleSystemPrompt = `你是一个专业的字幕生成助手。根据用户提供的文本内容，生成带时间轴的字幕分段。
 
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      return jsonMatch ? JSON.parse(jsonMatch[0]) : { segments: [] };
-    } catch {
-      return { segments: [] };
+输出严格的 JSON 格式（不要 markdown 代码块，不要额外文字）：
+{"segments":[{"start":0.0,"end":3.5,"text":"第一句字幕"},{"start":3.5,"end":7.0,"text":"第二句字幕"}]}
+
+规则：
+1. start/end 为秒数，从 0 开始
+2. 每段字幕 2-5 秒，根据语义自然断句
+3. 所有段时间总和应接近总时长 duration
+4. 段与段时间连续，不重叠不间隔
+5. text 使用中文
+`;
+
+    const messages = [
+      { role: 'system', content: subtitleSystemPrompt },
+      { role: 'user', content: `文本内容：${dto.prompt}\n总时长（秒）：${duration}` },
+    ];
+
+    const content = await this.callLlm(modelId, messages, userId, 0.3);
+
+    // 解析 JSON（容忍 markdown 代码块）
+    let text = content.trim();
+    if (text.startsWith('```')) {
+      const lines = text.split('\n');
+      text = lines[lines.length - 1].trim() === '```'
+        ? lines.slice(1, -1).join('\n')
+        : lines.slice(1).join('\n');
+      text = text.trim();
     }
+
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      throw new ConflictException(`AI 返回格式异常: ${(e as Error).message}`);
+    }
+
+    const segments = data.segments || [];
+    if (segments.length === 0) {
+      throw new ConflictException('AI 未生成字幕分段');
+    }
+    return { segments };
   }
 
   private providerToResponse(p: AiProvider) {

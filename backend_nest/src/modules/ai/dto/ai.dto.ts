@@ -37,5 +37,6 @@ export class GenerateWorkflowDto {
 
 export class GenerateSubtitlesDto {
   @IsString() prompt: string;
+  @IsOptional() duration?: number;
   @IsString() @IsOptional() model_id?: string;
 }
