@@ -10,6 +10,7 @@ import { RenderTask } from '../modules/render/entities/render-task.entity';
 import { MediaAsset } from '../modules/media/entities/media-asset.entity';
 import { AiService } from '../modules/ai/ai.service';
 import { MinioService } from '../common/utils/minio.service';
+import { ExportService, Clip } from './export.service';
 
 @Processor('render-tasks', { concurrency: 5 })
 export class RenderProcessor extends WorkerHost {
@@ -20,6 +21,7 @@ export class RenderProcessor extends WorkerHost {
     @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
     private aiService: AiService,
     private minioService: MinioService,
+    private exportService: ExportService,
   ) {
     super();
   }
@@ -146,24 +148,60 @@ export class RenderProcessor extends WorkerHost {
     await this.taskRepo.save(task);
   }
 
-  // ── 导出任务 ──
+  // ── 导出任务（C8: 完整 FFmpeg 合成）──
   private async executeExportTask(
     task: RenderTask,
     job: Job,
     params: { nodeParams?: any },
   ) {
     const exportParams = params.nodeParams || task.nodeParams || {};
-    this.logger.log(`导出任务: format=${exportParams.format} resolution=${exportParams.resolution}`);
+    const timelineData = exportParams.timeline_data || {};
+    const tracks = timelineData.tracks || [];
+    const duration = timelineData.duration || 30;
 
-    for (let i = 0; i <= 100; i += 20) {
-      task.progress = i;
-      await this.taskRepo.save(task);
-      await job.updateProgress(i);
-      await new Promise(r => setTimeout(r, 500));
+    // 从 tracks 收集所有 clip
+    const clips: Clip[] = [];
+    for (const track of tracks) {
+      if (track.visible === false) continue;
+      for (const clip of (track.clips || [])) {
+        if (clip.mediaUrl) {
+          clips.push({
+            url: clip.mediaUrl,
+            start: clip.start || 0,
+            end: clip.end || 5,
+            track_type: track.type || 'video',
+            media_type: clip.mediaType || 'video',
+          });
+        }
+      }
     }
-    const resultUrl = await this.generateSimulatedResult(task.ownerId, 'mp4');
+
+    if (clips.length === 0) {
+      throw new Error('时间轴上没有素材');
+    }
+
+    await job.updateProgress(10);
+
+    // 调用 ExportService 合成视频
+    const localPath = await this.exportService.composeVideo(
+      clips,
+      exportParams.format || 'mp4',
+      exportParams.resolution || '1080p',
+      duration,
+      task.id,
+      exportParams.subtitles,
+    );
+
+    await job.updateProgress(90);
+
+    // 上传 MinIO + 创建 MediaAsset
+    const resultUrl = await this.exportService.uploadExportAndCreateAsset(
+      localPath, task.id, task.ownerId, task.projectId,
+    );
+
     task.resultUrl = resultUrl;
     await this.taskRepo.save(task);
+    await job.updateProgress(100);
   }
 
   // ── 工具方法 ──

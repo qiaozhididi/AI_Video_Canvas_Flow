@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { QueueService } from './queue.service';
 import { RenderProcessor } from './render.processor';
+import { ExportService } from './export.service';
 import { RenderTask } from '../modules/render/entities/render-task.entity';
 import { MediaAsset } from '../modules/media/entities/media-asset.entity';
 import { AiModule } from '../modules/ai/ai.module';
@@ -31,7 +32,7 @@ import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
     AuthModule,
     AiModule,
   ],
-  providers: [QueueService, RenderProcessor],
-  exports: [QueueService],
+  providers: [QueueService, RenderProcessor, ExportService],
+  exports: [QueueService, ExportService],
 })
 export class QueueModule {}
