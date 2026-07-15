@@ -7,6 +7,8 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { AiProvider } from './entities/ai-provider.entity';
 import { AiModel } from './entities/ai-model.entity';
+import { MediaAsset } from '../media/entities/media-asset.entity';
+import { MinioService } from '../../common/utils/minio.service';
 import { ProviderCreateDto, ProviderUpdateDto, ModelCreateDto, ModelUpdateDto, GenerateWorkflowDto, GenerateSubtitlesDto } from './dto/ai.dto';
 
 @Injectable()
@@ -16,6 +18,8 @@ export class AiService {
   constructor(
     @InjectRepository(AiProvider) private providerRepo: Repository<AiProvider>,
     @InjectRepository(AiModel) private modelRepo: Repository<AiModel>,
+    @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
+    private minioService: MinioService,
     private config: ConfigService,
   ) {}
 
@@ -185,97 +189,280 @@ export class AiService {
     this.logger.log(`为用户 ${userId} 创建默认 AI 配置`);
   }
 
-  // ── AI API 调用 ──
+  // ── AI API 调用（对齐 Python ai_service.py:169-535）──
+
+  /** 文生图：返回 { url, revised_prompt }，url 已转存 MinIO */
+  async callImageGen(modelId: string, params: any, userId: string): Promise<{ url: string; revised_prompt?: string }> {
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'image_gen');
+    const size = this.normalizeImageSize(params?.size);
+
+    const body: any = {
+      model: model.modelId,
+      prompt: params.prompt,
+      size,
+      n: params.n || 1,
+    };
+
+    try {
+      const resp = await axios.post(
+        `${provider.baseUrl.replace(/\/$/, '')}/images/generations`,
+        body,
+        { headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' }, timeout: 120000 },
+      );
+      return await this.handleImageResponse(resp.data, userId);
+    } catch (err) {
+      this.logger.error(`文生图失败: ${(err as Error).message}`);
+      throw new Error(`图片 API 调用失败: ${(err as Error).message}`);
+    }
+  }
+
+  /** C11: 图生图（对齐 Python call_img2img）*/
+  async callImg2Img(modelId: string, prompt: string, imageUrl: string, params: any, userId: string): Promise<{ url: string; revised_prompt?: string }> {
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'image_gen');
+    const apiImage = await this.resolveImageUrl(imageUrl);
+    const size = this.normalizeImageSize(params?.size);
+
+    const body: any = {
+      model: model.modelId,
+      prompt,
+      image: apiImage,
+      size,
+      n: params.n || 1,
+    };
+
+    try {
+      const resp = await axios.post(
+        `${provider.baseUrl.replace(/\/$/, '')}/images/generations`,
+        body,
+        { headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' }, timeout: 120000 },
+      );
+      return await this.handleImageResponse(resp.data, userId);
+    } catch (err) {
+      this.logger.error(`图生图失败: ${(err as Error).message}`);
+      throw new Error(`图片 API 调用失败: ${(err as Error).message}`);
+    }
+  }
+
+  /** C12: 视频生成（对齐 Python _call_ark_async，image 在 content 数组中）*/
+  async callVideoGen(modelId: string, params: any, userId: string): Promise<{ video_url: string; remote_task_id?: string }> {
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'video_gen');
+    const baseUrl = provider.baseUrl.replace(/\/$/, '');
+
+    // C12: content 数组格式（对齐 Python ai_service.py:456-460）
+    const content: any[] = [{ type: 'text', text: params.prompt }];
+    if (params.image) {
+      const resolvedUrl = await this.resolveImageUrl(params.image);
+      content.push({ type: 'image_url', image_url: { url: resolvedUrl } });
+    }
+
+    const body = { model: model.modelId, content };
+
+    try {
+      // 1. 提交异步任务
+      const submitResp = await axios.post(
+        `${baseUrl}/contents/generations/tasks`,
+        body,
+        { headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' }, timeout: 60000 },
+      );
+      const remoteTaskId = submitResp.data.id;
+      if (!remoteTaskId) throw new Error(`视频生成 API 未返回任务 ID`);
+
+      // 2. 轮询
+      const resultData = await this.pollArkTask(baseUrl, provider.apiKey, remoteTaskId);
+
+      // 3. 提取 video_url
+      const videoUrl = this.extractArkMediaUrl(resultData, 'video');
+
+      // 4. 下载转存 MinIO
+      const persistentUrl = await this.downloadToMinio(videoUrl, userId, `${remoteTaskId}.mp4`, 'video/mp4');
+      return { video_url: persistentUrl, remote_task_id: remoteTaskId };
+    } catch (err) {
+      this.logger.error(`视频生成失败: ${(err as Error).message}`);
+      throw new Error(`AI 服务暂时不可用，请稍后重试`);
+    }
+  }
+
+  /** C10: TTS（对齐 Python call_audio_gen，改用 Ark 异步任务 + MinIO 持久化）*/
+  async callAudioGen(modelId: string, params: any, userId: string): Promise<{ audio_url: string; remote_task_id?: string }> {
+    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'tts');
+    const baseUrl = provider.baseUrl.replace(/\/$/, '');
+    const text = params.text || params.prompt || '';
+
+    const body = {
+      model: model.modelId,
+      content: [{ type: 'text', text }],
+    };
+
+    try {
+      const submitResp = await axios.post(
+        `${baseUrl}/contents/generations/tasks`,
+        body,
+        { headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' }, timeout: 60000 },
+      );
+      const remoteTaskId = submitResp.data.id;
+      if (!remoteTaskId) throw new Error(`TTS API 未返回任务 ID`);
+
+      const resultData = await this.pollArkTask(baseUrl, provider.apiKey, remoteTaskId);
+      const audioUrl = this.extractArkMediaUrl(resultData, 'audio');
+      const persistentUrl = await this.downloadToMinio(audioUrl, userId, `${remoteTaskId}.mp3`, 'audio/mpeg');
+      return { audio_url: persistentUrl, remote_task_id: remoteTaskId };
+    } catch (err) {
+      this.logger.error(`TTS 失败: ${(err as Error).message}`);
+      throw new Error(`AI 服务暂时不可用，请稍后重试`);
+    }
+  }
+
+  /** LLM 调用（添加 temperature 参数）*/
   async callLlm(modelId: string, messages: any[], userId: string, temperature = 0.7): Promise<string> {
     const { provider, model } = await this.getProviderAndModel(modelId, userId, 'llm');
     try {
       const resp = await axios.post(
-        `${provider.baseUrl}/chat/completions`,
-        { model: model.modelId, messages, temperature, stream: false },
-        { headers: { Authorization: `Bearer ${provider.apiKey}` }, timeout: 60000 },
+        `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`,
+        { model: model.modelId, messages, temperature },
+        { headers: { Authorization: `Bearer ${provider.apiKey}`, 'Content-Type': 'application/json' }, timeout: 60000 },
       );
       return resp.data.choices[0].message.content;
     } catch (err) {
-      this.logger.error(`LLM 调用失败: ${err.message}`);
-      throw new Error('AI 服务暂时不可用，请稍后重试');
+      this.logger.error(`LLM 调用失败: ${(err as Error).message}`);
+      throw new Error(`AI 服务暂时不可用，请稍后重试`);
     }
   }
 
-  async callImageGen(modelId: string, params: any, userId: string): Promise<string> {
-    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'image_gen');
+  // ── 辅助方法（对齐 Python ai_service.py:104-414）──
+
+  /** 处理图片 API 响应：转存 MinIO + 创建 MediaAsset */
+  private async handleImageResponse(data: any, userId: string): Promise<{ url: string; revised_prompt?: string }> {
+    if (!data?.data?.length) throw new Error(`图片生成 API 返回格式异常`);
+    const imageData = data.data[0];
+    const remoteUrl = imageData.url || '';
+    const revisedPrompt = imageData.revised_prompt || '';
+
+    if (!remoteUrl) return { url: '', revised_prompt: revisedPrompt };
+
     try {
-      const resp = await axios.post(
-        `${provider.baseUrl}/images/generations`,
-        {
-          model: model.modelId,
-          prompt: params.prompt,
-          size: params.size || '1024x1024',
-          response_format: 'url',
-        },
-        { headers: { Authorization: `Bearer ${provider.apiKey}` }, timeout: 120000 },
-      );
-      return resp.data.data[0].url;
+      const persistentUrl = await this.downloadToMinio(remoteUrl, userId, `${uuidv4()}.png`, 'image/png');
+      return { url: persistentUrl, revised_prompt: revisedPrompt };
     } catch (err) {
-      this.logger.error(`图片生成失败: ${err.message}`);
-      throw new Error('AI 服务暂时不可用，请稍后重试');
+      this.logger.warn(`MinIO 持久化失败，使用原始 URL: ${(err as Error).message}`);
+      return { url: remoteUrl, revised_prompt: revisedPrompt };
     }
   }
 
-  async callVideoGen(modelId: string, params: any, userId: string): Promise<string> {
-    // Ark 异步 API: 提交任务 → 轮询 → 获取结果
-    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'video_gen');
-    try {
-      // 1. 提交任务
-      const submitResp = await axios.post(
-        `${provider.baseUrl}/contents/generations/tasks`,
-        {
-          model: model.modelId,
-          content: [{ type: 'text', text: params.prompt }],
-          image: params.image ? { url: params.image } : undefined,
-        },
-        { headers: { Authorization: `Bearer ${provider.apiKey}` }, timeout: 30000 },
-      );
-      const taskId = submitResp.data.id;
+  /** 解析图片 URL：内部 /api/v1/media/{id}/download 路径转 base64，外部 URL 原样返回 */
+  private async resolveImageUrl(imageUrl: string): Promise<string> {
+    if (!imageUrl.startsWith('/api/v1/media/')) return imageUrl;
 
-      // 2. 轮询 (最多 300 次 = 10 分钟)
-      for (let i = 0; i < 300; i++) {
-        await new Promise(r => setTimeout(r, 2000));
-        const statusResp = await axios.get(
-          `${provider.baseUrl}/contents/generations/tasks/${taskId}`,
-          { headers: { Authorization: `Bearer ${provider.apiKey}` }, timeout: 10000 },
-        );
-        if (statusResp.data.status === 'succeeded') {
-          return statusResp.data.content.video_url;
-        }
-        if (statusResp.data.status === 'failed') {
-          throw new Error('视频生成失败');
-        }
+    try {
+      const parts = imageUrl.replace(/^\//, '').split('/');
+      const mediaId = parts[3] || parts[parts.length - 1].split('?')[0];
+      const asset = await this.mediaRepo.findOne({ where: { id: mediaId } });
+      if (!asset) return imageUrl;
+
+      const presignedUrl = await this.minioService.getPresignedUrl(asset.storageKey, 1);
+      const resp = await axios.get(presignedUrl, { responseType: 'arraybuffer', timeout: 30000 });
+      const b64 = Buffer.from(resp.data).toString('base64');
+      const mime = asset.fileType || 'image/png';
+      return `data:${mime};base64,${b64}`;
+    } catch (err) {
+      this.logger.warn(`图片转换失败: ${(err as Error).message}`);
+      return imageUrl;
+    }
+  }
+
+  /** 下载外部 URL 到 MinIO + 创建 MediaAsset，返回 /api/v1/media/{id}/download */
+  private async downloadToMinio(url: string, userId: string, filename: string, contentType: string): Promise<string> {
+    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000, maxRedirects: 5 } as any);
+    const buffer = Buffer.from(resp.data);
+    const storageKey = `ai_gen/${userId}/${uuidv4()}/${filename}`;
+
+    await this.minioService.uploadFile(storageKey, buffer, contentType);
+
+    const mediaAsset = this.mediaRepo.create({
+      id: uuidv4(),
+      ownerId: userId,
+      projectId: undefined,
+      fileName: filename,
+      fileType: contentType,
+      fileSize: buffer.length,
+      storageKey,
+    });
+    await this.mediaRepo.save(mediaAsset);
+    return `/api/v1/media/${mediaAsset.id}/download`;
+  }
+
+  /** 轮询 Ark 异步任务直到完成 */
+  private async pollArkTask(baseUrl: string, apiKey: string, taskId: string, timeout = 300000, interval = 5000): Promise<any> {
+    const url = `${baseUrl}/contents/generations/tasks/${taskId}`;
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const resp = await axios.get(url, { headers, timeout: 30000 });
+      const data = resp.data;
+      const status = data.status || '';
+
+      if (status === 'succeeded') return data;
+      if (['failed', 'expired', 'cancelled'].includes(status)) {
+        throw new Error(`任务 ${taskId} 状态异常: ${status}`);
       }
-      throw new Error('视频生成超时');
-    } catch (err) {
-      this.logger.error(`视频生成失败: ${err.message}`);
-      throw new Error('AI 服务暂时不可用，请稍后重试');
+      await new Promise(r => setTimeout(r, interval));
     }
+    throw new Error(`任务 ${taskId} 轮询超时(${timeout / 1000}s)`);
   }
 
-  async callAudioGen(modelId: string, params: any, userId: string): Promise<string> {
-    const { provider, model } = await this.getProviderAndModel(modelId, userId, 'tts');
-    try {
-      const resp = await axios.post(
-        `${provider.baseUrl}/audio/speech`,
-        {
-          model: model.modelId,
-          input: params.text || params.prompt,
-          voice: params.voice || 'default',
-        },
-        { headers: { Authorization: `Bearer ${provider.apiKey}` }, timeout: 60000, responseType: 'arraybuffer' },
-      );
-      // 返回 base64
-      return `data:audio/mpeg;base64,${Buffer.from(resp.data).toString('base64')}`;
-    } catch (err) {
-      this.logger.error(`TTS 失败: ${err.message}`);
-      throw new Error('AI 服务暂时不可用，请稍后重试');
+  /** 从 Ark 异步任务结果提取媒体 URL（对齐 Python _extract_ark_media_url）*/
+  private extractArkMediaUrl(resultData: any, mediaType: 'video' | 'audio'): string {
+    const urlField = `${mediaType}_url`;
+    let mediaUrl: string | undefined;
+
+    // 格式1：content.{media_type}_url
+    const content = resultData.content;
+    if (content && typeof content === 'object') {
+      mediaUrl = content[urlField];
     }
+
+    // 格式2：choices[].message.content
+    if (!mediaUrl && Array.isArray(resultData.choices)) {
+      for (const choice of resultData.choices) {
+        const msgContent = choice.message?.content;
+        if (typeof msgContent === 'string' && msgContent.startsWith('http')) {
+          mediaUrl = msgContent;
+          break;
+        }
+        if (Array.isArray(msgContent)) {
+          for (const item of msgContent) {
+            if (item?.type === urlField) {
+              mediaUrl = item[urlField]?.url;
+            } else if (item?.type === 'file_url') {
+              mediaUrl = item.file_url?.url;
+            }
+            if (mediaUrl) break;
+          }
+        }
+        if (mediaUrl) break;
+      }
+    }
+
+    // 格式3：data[].url
+    if (!mediaUrl && Array.isArray(resultData.data) && resultData.data.length > 0) {
+      mediaUrl = resultData.data[0].url || resultData.data[0][urlField];
+    }
+
+    if (!mediaUrl) {
+      throw new Error(`${mediaType}生成任务成功但未找到 ${mediaType} URL`);
+    }
+    return mediaUrl;
+  }
+
+  /** 规范化图片 size 参数（对齐 Python _call_image_api:190-195）*/
+  private normalizeImageSize(size?: string): string {
+    const rawSize = size || '2k';
+    const validSizes = new Set([
+      '1k', '2k', '4k',
+      '512x512', '768x768', '1024x1024', '1280x720', '720x1280',
+      '1536x1536', '2048x2048', '1024x1536', '1536x1024',
+    ]);
+    return validSizes.has(String(rawSize)) ? String(rawSize) : '2k';
   }
 
   private async getProviderAndModel(

@@ -100,12 +100,11 @@ export class RenderProcessor extends WorkerHost {
     job: Job,
     params: { modelId?: string; prompt?: string; inputArtifacts?: any[]; nodeParams?: any },
   ) {
-    // C18: 进入时检查取消
     await this.checkCancelled(job, task);
 
     const userId = task.ownerId;
     const nodeParams = params.nodeParams || {};
-    const prompt = params.prompt || nodeParams.prompt || '';
+    const prompt = params.prompt || nodeParams.prompt || nodeParams.text || '';
     const modelId = params.modelId || nodeParams.model_id;
     const inputArtifacts = params.inputArtifacts || [];
 
@@ -115,23 +114,23 @@ export class RenderProcessor extends WorkerHost {
 
     await job.updateProgress(10);
 
-    // C18: AI 调用前再次检查
-    await this.checkCancelled(job, task);
-
     let resultUrl: string;
 
-    if (task.taskType === 'ai_text2img' || task.taskType === 'ai_img2img') {
-      const size = this.normalizeSize(nodeParams.size || nodeParams.params?.size);
-      const imageParams: any = { prompt, size };
-      if (task.taskType === 'ai_img2img' && inputArtifacts.length > 0) {
-        const upstreamImage = inputArtifacts.find(a => a.url || a.path);
-        if (upstreamImage) {
-          imageParams.image = upstreamImage.url || upstreamImage.path;
-        }
-      }
-      resultUrl = await this.aiService.callImageGen(modelId, imageParams, userId);
+    if (task.taskType === 'ai_text2img') {
+      const result = await this.aiService.callImageGen(modelId, { prompt, size: nodeParams.size }, userId);
       await job.updateProgress(60);
-      resultUrl = await this.downloadAndUpload(resultUrl, userId, 'png');
+      resultUrl = result.url;
+    } else if (task.taskType === 'ai_img2img') {
+      // C11: 图生图
+      const imageUrl = inputArtifacts.find((a: any) => a.url)?.url || '';
+      if (!imageUrl) {
+        this.logger.warn(`图生图任务 ${task.id} 无上游图片，使用模拟`);
+        resultUrl = await this.generateSimulatedResult(userId, 'png');
+      } else {
+        const result = await this.aiService.callImg2Img(modelId, prompt, imageUrl, { size: nodeParams.size }, userId);
+        await job.updateProgress(60);
+        resultUrl = result.url;
+      }
     } else if (task.taskType === 'ai_text2video' || task.taskType === 'ai_img2video') {
       if (task.taskType === 'ai_img2video' && inputArtifacts.length === 0) {
         this.logger.warn(`图生视频任务 ${task.id} 无上游图片，使用模拟`);
@@ -139,29 +138,26 @@ export class RenderProcessor extends WorkerHost {
       } else {
         const videoParams: any = { prompt };
         if (inputArtifacts.length > 0) {
-          const upstreamImage = inputArtifacts.find(a => a.url || a.path);
-          if (upstreamImage) {
-            videoParams.image = upstreamImage.url || upstreamImage.path;
-          }
+          videoParams.image = inputArtifacts.find((a: any) => a.url)?.url;
         }
-        resultUrl = await this.aiService.callVideoGen(modelId, videoParams, userId);
+        const result = await this.aiService.callVideoGen(modelId, videoParams, userId);
         await job.updateProgress(60);
-        resultUrl = await this.downloadAndUpload(resultUrl, userId, 'mp4');
+        resultUrl = result.video_url;
       }
     } else if (task.taskType === 'ai_tts') {
-      const audioParams = { text: prompt || nodeParams.text, voice: nodeParams.voice };
-      const base64Audio = await this.aiService.callAudioGen(modelId, audioParams, userId);
+      // C10: TTS 改用 Ark 异步
+      const result = await this.aiService.callAudioGen(modelId, { text: prompt, voice: nodeParams.voice }, userId);
       await job.updateProgress(60);
-      const buffer = Buffer.from(base64Audio.split(',')[1], 'base64');
-      resultUrl = await this.uploadResultAndBuildUrl(buffer, userId, 'mp3', 'audio/mpeg');
+      resultUrl = result.audio_url;
     } else {
-      const messages = [{ role: 'user', content: prompt }];
-      const content = await this.aiService.callLlm(modelId, messages, userId);
+      // LLM 文本生成
+      const content = await this.aiService.callLlm(modelId, [{ role: 'user', content: prompt }], userId);
       await job.updateProgress(60);
       const buffer = Buffer.from(content, 'utf-8');
       resultUrl = await this.uploadResultAndBuildUrl(buffer, userId, 'txt', 'text/plain');
     }
 
+    await this.checkCancelled(job, task);
     await job.updateProgress(100);
     task.resultUrl = resultUrl;
     await this.taskRepo.save(task);
