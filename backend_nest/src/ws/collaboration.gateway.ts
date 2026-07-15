@@ -32,7 +32,14 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     private nodeLockService: NodeLockService,
     private invitationsService: InvitationsService,
     @InjectRepository(User) private userRepo: Repository<User>,
-  ) {}
+  ) {
+    // C19: 注册 TTL 清理监听器，清理后广播 lock_changed（对齐 Python _lock_cleanup_loop）
+    this.nodeLockService.onLocksPurged((expiredLocks) => {
+      for (const lock of expiredLocks) {
+        this.broadcastLockChanged(lock.projectId, lock.nodeId, null);
+      }
+    });
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -138,6 +145,15 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
   @SubscribeMessage('node_update')
   async handleNodeUpdate(@ConnectedSocket() client: Socket, @MessageBody() payload: any) {
     const { project_id, node_id, action } = payload;
+    const { userId } = client.data;
+
+    // I-33: 权限检查（viewer 不可编辑）
+    const { canEdit } = await this.invitationsService.checkEditPermission(userId, project_id);
+    if (!canEdit) {
+      client.emit('error', { message: '查看者无法编辑' });
+      return;
+    }
+
     const room = `project:${project_id}`;
 
     if (action === 'delete') {
@@ -153,6 +169,15 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
   @SubscribeMessage('edge_update')
   async handleEdgeUpdate(@ConnectedSocket() client: Socket, @MessageBody() payload: any) {
     const { project_id } = payload;
+    const { userId } = client.data;
+
+    // I-33: 权限检查（viewer 不可编辑）
+    const { canEdit } = await this.invitationsService.checkEditPermission(userId, project_id);
+    if (!canEdit) {
+      client.emit('error', { message: '查看者无法编辑' });
+      return;
+    }
+
     const room = `project:${project_id}`;
     client.to(room).emit('edge_update', payload);
   }

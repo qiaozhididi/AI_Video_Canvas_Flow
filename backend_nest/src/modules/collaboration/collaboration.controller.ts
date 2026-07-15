@@ -2,7 +2,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { CollaborationService } from './collaboration.service';
 
-@Controller('collab')
+@Controller()
 export class CollaborationController {
   constructor(private collaborationService: CollaborationService) {}
 

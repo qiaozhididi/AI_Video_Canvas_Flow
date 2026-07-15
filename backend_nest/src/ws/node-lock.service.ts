@@ -1,5 +1,5 @@
 // src/ws/node-lock.service.ts
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 
 export interface NodeLock {
   nodeId: string;
@@ -13,9 +13,10 @@ export interface NodeLock {
 }
 
 @Injectable()
-export class NodeLockService implements OnModuleInit {
+export class NodeLockService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('NodeLockService');
   private locks: Map<string, NodeLock> = new Map();
+  private cleanupListeners: Array<(locks: NodeLock[]) => void> = [];
 
   private readonly LOCK_TTL = 5.0;
   private readonly CLEANUP_INTERVAL = 1.0;
@@ -31,6 +32,11 @@ export class NodeLockService implements OnModuleInit {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
   }
 
+  /** 注册清理监听器，TTL 过期清理后会被调用（用于广播 lock_changed） */
+  onLocksPurged(listener: (locks: NodeLock[]) => void): void {
+    this.cleanupListeners.push(listener);
+  }
+
   private lockKey(projectId: string, nodeId: string): string {
     return `${projectId}:${nodeId}`;
   }
@@ -41,11 +47,7 @@ export class NodeLockService implements OnModuleInit {
   }
 
   acquireLock(
-    projectId: string,
-    nodeId: string,
-    sid: string,
-    userId: string,
-    username: string,
+    projectId: string, nodeId: string, sid: string, userId: string, username: string,
   ): NodeLock | null {
     const key = this.lockKey(projectId, nodeId);
     const existing = this.locks.get(key);
@@ -59,14 +61,8 @@ export class NodeLockService implements OnModuleInit {
 
     const now = Date.now() / 1000;
     const lock: NodeLock = {
-      nodeId,
-      projectId,
-      sid,
-      userId,
-      username,
-      acquiredAt: now,
-      expiresAt: now + this.LOCK_TTL,
-      lastRenewed: now,
+      nodeId, projectId, sid, userId, username,
+      acquiredAt: now, expiresAt: now + this.LOCK_TTL, lastRenewed: now,
     };
     this.locks.set(key, lock);
     return lock;
@@ -136,7 +132,8 @@ export class NodeLockService implements OnModuleInit {
     return lock || null;
   }
 
-  private purgeExpiredLocks(): NodeLock[] {
+  /** 清理所有过期锁并通知监听器（用于广播 lock_changed） */
+  purgeExpiredLocks(): NodeLock[] {
     const now = Date.now() / 1000;
     const expired: NodeLock[] = [];
     for (const [key, lock] of this.locks) {
@@ -147,6 +144,14 @@ export class NodeLockService implements OnModuleInit {
     }
     if (expired.length > 0) {
       this.logger.debug(`清理过期锁: ${expired.length} 个`);
+      // 通知所有监听器（Gateway 用于广播 lock_changed）
+      for (const listener of this.cleanupListeners) {
+        try {
+          listener(expired);
+        } catch (err) {
+          this.logger.warn(`清理监听器执行失败: ${(err as Error).message}`);
+        }
+      }
     }
     return expired;
   }
