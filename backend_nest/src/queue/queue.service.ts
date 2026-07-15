@@ -14,6 +14,8 @@ export class QueueService implements IQueueService {
   }
 
   async cancelTask(jobId: string): Promise<void> {
+    // C18: discard() 防止重试，processor 内通过 isDiscarded() 主动退出
+    // （对齐 Python revoke(terminate=True) 的"终止运行中任务"语义）
     const job = await this.renderQueue.getJob(jobId);
     if (job) {
       await job.discard();

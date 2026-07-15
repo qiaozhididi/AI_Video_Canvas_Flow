@@ -8,6 +8,7 @@ import { RenderProcessor } from './render.processor';
 import { ExportService } from './export.service';
 import { RenderTask } from '../modules/render/entities/render-task.entity';
 import { MediaAsset } from '../modules/media/entities/media-asset.entity';
+import { WorkflowNode } from '../modules/workflows/entities/workflow-node.entity';
 import { AiModule } from '../modules/ai/ai.module';
 import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
 
@@ -28,7 +29,7 @@ import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
       }),
     }),
     BullModule.registerQueue({ name: 'render-tasks' }),
-    TypeOrmModule.forFeature([RenderTask, MediaAsset]),
+    TypeOrmModule.forFeature([RenderTask, MediaAsset, WorkflowNode]),
     AuthModule,
     AiModule,
   ],

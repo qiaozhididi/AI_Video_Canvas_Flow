@@ -8,6 +8,7 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { RenderTask } from '../modules/render/entities/render-task.entity';
 import { MediaAsset } from '../modules/media/entities/media-asset.entity';
+import { WorkflowNode } from '../modules/workflows/entities/workflow-node.entity';
 import { AiService } from '../modules/ai/ai.service';
 import { MinioService } from '../common/utils/minio.service';
 import { ExportService, Clip } from './export.service';
@@ -19,6 +20,7 @@ export class RenderProcessor extends WorkerHost {
   constructor(
     @InjectRepository(RenderTask) private taskRepo: Repository<RenderTask>,
     @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
+    @InjectRepository(WorkflowNode) private nodeRepo: Repository<WorkflowNode>,
     private aiService: AiService,
     private minioService: MinioService,
     private exportService: ExportService,
@@ -28,7 +30,7 @@ export class RenderProcessor extends WorkerHost {
 
   async process(job: Job<{ taskId: string; params: any }>) {
     const { taskId } = job.data;
-    const params = job.data.params || {};
+    let params = job.data.params || {};
 
     const task = await this.taskRepo.findOne({ where: { id: taskId } });
     if (!task) {
@@ -41,12 +43,33 @@ export class RenderProcessor extends WorkerHost {
       task.progress = 0;
       await this.taskRepo.save(task);
 
+      // C16: params 为空但 task.nodeId 存在时，从 WorkflowNode.config.params 读取
+      // （对齐 Python render_tasks.py:100-124）
+      if ((!params.nodeParams || Object.keys(params.nodeParams || {}).length === 0) && task.nodeId) {
+        const node = await this.nodeRepo.findOne({ where: { id: task.nodeId } });
+        if (node?.config?.params) {
+          params = { ...params, nodeParams: node.config.params };
+          this.logger.log(`从节点 ${task.nodeId} 读取 params: ${JSON.stringify(Object.keys(params.nodeParams))}`);
+        }
+      }
+
       if (task.taskType.startsWith('ai_')) {
         await this.executeAiTask(task, job, params);
       } else if (task.taskType === 'export') {
         await this.executeExportTask(task, job, params);
       } else {
-        await this.executeRenderTask(task, job);
+        await this.executeRenderTask(task, job, params);
+      }
+
+      // C18: 检查任务是否被取消（cancelTask 调用 discard()+remove() 后任务从 Redis 移除）
+      // 注意：BullMQ 5.x 的 discard() 仅在本地 Job 实例设置标志（跨实例不可见），
+      // 因此通过 job.getState() 检测任务是否已从 Redis 移除（对齐 Python revoke(terminate=True) 的"终止运行中任务"语义）
+      const state = await job.getState();
+      if (state === 'unknown') {
+        task.status = 'cancelled';
+        await this.taskRepo.save(task);
+        this.logger.log(`任务已取消: ${taskId}`);
+        return;
       }
 
       task.status = 'completed';
@@ -74,6 +97,9 @@ export class RenderProcessor extends WorkerHost {
     job: Job,
     params: { modelId?: string; prompt?: string; inputArtifacts?: any[]; nodeParams?: any },
   ) {
+    // C18: 进入时检查取消
+    await this.checkCancelled(job, task);
+
     const userId = task.ownerId;
     const nodeParams = params.nodeParams || {};
     const prompt = params.prompt || nodeParams.prompt || '';
@@ -85,6 +111,9 @@ export class RenderProcessor extends WorkerHost {
     }
 
     await job.updateProgress(10);
+
+    // C18: AI 调用前再次检查
+    await this.checkCancelled(job, task);
 
     let resultUrl: string;
 
@@ -135,15 +164,79 @@ export class RenderProcessor extends WorkerHost {
     await this.taskRepo.save(task);
   }
 
-  // ── 模拟渲染任务 ──
-  private async executeRenderTask(task: RenderTask, job: Job) {
-    for (let i = 0; i <= 100; i += 10) {
+  /** C18: 检查任务是否被取消，若是则抛出异常终止执行 */
+  private async checkCancelled(job: Job, task: RenderTask): Promise<void> {
+    // BullMQ 5.x: discard() 仅本地标志（跨实例不可见），通过 getState() 检测任务被 remove() 后的状态
+    const state = await job.getState();
+    if (state === 'unknown') {
+      task.status = 'cancelled';
+      await this.taskRepo.save(task);
+      throw new Error('任务已被取消');
+    }
+  }
+
+  // ── 模拟渲染任务（C9: 按 subtype 透传上游资产）──
+  private async executeRenderTask(task: RenderTask, job: Job, params: any) {
+    const nodeParams = params?.nodeParams || {};
+    const inputArtifacts = params?.inputArtifacts || [];
+
+    // 查询节点 subtype（用于透传逻辑）
+    let subtype: string | undefined;
+    if (task.nodeId) {
+      const node = await this.nodeRepo.findOne({ where: { id: task.nodeId } });
+      subtype = node?.config?.subtype;
+    }
+
+    const subtypeExtMap: Record<string, string> = {
+      image_output: '.png',
+      video_output: '.mp4',
+      audio_output: '.mp3',
+      upscale: '.png',
+      remove_bg: '.png',
+      style_transfer: '.png',
+      extend_image: '.png',
+    };
+    const ext = subtypeExtMap[subtype || ''] || '.mp4';
+
+    // image_output / upscale 节点：透传上游图片 URL
+    if (['image_output', 'upscale'].includes(subtype || '') && inputArtifacts.length > 0) {
+      const imageArt = inputArtifacts.find((a: any) => a.type === 'image' && a.url);
+      if (imageArt) {
+        await job.updateProgress(50);
+        task.resultUrl = imageArt.url;
+        await this.taskRepo.save(task);
+        await job.updateProgress(100);
+        return;
+      }
+    }
+
+    // audio_output 节点：透传上游音频 URL
+    if (subtype === 'audio_output' && inputArtifacts.length > 0) {
+      const audioArt = inputArtifacts.find((a: any) => a.type === 'audio' && a.url);
+      if (audioArt) {
+        await job.updateProgress(50);
+        task.resultUrl = audioArt.url;
+        await this.taskRepo.save(task);
+        await job.updateProgress(100);
+        return;
+      }
+    }
+
+    // 其他节点：模拟渲染进度
+    for (let i = 0; i <= 100; i += 20) {
+      // C18: 每次循环检查是否被取消
+      const state = await job.getState();
+      if (state === 'unknown') {
+        task.status = 'cancelled';
+        await this.taskRepo.save(task);
+        return;
+      }
       task.progress = i;
       await this.taskRepo.save(task);
       await job.updateProgress(i);
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(r => setTimeout(r, 500));
     }
-    const resultUrl = await this.generateSimulatedResult(task.ownerId, 'png');
+    const resultUrl = await this.generateSimulatedResult(task.ownerId, ext.replace('.', ''));
     task.resultUrl = resultUrl;
     await this.taskRepo.save(task);
   }
