@@ -273,8 +273,14 @@ export class AiService {
       // 3. 提取 video_url
       const videoUrl = this.extractArkMediaUrl(resultData, 'video');
 
-      // 4. 下载转存 MinIO
-      const persistentUrl = await this.downloadToMinio(videoUrl, userId, `${remoteTaskId}.mp4`, 'video/mp4');
+      // 4. 下载转存 MinIO（C10/C12: 持久化失败时降级使用原始 URL，对齐 Python _call_ark_async 与 handleImageResponse）
+      let persistentUrl: string;
+      try {
+        persistentUrl = await this.downloadToMinio(videoUrl, userId, `${remoteTaskId}.mp4`, 'video/mp4');
+      } catch (e) {
+        this.logger.warn(`视频 MinIO 持久化失败，使用原始 URL: ${(e as Error).message}`);
+        persistentUrl = videoUrl;
+      }
       return { video_url: persistentUrl, remote_task_id: remoteTaskId };
     } catch (err) {
       this.logger.error(`视频生成失败: ${(err as Error).message}`);
@@ -304,7 +310,15 @@ export class AiService {
 
       const resultData = await this.pollArkTask(baseUrl, provider.apiKey, remoteTaskId);
       const audioUrl = this.extractArkMediaUrl(resultData, 'audio');
-      const persistentUrl = await this.downloadToMinio(audioUrl, userId, `${remoteTaskId}.mp3`, 'audio/mpeg');
+
+      // C10: 持久化失败时降级使用原始 URL，对齐 Python _call_ark_async 与 handleImageResponse
+      let persistentUrl: string;
+      try {
+        persistentUrl = await this.downloadToMinio(audioUrl, userId, `${remoteTaskId}.mp3`, 'audio/mpeg');
+      } catch (e) {
+        this.logger.warn(`音频 MinIO 持久化失败，使用原始 URL: ${(e as Error).message}`);
+        persistentUrl = audioUrl;
+      }
       return { audio_url: persistentUrl, remote_task_id: remoteTaskId };
     } catch (err) {
       this.logger.error(`TTS 失败: ${(err as Error).message}`);
