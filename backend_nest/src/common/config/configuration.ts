@@ -1,4 +1,20 @@
 // src/common/config/configuration.ts
+function parseCorsOrigins(): string[] {
+  const raw = process.env.CORS_ORIGINS;
+  if (!raw) {
+    // 默认：5173-5183 端口范围（对齐 Python config.py）
+    return Array.from({ length: 11 }, (_, i) => `http://localhost:${5173 + i}`);
+  }
+  // 尝试 JSON 数组格式（Python 兼容）：["http://localhost:5173"]
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {
+    // 非 JSON，按逗号分隔处理
+  }
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
 export default () => ({
   project: { name: 'ai-canvas-flow-backend', debug: false },
   database: {
@@ -20,7 +36,7 @@ export default () => ({
     algorithm: 'HS256',
   },
   cors: {
-    origins: process.env.CORS_ORIGINS?.split(',') || ['http://localhost:5173'],
+    origins: parseCorsOrigins(),
   },
   defaultAi: {
     providerName: process.env.DEFAULT_AI_PROVIDER_NAME || '火山引擎',

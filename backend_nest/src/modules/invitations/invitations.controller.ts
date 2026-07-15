@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, UseGuards,
+  Controller, Get, Post, Put, Delete, Body, Param, UseGuards, HttpCode,
 } from '@nestjs/common';
 import { InvitationsService } from './invitations.service';
 import { CreateInvitationDto, UpdateCollaboratorRoleDto } from './dto/invitation.dto';
@@ -12,6 +12,7 @@ export class InvitationsController {
 
   // 创建邀请（owner only）
   @Post('projects/:id/invitations')
+  @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   createInvitation(
     @CurrentUser() userId: string,
@@ -29,6 +30,7 @@ export class InvitationsController {
 
   // 接受邀请
   @Post('invitations/:token/accept')
+  @HttpCode(200)
   @UseGuards(JwtAuthGuard)
   acceptInvitation(@CurrentUser() userId: string, @Param('token') token: string) {
     return this.invitationsService.acceptInvitation(token, userId);
@@ -55,12 +57,13 @@ export class InvitationsController {
 
   // 移除协作者
   @Delete('projects/:id/collaborators/:userId')
+  @HttpCode(204)
   @UseGuards(JwtAuthGuard)
-  removeCollaborator(
+  async removeCollaborator(
     @CurrentUser() userId: string,
     @Param('id') projectId: string,
     @Param('userId') targetUserId: string,
   ) {
-    return this.invitationsService.removeCollaborator(userId, projectId, targetUserId);
+    await this.invitationsService.removeCollaborator(userId, projectId, targetUserId);
   }
 }

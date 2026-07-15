@@ -1,6 +1,6 @@
 // src/modules/snapshots/snapshots.controller.ts
 import {
-  Controller, Get, Post, Delete, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Delete, Body, Param, Query, UseGuards, HttpCode,
 } from '@nestjs/common';
 import { SnapshotsService } from './snapshots.service';
 import { SnapshotCreateDto } from './dto/snapshot.dto';
@@ -14,6 +14,7 @@ export class SnapshotsController {
 
   // 项目下的快照
   @Post('projects/:id/snapshots')
+  @HttpCode(200)
   create(@CurrentUser() userId: string, @Param('id') projectId: string, @Body() dto: SnapshotCreateDto) {
     return this.snapshotsService.create(userId, projectId, dto);
   }
@@ -35,12 +36,13 @@ export class SnapshotsController {
   }
 
   @Delete('snapshots/:id')
+  @HttpCode(204)
   async delete(@CurrentUser() userId: string, @Param('id') snapshotId: string) {
     await this.snapshotsService.delete(userId, snapshotId);
-    return { detail: '已删除' };
   }
 
   @Post('snapshots/:id/restore')
+  @HttpCode(200)
   restore(@CurrentUser() userId: string, @Param('id') snapshotId: string) {
     return this.snapshotsService.restore(userId, snapshotId);
   }

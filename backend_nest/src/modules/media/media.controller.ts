@@ -1,7 +1,7 @@
 // src/modules/media/media.controller.ts
 import {
   Controller, Get, Post, Delete, Param, Query, Res, UseGuards,
-  UseInterceptors, UploadedFile, Body,
+  UseInterceptors, UploadedFile, Body, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { MediaService } from './media.service';
@@ -21,6 +21,7 @@ export class MediaController {
 
   @UseGuards(JwtAuthGuard)
   @Post('upload')
+  @HttpCode(200)
   @UseInterceptors(FileInterceptor('file'))
   upload(
     @CurrentUser() userId: string,
@@ -67,8 +68,8 @@ export class MediaController {
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
+  @HttpCode(204)
   async delete(@CurrentUser() userId: string, @Param('id') mediaId: string) {
     await this.mediaService.delete(userId, mediaId);
-    return { detail: '已删除' };
   }
 }

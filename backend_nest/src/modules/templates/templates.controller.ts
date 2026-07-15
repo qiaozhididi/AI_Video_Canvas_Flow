@@ -19,6 +19,7 @@ export class TemplatesController {
   }
 
   @Post('templates/:id/clone')
+  @HttpCode(200)
   clone(@CurrentUser() userId: string, @Param('id') templateId: string) {
     return this.templatesService.clone(userId, templateId);
   }
@@ -31,6 +32,7 @@ export class TemplatesController {
 
   // 发布项目为模板
   @Post('projects/:id/publish')
+  @HttpCode(200)
   publish(@CurrentUser() userId: string, @Param('id') projectId: string, @Body() dto: TemplatePublishDto) {
     return this.templatesService.publish(userId, projectId, dto);
   }

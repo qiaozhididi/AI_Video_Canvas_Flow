@@ -1,6 +1,6 @@
 // src/modules/ai/ai.controller.ts
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards,
+  Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, HttpCode,
 } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { ProviderCreateDto, ProviderUpdateDto, ModelCreateDto, ModelUpdateDto, GenerateWorkflowDto, GenerateSubtitlesDto } from './dto/ai.dto';
@@ -19,6 +19,7 @@ export class AiController {
   }
 
   @Post('providers')
+  @HttpCode(200)
   createProvider(@CurrentUser() userId: string, @Body() dto: ProviderCreateDto) {
     return this.aiService.createProvider(userId, dto);
   }
@@ -28,6 +29,7 @@ export class AiController {
     return this.aiService.updateProvider(userId, id, dto);
   }
 
+  // DELETE providers 保持 200+body（Python ai.py:168 返回 {message: ...}）
   @Delete('providers/:id')
   deleteProvider(@CurrentUser() userId: string, @Param('id') id: string) {
     return this.aiService.deleteProvider(userId, id);
@@ -40,6 +42,7 @@ export class AiController {
   }
 
   @Post('models')
+  @HttpCode(200)
   createModel(@CurrentUser() userId: string, @Body() dto: ModelCreateDto) {
     return this.aiService.createModel(userId, dto);
   }
@@ -49,10 +52,11 @@ export class AiController {
     return this.aiService.updateModel(userId, id, dto);
   }
 
+  // DELETE models 保持 200+body（Python ai.py:295 返回 {message: ...}）
   @Delete('models/:id')
   async deleteModel(@CurrentUser() userId: string, @Param('id') id: string) {
     await this.aiService.deleteModel(userId, id);
-    return { detail: '已删除' };
+    return { message: '已删除模型' };
   }
 
   @Get('models/default')
@@ -62,11 +66,13 @@ export class AiController {
 
   // AI 生成
   @Post('generate-workflow')
+  @HttpCode(200)
   generateWorkflow(@CurrentUser() userId: string, @Body() dto: GenerateWorkflowDto) {
     return this.aiService.generateWorkflow(userId, dto);
   }
 
   @Post('generate-subtitles')
+  @HttpCode(200)
   generateSubtitles(@CurrentUser() userId: string, @Body() dto: GenerateSubtitlesDto) {
     return this.aiService.generateSubtitles(userId, dto);
   }

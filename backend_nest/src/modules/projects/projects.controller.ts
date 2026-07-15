@@ -1,7 +1,7 @@
 // src/modules/projects/projects.controller.ts
 import {
   Controller, Get, Post, Put, Delete, Body, Param, UseGuards,
-  UseInterceptors, UploadedFile, Res,
+  UseInterceptors, UploadedFile, Res, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ProjectsService } from './projects.service';
@@ -22,6 +22,7 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
+  @HttpCode(200)
   create(@CurrentUser() userId: string, @Body() dto: ProjectCreateDto) {
     return this.projectsService.create(userId, dto);
   }
@@ -40,13 +41,14 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
+  @HttpCode(204)
   async delete(@CurrentUser() userId: string, @Param('id') projectId: string) {
     await this.projectsService.delete(userId, projectId);
-    return { detail: '已删除' };
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':id/cover')
+  @HttpCode(200)
   @UseInterceptors(FileInterceptor('file'))
   uploadCover(
     @CurrentUser() userId: string,
