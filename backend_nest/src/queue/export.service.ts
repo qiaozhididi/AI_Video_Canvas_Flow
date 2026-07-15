@@ -155,10 +155,9 @@ export class ExportService {
     });
     await this.mediaRepo.save(mediaAsset);
 
-    // 清理临时文件
+    // 清理临时文件（递归删除整个临时目录，对齐 Python shutil.rmtree）
     try {
-      fs.unlinkSync(localPath);
-      fs.rmdirSync(path.dirname(localPath));
+      fs.rmSync(path.dirname(localPath), { recursive: true, force: true });
     } catch (e) {
       this.logger.warn(`清理临时文件失败: ${(e as Error).message}`);
     }

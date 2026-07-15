@@ -4,7 +4,6 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { RenderTask } from '../modules/render/entities/render-task.entity';
 import { MediaAsset } from '../modules/media/entities/media-asset.entity';
@@ -314,14 +313,6 @@ export class RenderProcessor extends WorkerHost {
     return `/api/v1/media/${mediaAsset.id}/download`;
   }
 
-  private async downloadAndUpload(url: string, userId: string, ext: string): Promise<string> {
-    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
-    const buffer = Buffer.from(resp.data);
-    const rawContentType = resp.headers['content-type'];
-    const contentType = typeof rawContentType === 'string' ? rawContentType : `image/${ext}`;
-    return this.uploadResultAndBuildUrl(buffer, userId, ext, contentType);
-  }
-
   private async generateSimulatedResult(userId: string, ext: string): Promise<string> {
     const buffer = Buffer.from(
       ext === 'mp4' ? 'simulated-video' : 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
@@ -329,15 +320,5 @@ export class RenderProcessor extends WorkerHost {
     );
     const contentType = ext === 'mp4' ? 'video/mp4' : 'image/png';
     return this.uploadResultAndBuildUrl(buffer, userId, ext, contentType);
-  }
-
-  private normalizeSize(size: string | undefined): string {
-    if (!size) return '1024x1024';
-    const sizeMap: Record<string, string> = {
-      '1k': '1024x1024',
-      '2k': '2048x2048',
-      '4k': '4096x4096',
-    };
-    return sizeMap[size.toLowerCase()] || size;
   }
 }
