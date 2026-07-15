@@ -115,6 +115,7 @@
 - Python 直接用 AI 服务返回的临时 URL
 - NestJS 下载转存 MinIO 生成持久路径
 - 修复：统一策略（建议都转存 MinIO）
+**状态：已解决（Task 8 已统一为 MinIO 转存策略，比 Python 临时 URL 更优）**
 
 **C18. 任务取消语义不同**
 - Python `revoke(terminate=True)` 终止运行中任务
