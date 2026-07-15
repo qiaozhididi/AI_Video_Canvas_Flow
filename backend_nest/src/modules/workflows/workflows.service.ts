@@ -49,16 +49,20 @@ export class WorkflowsService {
       config: dto.config,
     });
     await this.nodeRepo.save(node);
-    return this.nodeToResponse(node);
+    // 重新查询以获取 created_at/updated_at（@CreateDateColumn 在 save 后可能未填充）
+    const saved = await this.nodeRepo.findOne({ where: { id: dto.id } });
+    return this.nodeToResponse(saved || node);
   }
 
   async deleteNode(projectId: string, userId: string, nodeId: string) {
     await this.verifyProjectOwner(projectId, userId);
+    // C14: 先删关联边，再删节点（避免 FK 违约，对齐 Python workflows.py:119-128）
+    await this.edgeRepo.delete([
+      { sourceNodeId: nodeId, projectId },
+      { targetNodeId: nodeId, projectId },
+    ]);
     const result = await this.nodeRepo.delete({ id: nodeId, projectId });
     if (result.affected === 0) throw new NotFoundException('节点不存在');
-    // 同时删除关联的边
-    await this.edgeRepo.delete({ sourceNodeId: nodeId });
-    await this.edgeRepo.delete({ targetNodeId: nodeId });
   }
 
   async listEdges(projectId: string, userId: string) {
@@ -71,6 +75,8 @@ export class WorkflowsService {
       target_node_id: e.targetNodeId,
       source_port: e.sourcePort,
       target_port: e.targetPort,
+      created_at: e.createdAt?.toISOString(),
+      updated_at: e.updatedAt?.toISOString(),
     }));
   }
 
@@ -85,7 +91,8 @@ export class WorkflowsService {
       targetPort: dto.target_port,
     });
     await this.edgeRepo.save(edge);
-    return this.edgeToResponse(edge);
+    const saved = await this.edgeRepo.findOne({ where: { id: dto.id } });
+    return this.edgeToResponse(saved || edge);
   }
 
   async deleteEdge(projectId: string, userId: string, edgeId: string) {
@@ -137,6 +144,8 @@ export class WorkflowsService {
     return {
       id: n.id, project_id: n.projectId, node_type: n.nodeType, label: n.label,
       position_x: n.positionX, position_y: n.positionY, config: n.config,
+      created_at: n.createdAt?.toISOString(),
+      updated_at: n.updatedAt?.toISOString(),
     };
   }
 
@@ -144,6 +153,8 @@ export class WorkflowsService {
     return {
       id: e.id, project_id: e.projectId, source_node_id: e.sourceNodeId,
       target_node_id: e.targetNodeId, source_port: e.sourcePort, target_port: e.targetPort,
+      created_at: e.createdAt?.toISOString(),
+      updated_at: e.updatedAt?.toISOString(),
     };
   }
 }
