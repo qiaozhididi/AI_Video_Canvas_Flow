@@ -111,6 +111,8 @@ export class WorkflowsService {
 
       // 2. 插入新 nodes (flush)
       if (dto.nodes.length > 0) {
+        // manager.save 传 plain object 不触发 @CreateDateColumn，手动填充时间戳
+        const now = new Date();
         const nodes = dto.nodes.map(n => ({
           id: n.id,
           projectId,
@@ -119,12 +121,15 @@ export class WorkflowsService {
           positionX: n.position_x,
           positionY: n.position_y,
           config: n.config,
+          createdAt: now,
+          updatedAt: now,
         }));
-        await manager.insert(WorkflowNode, nodes);
+        await manager.save(WorkflowNode, nodes);
       }
 
       // 3. 插入新 edges
       if (dto.edges.length > 0) {
+        const now = new Date();
         const edges = dto.edges.map(e => ({
           id: e.id,
           projectId,
@@ -132,8 +137,10 @@ export class WorkflowsService {
           targetNodeId: e.target_node_id,
           sourcePort: e.source_port || undefined,
           targetPort: e.target_port || undefined,
+          createdAt: now,
+          updatedAt: now,
         }));
-        await manager.insert(WorkflowEdge, edges);
+        await manager.save(WorkflowEdge, edges);
       }
     });
 

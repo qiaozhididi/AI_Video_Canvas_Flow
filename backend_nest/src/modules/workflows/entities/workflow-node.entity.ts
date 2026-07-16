@@ -6,7 +6,7 @@ export class WorkflowNode {
   @PrimaryColumn({ length: 128 }) id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;
   @Column({ name: 'node_type', length: 64 }) nodeType: string;
-  @Column({ length: 128, nullable: true }) label: string | null;
+  @Column({ type: 'varchar', length: 128, nullable: true }) label: string | null;
   @Column({ name: 'position_x', type: 'double precision', default: 0 }) positionX: number;
   @Column({ name: 'position_y', type: 'double precision', default: 0 }) positionY: number;
   @Column({ type: 'json', nullable: true }) config: any | null;

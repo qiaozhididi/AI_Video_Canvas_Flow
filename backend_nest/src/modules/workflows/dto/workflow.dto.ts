@@ -1,5 +1,5 @@
 // src/modules/workflows/dto/workflow.dto.ts
-import { IsString, IsNumber, IsOptional, IsObject } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsObject, IsArray } from 'class-validator';
 
 export class NodeCreateDto {
   @IsString() id: string;
@@ -19,6 +19,10 @@ export class EdgeCreateDto {
 }
 
 export class WorkflowSaveDto {
+  // @IsArray 必须存在，否则 ValidationPipe whitelist:true 会移除无装饰器属性，导致 dto.nodes/edges 为 undefined
+  @IsArray()
   nodes: NodeCreateDto[];
+
+  @IsArray()
   edges: EdgeCreateDto[];
 }

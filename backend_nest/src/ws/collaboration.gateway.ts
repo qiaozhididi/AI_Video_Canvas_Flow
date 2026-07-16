@@ -1,6 +1,6 @@
 // src/ws/collaboration.gateway.ts
 import {
-  WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnection, OnGatewayDisconnect,
+  WebSocketGateway, WebSocketServer, SubscribeMessage, OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit,
   MessageBody, ConnectedSocket,
 } from '@nestjs/websockets';
 import { Logger } from '@nestjs/common';
@@ -18,7 +18,7 @@ import { User } from '../modules/auth/entities/user.entity';
   cors: { origin: true, credentials: true },
   transports: ['websocket'],
 })
-export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class CollaborationGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -41,32 +41,38 @@ export class CollaborationGateway implements OnGatewayConnection, OnGatewayDisco
     });
   }
 
+  afterInit(server: Server) {
+    // 鉴权中间件：在连接建立前完成 JWT 校验并填充 socket.data，避免 handleConnection 的 async 竞态
+    // （前端 connect 后立即 emit join_project，可能早于 handleConnection 的 await userRepo.findOne 完成，
+    // 导致 client.data.userId 为 undefined，user_joined/ack 广播 user_id: undefined）
+    server.use(async (socket: Socket, next: (err?: Error) => void) => {
+      try {
+        const token = socket.handshake.query.token as string;
+        if (!token) {
+          return next(new Error('未授权：缺少 token'));
+        }
+        const payload = this.jwtService.verify(token, {
+          secret: this.config.get<string>('jwt.secret'),
+        });
+        const userId = payload.sub;
+        const user = await this.userRepo.findOne({ where: { id: userId } });
+        if (!user) {
+          return next(new Error('用户不存在'));
+        }
+        socket.data.userId = userId;
+        socket.data.username = user.username;
+        this.logger.log(`[WS:Connect] sid=${socket.id} user=${user.username}`);
+        next();
+      } catch (err) {
+        this.logger.warn(`[WS:Connect] 鉴权失败: ${(err as Error).message}`);
+        next(err as Error);
+      }
+    });
+  }
+
   async handleConnection(client: Socket) {
-    try {
-      const token = client.handshake.query.token as string;
-      if (!token) {
-        client.disconnect();
-        return;
-      }
-
-      const payload = this.jwtService.verify(token, {
-        secret: this.config.get<string>('jwt.secret'),
-      });
-      const userId = payload.sub;
-
-      const user = await this.userRepo.findOne({ where: { id: userId } });
-      if (!user) {
-        client.disconnect();
-        return;
-      }
-
-      client.data.userId = userId;
-      client.data.username = user.username;
-      this.logger.log(`[WS:Connect] sid=${client.id} user=${user.username}`);
-    } catch (err) {
-      this.logger.warn(`[WS:Connect] 鉴权失败: ${(err as Error).message}`);
-      client.disconnect();
-    }
+    // 鉴权已在 afterInit 中间件完成，socket.data.userId/username 已就绪
+    this.logger.log(`[WS:HandleConnection] sid=${client.id} user=${client.data.username}`);
   }
 
   async handleDisconnect(client: Socket) {

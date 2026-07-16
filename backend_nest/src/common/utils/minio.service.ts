@@ -12,11 +12,17 @@ export class MinioService implements OnModuleInit {
   constructor(private config: ConfigService) {}
 
   onModuleInit() {
+    // 兼容 Python 格式的 endpoint（host:port），minio.js 需要分开传
+    const rawEndpoint = this.config.get<string>('minio.endpoint')!;
+    const secure = this.config.get<boolean>('minio.secure');
+    const [host, portStr] = rawEndpoint.split(':');
+    const port = portStr ? Number(portStr) : (secure ? 443 : 80);
     this.client = new Minio.Client({
-      endPoint: this.config.get<string>('minio.endpoint')!,
+      endPoint: host,
+      port,
+      useSSL: secure,
       accessKey: this.config.get<string>('minio.accessKey'),
       secretKey: this.config.get<string>('minio.secretKey'),
-      useSSL: this.config.get<boolean>('minio.secure'),
     });
     this.bucket = this.config.get<string>('minio.bucket')!;
   }

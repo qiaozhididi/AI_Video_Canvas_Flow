@@ -32,6 +32,7 @@ const AVATAR_COLORS = [
 ];
 
 function getAvatarColor(userId: string): string {
+  if (!userId) return AVATAR_COLORS[0];
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     hash = userId.charCodeAt(i) + ((hash << 5) - hash);
