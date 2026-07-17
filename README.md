@@ -7,10 +7,15 @@
 ```
 AI_Canvas_Flow/
 ├── frontend/          # 前端项目 (React + Vite + TypeScript)
-├── backend/           # 后端项目 (FastAPI + LangGraph + Celery)
+├── backend/           # 后端项目 - Python 版 (FastAPI + LangGraph + Celery)
+├── backend_nest/      # 后端项目 - NestJS 版 (NestJS + TypeORM + BullMQ，API 兼容，可直接替换)
 ├── docs/              # 项目文档
 └── README.md
 ```
+
+> 后端提供两个实现版本，API 接口完全兼容，可按需选择：
+> - **Python 版** (`backend/`)：FastAPI + SQLAlchemy + Celery + RabbitMQ
+> - **NestJS 版** (`backend_nest/`)：NestJS + TypeORM + BullMQ + Redis（无需 RabbitMQ）
 
 ## 功能特性
 
@@ -46,7 +51,9 @@ AI_Canvas_Flow/
 | 实时通信 | Socket.IO Client |
 | 图标 | Lucide React |
 
-### 后端
+### 后端（两个实现版本，API 兼容）
+
+**Python 版** (`backend/`)
 
 | 类别 | 技术 |
 |------|------|
@@ -59,6 +66,20 @@ AI_Canvas_Flow/
 | 实时通信 | python-socketio |
 | 数据库迁移 | Alembic |
 | 容器化 | Docker + Docker Compose |
+
+**NestJS 版** (`backend_nest/`)
+
+| 类别 | 技术 |
+|------|------|
+| Web 框架 | NestJS 10.4 (TypeScript) |
+| ORM | TypeORM 0.3 + pg |
+| 任务队列 | BullMQ 5.12 + Redis（无需 RabbitMQ） |
+| 数据库 | PostgreSQL（复用 Python 版 schema） |
+| 对象存储 | MinIO 8.0 |
+| 实时通信 | @nestjs/platform-socket.io |
+| 认证 | @nestjs/jwt + passport-jwt |
+| 视频处理 | fluent-ffmpeg |
+| 容器化 | Docker |
 
 ## 快速开始
 
@@ -111,6 +132,24 @@ alembic upgrade head
 
 API 服务运行在 http://localhost:8000，文档地址 http://localhost:8000/docs
 
+### 后端（NestJS 版）
+
+```bash
+cd backend_nest
+
+# 安装依赖
+npm install
+
+# 配置环境变量（可直接复用 backend/.env，DATABASE_URL 自动兼容 asyncpg 前缀）
+cp .env.example .env
+
+# 启动开发服务器（watch 热重载，内嵌 BullMQ Worker，无需独立进程）
+npm run start:dev
+```
+
+API 服务运行在 http://localhost:8000，无需 RabbitMQ（BullMQ 直接使用 Redis）。
+详细文档见 [backend_nest/README.md](backend_nest/README.md)。
+
 ### Docker Compose（一键启动全部服务）
 
 ```bash
@@ -127,7 +166,8 @@ docker compose up -d
 | [前端开发技术文档](docs/frontend-technical-guide.md) | 前端架构、状态管理、组件体系、开发规范 |
 | [后端开发技术文档](docs/backend-technical-guide.md) | 后端架构、API 设计、数据模型、部署方案 |
 | [AI 视频工作流方案](docs/AI_Video_Workflow方案.md) | 系统架构全景与核心功能设计 |
-| [后端服务说明](backend/README.md) | 后端项目结构、API 表、数据库模型、环境变量 |
+| [后端服务说明（Python 版）](backend/README.md) | FastAPI 后端项目结构、API 表、数据库模型、环境变量 |
+| [后端服务说明（NestJS 版）](backend_nest/README.md) | NestJS 后端项目结构、API 端点、环境变量、与 Python 版差异对比 |
 | [实施计划归档](docs/superpowers/plans/) | 各功能模块的实施计划文档（已完成归档） |
 
 ## License
