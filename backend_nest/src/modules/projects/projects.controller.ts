@@ -1,6 +1,6 @@
 // src/modules/projects/projects.controller.ts
 import {
-  Controller, Get, Post, Put, Delete, Body, Param, UseGuards,
+  Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards,
   UseInterceptors, UploadedFile, Res, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -10,6 +10,7 @@ import { ProjectCreateDto, ProjectUpdateDto } from './dto/project.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { OptionalTokenGuard } from '../../common/auth/optional-token.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { clampLimit, clampOffset } from '../../common/utils/pagination';
 
 @Controller('projects')
 export class ProjectsController {
@@ -17,8 +18,13 @@ export class ProjectsController {
 
   @UseGuards(JwtAuthGuard)
   @Get()
-  list(@CurrentUser() userId: string) {
-    return this.projectsService.list(userId);
+  list(
+    @CurrentUser() userId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    // C8+I9: 列表加分页 + limit/offset 上限保护（防止恶意拉取全表与深分页）
+    return this.projectsService.list(userId, clampLimit(limit), clampOffset(offset));
   }
 
   @UseGuards(JwtAuthGuard)

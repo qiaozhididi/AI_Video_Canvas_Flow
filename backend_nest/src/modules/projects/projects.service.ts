@@ -17,11 +17,14 @@ export class ProjectsService {
     private projectAccess: ProjectAccessService,
   ) {}
 
-  async list(userId: string) {
+  async list(userId: string, limit = 50, offset = 0) {
     // I-21: 移除 isTemplate: false 过滤（对齐 Python projects.py 不过滤）
+    // C8: 列表加分页（take/skip），limit 上限由 controller 的 clampLimit 保证
     const projects = await this.projectRepo.find({
       where: { ownerId: userId },
       order: { updatedAt: 'DESC' },
+      take: limit,
+      skip: offset,
     });
     // 批量查询 node_count
     const projectIds = projects.map(p => p.id);

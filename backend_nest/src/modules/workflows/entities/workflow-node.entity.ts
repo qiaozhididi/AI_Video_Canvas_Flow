@@ -1,7 +1,9 @@
 // src/modules/workflows/entities/workflow-node.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
 @Entity('workflow_nodes')
+@Index('idx_workflow_nodes_project_id', ['projectId'])
 export class WorkflowNode {
   @PrimaryColumn({ length: 128 }) id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;

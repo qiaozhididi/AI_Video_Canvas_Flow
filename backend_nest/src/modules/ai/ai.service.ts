@@ -691,6 +691,19 @@ export class AiService {
     this.computeLayout(validNodes, validEdges);
 
     // 7. 预填参数 + 组装最终节点
+    // 7.1 批量预取 AI 推理节点的默认模型 ID（按 model_type 去重，一次性查询，避免循环内 N+1）
+    const INFERENCE_SUBTYPES = ['text_to_image', 'image_to_image', 'image_to_video', 'text_to_speech'];
+    const inferenceModelTypes = Array.from(
+      new Set(
+        validNodes
+          .filter(n => INFERENCE_SUBTYPES.includes(n.subtype))
+          .map(n => AI_INFERENCE_MODEL_TYPE[n.subtype])
+          .filter((t): t is string => Boolean(t)),
+      ),
+    );
+    const modelTypeToModelId = await this.getDefaultModelsForTypes(userId, inferenceModelTypes);
+
+    // 7.2 组装最终节点（从 Map 取值，不再访问 DB）
     const resultNodes: any[] = [];
     for (const n of validNodes) {
       const nodeType = NODE_WHITELIST[n.subtype];
@@ -701,11 +714,11 @@ export class AiService {
         params.text = dto.description;
       }
       // 预填: AI 推理节点 params.prompt = description + model_id
-      else if (['text_to_image', 'image_to_image', 'image_to_video', 'text_to_speech'].includes(n.subtype)) {
+      else if (INFERENCE_SUBTYPES.includes(n.subtype)) {
         params.prompt = dto.description;
         const modelType = AI_INFERENCE_MODEL_TYPE[n.subtype];
         if (modelType) {
-          const defaultModel = await this.getDefaultModelForType(userId, modelType);
+          const defaultModel = modelTypeToModelId.get(modelType) || null;
           if (defaultModel) {
             params.model_id = defaultModel;
           }
@@ -775,6 +788,33 @@ export class AiService {
       .limit(1)
       .getOne();
     return model?.id || null;
+  }
+
+  /** 批量查找多个 model_type 的首个 active 模型 ID（避免循环内 N+1 查询）。
+   *  与 getDefaultModelForType 等价：按 created_at ASC 排序取每个 model_type 的首个。*/
+  private async getDefaultModelsForTypes(
+    userId: string,
+    modelTypes: string[],
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (modelTypes.length === 0) return result;
+
+    const models = await this.modelRepo
+      .createQueryBuilder('model')
+      .innerJoin(AiProvider, 'provider', 'provider.id = model.provider_id')
+      .where('provider.user_id = :userId', { userId })
+      .andWhere('model.model_type IN (:...modelTypes)', { modelTypes })
+      .andWhere('model.is_active = true')
+      .orderBy('model.created_at', 'ASC')
+      .getMany();
+
+    // 已按 created_at ASC 排序，每个 model_type 取首个即可
+    for (const m of models) {
+      if (!result.has(m.modelType)) {
+        result.set(m.modelType, m.id);
+      }
+    }
+    return result;
   }
 
   /** 解析 LLM 返回的 JSON（容忍 markdown 代码块）*/

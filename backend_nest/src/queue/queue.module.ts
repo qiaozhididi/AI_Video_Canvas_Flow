@@ -25,6 +25,8 @@ import { AuthModule } from '../common/auth/auth.module';  // 提供 MinioService
           attempts: 1,
           removeOnComplete: 100,
           removeOnFail: 200,
+          // I25: Job 级超时 10 分钟，防止 AI 推理任务长时间挂起（pollArkTask 默认轮询 300s）
+          timeout: 10 * 60 * 1000,
         },
       }),
     }),

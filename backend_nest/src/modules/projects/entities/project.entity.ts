@@ -1,7 +1,9 @@
 // src/modules/projects/entities/project.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
 @Entity('projects')
+@Index('idx_projects_owner_id', ['ownerId'])
 export class Project {
   @PrimaryColumn('uuid') id: string;
   @Column({ length: 128 }) name: string;

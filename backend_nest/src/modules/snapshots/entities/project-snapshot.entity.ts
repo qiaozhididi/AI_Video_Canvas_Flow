@@ -1,7 +1,10 @@
 // src/modules/snapshots/entities/project-snapshot.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, Index } from 'typeorm';
 
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
 @Entity('project_snapshots')
+@Index('idx_project_snapshots_project_id', ['projectId'])
+@Index('idx_project_snapshots_owner_id', ['ownerId'])
 export class ProjectSnapshot {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;

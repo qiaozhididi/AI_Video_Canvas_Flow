@@ -1,8 +1,13 @@
 // src/modules/render/entities/render-task.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Check } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Check, Index } from 'typeorm';
 
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
 @Entity('render_tasks')
 @Check(`status IN ('pending', 'running', 'completed', 'failed', 'cancelled')`)
+@Index('idx_render_tasks_project_id', ['projectId'])
+@Index('idx_render_tasks_owner_id', ['ownerId'])
+@Index('idx_render_tasks_node_id', ['nodeId'])
+@Index('idx_render_tasks_status', ['status'])
 export class RenderTask {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'project_id', type: 'uuid' }) projectId: string;

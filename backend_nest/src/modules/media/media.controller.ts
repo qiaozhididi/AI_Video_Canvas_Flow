@@ -8,6 +8,7 @@ import { MediaService } from './media.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { OptionalTokenGuard } from '../../common/auth/optional-token.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { clampLimit, clampOffset } from '../../common/utils/pagination';
 
 @Controller('media')
 export class MediaController {
@@ -16,7 +17,8 @@ export class MediaController {
   @UseGuards(JwtAuthGuard)
   @Get()
   list(@CurrentUser() userId: string, @Query('limit') limit = 50, @Query('offset') offset = 0) {
-    return this.mediaService.list(userId, Number(limit), Number(offset));
+    // I9: limit/offset 上限保护（防止恶意拉取全表与深分页）
+    return this.mediaService.list(userId, clampLimit(limit), clampOffset(offset));
   }
 
   @UseGuards(JwtAuthGuard)

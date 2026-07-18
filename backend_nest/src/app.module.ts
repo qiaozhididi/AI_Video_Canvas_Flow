@@ -1,5 +1,7 @@
 // src/app.module.ts
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule } from './common/config/config.module';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './common/auth/auth.module';
@@ -22,6 +24,8 @@ import { WsModule } from './ws/ws.module';
     ConfigModule,
     DatabaseModule,
     AuthModule,
+    // I3: 全局限流，每分钟 60 次/IP（敏感路由可用 @Throttle 加严）
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     // 业务模块
     AuthBusinessModule,
     ProjectsModule,
@@ -36,6 +40,10 @@ import { WsModule } from './ws/ws.module';
     // 异步任务与 WebSocket
     QueueModule,
     WsModule,
+  ],
+  providers: [
+    // I3: 全局启用 ThrottlerGuard
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

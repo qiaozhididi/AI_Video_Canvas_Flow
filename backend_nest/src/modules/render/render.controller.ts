@@ -6,6 +6,7 @@ import { RenderService } from './render.service';
 import { RenderTaskCreateDto, ExportRequestDto } from './dto/render.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { clampLimit } from '../../common/utils/pagination';
 
 @Controller('render')
 @UseGuards(JwtAuthGuard)
@@ -14,7 +15,8 @@ export class RenderController {
 
   @Get()
   list(@CurrentUser() userId: string, @Query('status') status?: string, @Query('limit') limit = 50) {
-    return this.renderService.list(userId, status, Number(limit));
+    // I9: limit 上限保护（防止恶意拉取全表）
+    return this.renderService.list(userId, status, clampLimit(limit));
   }
 
   @Post()

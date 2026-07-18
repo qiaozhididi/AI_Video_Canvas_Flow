@@ -1,7 +1,9 @@
 // src/modules/ai/entities/ai-model.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
 @Entity('ai_models')
+@Index('idx_ai_models_provider_id', ['providerId'])
 export class AiModel {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'provider_id', type: 'uuid' }) providerId: string;

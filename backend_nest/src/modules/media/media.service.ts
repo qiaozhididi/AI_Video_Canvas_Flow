@@ -1,7 +1,7 @@
 // src/modules/media/media.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { MediaAsset } from './entities/media-asset.entity';
 import { MinioService } from '../../common/utils/minio.service';
@@ -11,6 +11,7 @@ export class MediaService {
   constructor(
     @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
     private minioService: MinioService,
+    private dataSource: DataSource,
   ) {}
 
   async list(userId: string, limit = 50, offset = 0) {
@@ -24,21 +25,29 @@ export class MediaService {
   }
 
   async getStorageUsage(userId: string) {
-    const assets = await this.mediaRepo.find({ where: { ownerId: userId } });
+    // C7: 改用 SQL 聚合，避免全表加载到内存（原实现加载所有 media_assets 行再 JS 循环累加）
+    const rows = await this.dataSource.query(
+      `SELECT file_type, COUNT(*)::int AS cnt, COALESCE(SUM(file_size), 0)::bigint AS size
+       FROM media_assets WHERE owner_id = $1 GROUP BY file_type`,
+      [userId],
+    );
     const categories: Record<string, { count: number; size: number }> = {};
     let totalSize = 0;
-    for (const asset of assets) {
-      const cat = (asset.fileType || 'other').split('/')[0];
-      const size = Number(asset.fileSize) || 0;
+    let totalCount = 0;
+    for (const row of rows) {
+      const cat = (row.file_type || 'other').split('/')[0];
+      const size = Number(row.size) || 0;
+      const count = Number(row.cnt) || 0;
       totalSize += size;
+      totalCount += count;
       if (!categories[cat]) categories[cat] = { count: 0, size: 0 };
-      categories[cat].count += 1;
+      categories[cat].count += count;
       categories[cat].size += size;
     }
     const quota = 10 * 1024 * 1024 * 1024; // 10 GB
     return {
       total_size: totalSize,
-      total_count: assets.length,
+      total_count: totalCount,
       quota,
       categories,
     };

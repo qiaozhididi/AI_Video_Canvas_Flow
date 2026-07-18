@@ -1,7 +1,10 @@
 // src/modules/media/entities/media-asset.entity.ts
-import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
 @Entity('media_assets')
+@Index('idx_media_assets_owner_id', ['ownerId'])
+@Index('idx_media_assets_project_id', ['projectId'])
 export class MediaAsset {
   @PrimaryColumn('uuid') id: string;
   @Column({ name: 'owner_id', type: 'uuid' }) ownerId: string;

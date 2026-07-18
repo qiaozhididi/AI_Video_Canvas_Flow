@@ -54,8 +54,13 @@ export class SnapshotsService {
     await this.projectAccess.verifyAccess(userId, projectId);
     const where: any = { projectId };
     if (source) where.source = source;
-    const snapshots = await this.snapshotRepo.find({ where, order: { createdAt: 'DESC' } });
-    return snapshots.map(s => this.toResponse(s));
+    // C9: 列表接口排除 snapshot_data 大 jsonb 字段，节省带宽和内存（单条接口仍返回完整数据）
+    const snapshots = await this.snapshotRepo.find({
+      where,
+      order: { createdAt: 'DESC' },
+      select: ['id', 'projectId', 'ownerId', 'source', 'label', 'name', 'createdAt'],
+    });
+    return snapshots.map(s => this.toListResponse(s));
   }
 
   async getLatest(userId: string, projectId: string) {
@@ -144,6 +149,19 @@ export class SnapshotsService {
       label: s.label,
       name: s.name,
       snapshot_data: s.snapshotData,
+      created_at: s.createdAt?.toISOString(),
+    };
+  }
+
+  // C9: 列表响应不含 snapshot_data（大 jsonb 字段），单条接口用 toResponse 返回完整数据
+  private toListResponse(s: ProjectSnapshot) {
+    return {
+      id: s.id,
+      project_id: s.projectId,
+      owner_id: s.ownerId,
+      source: s.source,
+      label: s.label,
+      name: s.name,
       created_at: s.createdAt?.toISOString(),
     };
   }
