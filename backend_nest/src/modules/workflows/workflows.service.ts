@@ -4,25 +4,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { WorkflowNode } from './entities/workflow-node.entity';
 import { WorkflowEdge } from './entities/workflow-edge.entity';
-import { Project } from '../projects/entities/project.entity';
 import { NodeCreateDto, EdgeCreateDto, WorkflowSaveDto } from './dto/workflow.dto';
+import { ProjectAccessService } from '../../common/auth/project-access.service';
 
 @Injectable()
 export class WorkflowsService {
   constructor(
     @InjectRepository(WorkflowNode) private nodeRepo: Repository<WorkflowNode>,
     @InjectRepository(WorkflowEdge) private edgeRepo: Repository<WorkflowEdge>,
-    @InjectRepository(Project) private projectRepo: Repository<Project>,
     private dataSource: DataSource,
+    private projectAccess: ProjectAccessService,
   ) {}
 
-  private async verifyProjectOwner(projectId: string, userId: string): Promise<void> {
-    const project = await this.projectRepo.findOne({ where: { id: projectId } });
-    if (!project || project.ownerId !== userId) throw new NotFoundException('项目不存在');
-  }
-
   async listNodes(projectId: string, userId: string) {
-    await this.verifyProjectOwner(projectId, userId);
+    // I6: viewer 可读，editor/owner 可读写（统一权限校验）
+    await this.projectAccess.verifyAccess(userId, projectId);
     const nodes = await this.nodeRepo.find({ where: { projectId } });
     return nodes.map(n => ({
       id: n.id,
@@ -38,7 +34,7 @@ export class WorkflowsService {
   }
 
   async createNode(projectId: string, userId: string, dto: NodeCreateDto) {
-    await this.verifyProjectOwner(projectId, userId);
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     const node = this.nodeRepo.create({
       id: dto.id,
       projectId,
@@ -55,7 +51,7 @@ export class WorkflowsService {
   }
 
   async deleteNode(projectId: string, userId: string, nodeId: string) {
-    await this.verifyProjectOwner(projectId, userId);
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     // C14: 先删关联边，再删节点（避免 FK 违约，对齐 Python workflows.py:119-128）
     await this.edgeRepo.delete([
       { sourceNodeId: nodeId, projectId },
@@ -66,7 +62,7 @@ export class WorkflowsService {
   }
 
   async listEdges(projectId: string, userId: string) {
-    await this.verifyProjectOwner(projectId, userId);
+    await this.projectAccess.verifyAccess(userId, projectId);
     const edges = await this.edgeRepo.find({ where: { projectId } });
     return edges.map(e => ({
       id: e.id,
@@ -81,7 +77,7 @@ export class WorkflowsService {
   }
 
   async createEdge(projectId: string, userId: string, dto: EdgeCreateDto) {
-    await this.verifyProjectOwner(projectId, userId);
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     const edge = this.edgeRepo.create({
       id: dto.id,
       projectId,
@@ -96,13 +92,13 @@ export class WorkflowsService {
   }
 
   async deleteEdge(projectId: string, userId: string, edgeId: string) {
-    await this.verifyProjectOwner(projectId, userId);
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     const result = await this.edgeRepo.delete({ id: edgeId, projectId });
     if (result.affected === 0) throw new NotFoundException('边不存在');
   }
 
   async saveWorkflow(projectId: string, userId: string, dto: WorkflowSaveDto) {
-    await this.verifyProjectOwner(projectId, userId);
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     // 事务: 先删后插，先 flush 节点再插边 (避免外键约束冲突)
     await this.dataSource.transaction(async (manager) => {
       // 1. 删除现有 nodes + edges

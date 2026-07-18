@@ -1,0 +1,35 @@
+# 依赖与构建产物
+node_modules
+dist
+coverage
+.nyc_output
+
+# 环境变量（含真实密钥，禁止打入镜像）
+# 通配 .env.* 覆盖 .env.production / .env.development / .env.test 等所有变体
+.env
+.env.*
+!.env.example
+
+# 版本控制与文档
+.git
+.gitignore
+*.md
+README.md
+docs
+
+# 测试与开发配置
+test
+**/*.spec.ts
+**/*.test.ts
+nest-cli.json
+tsconfig.json
+tsconfig.build.json
+jest.config.*
+
+# 系统文件
+.DS_Store
+*.log
+logs
+.idea
+.vscode
+.npmrc

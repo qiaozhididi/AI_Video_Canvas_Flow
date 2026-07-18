@@ -1,11 +1,12 @@
 // src/modules/projects/projects.service.ts
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Project } from './entities/project.entity';
 import { ProjectCreateDto, ProjectUpdateDto } from './dto/project.dto';
 import { MinioService } from '../../common/utils/minio.service';
+import { ProjectAccessService } from '../../common/auth/project-access.service';
 
 @Injectable()
 export class ProjectsService {
@@ -13,6 +14,7 @@ export class ProjectsService {
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     private minioService: MinioService,
     private dataSource: DataSource,
+    private projectAccess: ProjectAccessService,
   ) {}
 
   async list(userId: string) {
@@ -56,9 +58,11 @@ export class ProjectsService {
   }
 
   async get(userId: string, projectId: string) {
+    // I-1: 协作者权限校验（owner/editor/viewer 均可读，对齐硬约束）
+    await this.projectAccess.verifyAccess(userId, projectId);
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    // verifyAccess 已校验项目存在性，此处 findOne 仅为取数据；防御性判断
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     const nodeCountRow = await this.dataSource.query(
       `SELECT COUNT(*) as cnt FROM workflow_nodes WHERE project_id = $1`,
@@ -69,9 +73,10 @@ export class ProjectsService {
   }
 
   async update(userId: string, projectId: string, dto: ProjectUpdateDto) {
+    // I-1: 协作者编辑权限校验（owner/editor 可改，对齐硬约束）
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     if (dto.name !== undefined) project.name = dto.name;
     if (dto.description !== undefined) project.description = dto.description;
@@ -82,9 +87,8 @@ export class ProjectsService {
   }
 
   async delete(userId: string, projectId: string) {
-    const project = await this.projectRepo.findOne({ where: { id: projectId } });
-    if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
+    // I-1: 删除是危险操作，仅 owner 可执行（对齐硬约束）
+    await this.projectAccess.verifyOwner(userId, projectId);
 
     // 事务级联删除: edges → nodes → snapshots → render_tasks → media_assets → project
     await this.dataSource.transaction(async (manager) => {
@@ -98,9 +102,10 @@ export class ProjectsService {
   }
 
   async uploadCover(userId: string, projectId: string, file: Express.Multer.File) {
+    // I-1: 封面上传需要编辑权限（owner/editor 可改，对齐硬约束）
+    await this.projectAccess.verifyEditAccess(userId, projectId);
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('项目不存在');
-    if (project.ownerId !== userId) throw new NotFoundException('项目不存在');
 
     // I-22: 文件类型与大小校验（对齐 Python projects.py:158-169）
     const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
@@ -124,8 +129,9 @@ export class ProjectsService {
   }
 
   async downloadCover(userId: string, projectId: string) {
-    const project = await this.projectRepo.findOne({ where: { id: projectId } });
-    if (!project) throw new NotFoundException('项目不存在');
+    // C4: 封面下载必须鉴权（owner/editor/viewer 均可查看，匿名 401）
+    if (!userId) throw new UnauthorizedException('请先登录');
+    await this.projectAccess.verifyAccess(userId, projectId);
 
     const objectName = `covers/${projectId}.png`;
     const buffer = await this.minioService.downloadObject(objectName);

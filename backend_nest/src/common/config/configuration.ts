@@ -1,4 +1,7 @@
 // src/common/config/configuration.ts
+// M-2: JWT 默认密钥常量集中管理（main.ts 启动校验与 configuration 共用，避免硬编码重复）
+export const JWT_DEFAULT_SECRET = 'change-me-to-a-secure-random-string';
+
 function parseCorsOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS;
   if (!raw) {
@@ -30,7 +33,7 @@ export default () => ({
     secure: process.env.MINIO_SECURE === 'true',
   },
   jwt: {
-    secret: process.env.SECRET_KEY || 'change-me-to-a-secure-random-string',
+    secret: process.env.SECRET_KEY || JWT_DEFAULT_SECRET,
     expiresIn: Number(process.env.ACCESS_TOKEN_EXPIRE_MINUTES || 30) * 60,
     refreshExpiresIn: 60 * 24 * 7 * 60,
     algorithm: 'HS256',

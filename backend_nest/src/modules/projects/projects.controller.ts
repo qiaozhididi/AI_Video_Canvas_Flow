@@ -4,6 +4,7 @@ import {
   UseInterceptors, UploadedFile, Res, HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { ProjectsService } from './projects.service';
 import { ProjectCreateDto, ProjectUpdateDto } from './dto/project.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -58,14 +59,15 @@ export class ProjectsController {
     return this.projectsService.uploadCover(userId, projectId, file);
   }
 
-  // 使用 OptionalTokenGuard 支持 <img> 标签的 ?token=xxx
+  // C4: 使用 OptionalTokenGuard 支持 <img> 标签的 ?token=xxx，但 service 端强制校验登录与访问权限
   @UseGuards(OptionalTokenGuard)
   @Get(':id/cover/download')
   async downloadCover(
+    @CurrentUser() userId: string,
     @Param('id') projectId: string,
-    @Res() res: any,
+    @Res() res: Response,
   ) {
-    const result = await this.projectsService.downloadCover('', projectId);
+    const result = await this.projectsService.downloadCover(userId, projectId);
     res.set('Content-Type', result.contentType);
     res.send(result.buffer);
   }

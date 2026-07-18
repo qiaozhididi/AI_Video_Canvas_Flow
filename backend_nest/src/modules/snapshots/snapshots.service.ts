@@ -1,5 +1,5 @@
 // src/modules/snapshots/snapshots.service.ts
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,20 +8,24 @@ import { SnapshotCreateDto } from './dto/snapshot.dto';
 import { WorkflowNode } from '../../modules/workflows/entities/workflow-node.entity';
 import { WorkflowEdge } from '../../modules/workflows/entities/workflow-edge.entity';
 import { Project } from '../projects/entities/project.entity';
+import { ProjectAccessService } from '../../common/auth/project-access.service';
 
 @Injectable()
 export class SnapshotsService {
   constructor(
     @InjectRepository(ProjectSnapshot) private snapshotRepo: Repository<ProjectSnapshot>,
     private dataSource: DataSource,
+    private projectAccess: ProjectAccessService,
   ) {}
 
   async create(userId: string, projectId: string, dto: SnapshotCreateDto) {
+    // C2: 校验编辑权限，防止为他人项目创建快照（IDOR）
+    await this.projectAccess.verifyEditAccess(userId, projectId);
+
     // I-26: auto 源受 5 条上限，只删 1 条最旧的（对齐 Python snapshots.py:91-97）
     if (dto.source === 'auto') {
       const autoCount = await this.snapshotRepo.count({ where: { projectId, source: 'auto' } });
       if (autoCount >= 5) {
-        // 删除最旧的 1 条 auto 快照
         const oldest = await this.snapshotRepo.findOne({
           where: { projectId, source: 'auto' },
           order: { createdAt: 'ASC' },
@@ -46,15 +50,18 @@ export class SnapshotsService {
   }
 
   async list(userId: string, projectId: string, source?: string) {
-    const where: any = { projectId, ownerId: userId };
+    // C2: 校验访问权限（owner/editor/viewer 均可查看快照）
+    await this.projectAccess.verifyAccess(userId, projectId);
+    const where: any = { projectId };
     if (source) where.source = source;
     const snapshots = await this.snapshotRepo.find({ where, order: { createdAt: 'DESC' } });
     return snapshots.map(s => this.toResponse(s));
   }
 
   async getLatest(userId: string, projectId: string) {
+    await this.projectAccess.verifyAccess(userId, projectId);
     const snapshot = await this.snapshotRepo.findOne({
-      where: { projectId, ownerId: userId },
+      where: { projectId },
       order: { createdAt: 'DESC' },
     });
     if (!snapshot) throw new NotFoundException('无快照');
@@ -62,20 +69,25 @@ export class SnapshotsService {
   }
 
   async get(userId: string, snapshotId: string) {
-    const snapshot = await this.snapshotRepo.findOne({ where: { id: snapshotId, ownerId: userId } });
+    // C2: 先查快照拿到 projectId，再校验访问权限（防 IDOR）
+    const snapshot = await this.snapshotRepo.findOne({ where: { id: snapshotId } });
     if (!snapshot) throw new NotFoundException('快照不存在');
+    await this.projectAccess.verifyAccess(userId, snapshot.projectId);
     return this.toResponse(snapshot);
   }
 
   async delete(userId: string, snapshotId: string) {
-    const snapshot = await this.snapshotRepo.findOne({ where: { id: snapshotId, ownerId: userId } });
+    const snapshot = await this.snapshotRepo.findOne({ where: { id: snapshotId } });
     if (!snapshot) throw new NotFoundException('快照不存在');
+    await this.projectAccess.verifyEditAccess(userId, snapshot.projectId);
     await this.snapshotRepo.delete({ id: snapshotId });
   }
 
   async restore(userId: string, snapshotId: string) {
-    const snapshot = await this.snapshotRepo.findOne({ where: { id: snapshotId, ownerId: userId } });
+    // C2: 校验编辑权限，防止通过自建快照篡改他人项目 workflow（IDOR）
+    const snapshot = await this.snapshotRepo.findOne({ where: { id: snapshotId } });
     if (!snapshot) throw new NotFoundException('快照不存在');
+    await this.projectAccess.verifyEditAccess(userId, snapshot.projectId);
 
     const data = snapshot.snapshotData;
     const nodes = data.nodes || [];
