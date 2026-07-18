@@ -1,5 +1,5 @@
 // src/modules/auth/auth.service.ts
-import { Injectable, ConflictException, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -81,13 +81,13 @@ export class AuthService {
 
     if (dto.username && dto.username !== user.username) {
       const exist = await this.userRepo.findOne({ where: { username: dto.username } });
-      if (exist) throw new ConflictException('用户名已存在');
+      if (exist) throw new BadRequestException('用户名已存在');
       user.username = dto.username;
     }
 
     if (dto.email && dto.email !== user.email) {
       const exist = await this.userRepo.findOne({ where: { email: dto.email } });
-      if (exist) throw new ConflictException('邮箱已被注册');
+      if (exist) throw new BadRequestException('邮箱已被注册');
       user.email = dto.email;
     }
 
