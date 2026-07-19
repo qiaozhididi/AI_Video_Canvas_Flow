@@ -15,7 +15,6 @@ import { AiModule } from './modules/ai/ai.module';
 import { SnapshotsModule } from './modules/snapshots/snapshots.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
-import { CollaborationModule } from './modules/collaboration/collaboration.module';
 import { QueueModule } from './queue/queue.module';
 import { WsModule } from './ws/ws.module';
 
@@ -39,7 +38,8 @@ import { WsModule } from './ws/ws.module';
     SnapshotsModule,
     TemplatesModule,
     InvitationsModule,
-    CollaborationModule,
+    // B3: 移除 CollaborationModule（死代码，getStatus 被 StatusController 覆盖且无鉴权）
+    // 协作功能由 WsModule 的 collaboration.gateway.ts 提供
     // 异步任务与 WebSocket
     QueueModule,
     WsModule,
