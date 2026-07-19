@@ -1,5 +1,9 @@
 # AI Canvas Flow — 后端开发技术文档
 
+> **说明**：本文档描述 **Python 版后端**（`backend/`，FastAPI + LangGraph + Celery）的技术架构。
+> 项目另提供 **NestJS 版后端**（`backend_nest/`，NestJS + TypeORM + BullMQ），API 接口完全兼容，
+> 详见 [backend_nest/README.md](../backend_nest/README.md)。
+
 ## 1. 项目概述
 
 AI Canvas Flow 后端定位为 **AI 算力网关 + 工作流状态机 + 媒体处理调度中心**，承担三大核心职责：

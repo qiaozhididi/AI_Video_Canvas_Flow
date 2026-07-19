@@ -1,0 +1,25 @@
+// src/modules/render/entities/render-task.entity.ts
+import { Entity, PrimaryColumn, Column, CreateDateColumn, UpdateDateColumn, Check, Index } from 'typeorm';
+
+// 注意：@Index 仅作代码层声明，索引真正生效需配套 Alembic 迁移
+@Entity('render_tasks')
+@Check(`status IN ('pending', 'running', 'completed', 'failed', 'cancelled')`)
+@Index('idx_render_tasks_project_id', ['projectId'])
+@Index('idx_render_tasks_owner_id', ['ownerId'])
+@Index('idx_render_tasks_node_id', ['nodeId'])
+@Index('idx_render_tasks_status', ['status'])
+export class RenderTask {
+  @PrimaryColumn('uuid') id: string;
+  @Column({ name: 'project_id', type: 'uuid' }) projectId: string;
+  @Column({ name: 'owner_id', type: 'uuid' }) ownerId: string;
+  @Column({ name: 'node_id', length: 128, nullable: true }) nodeId: string;
+  @Column({ name: 'node_params', type: 'jsonb', nullable: true }) nodeParams: any;
+  @Column({ name: 'task_type', length: 64 }) taskType: string;
+  @Column({ length: 32, default: 'pending' }) status: string;  // pending/running/completed/failed/cancelled
+  @Column({ type: 'int', default: 0 }) progress: number;  // 0-100 整数
+  @Column({ name: 'celery_task_id', length: 256, nullable: true }) celeryTaskId: string;  // 复用列名，存储 BullMQ job ID
+  @Column({ name: 'result_url', length: 512, nullable: true }) resultUrl: string;
+  @Column({ name: 'error_message', type: 'text', nullable: true }) errorMessage: string | null;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
+}
