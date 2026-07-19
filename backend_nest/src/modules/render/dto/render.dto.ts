@@ -1,5 +1,5 @@
 // src/modules/render/dto/render.dto.ts
-import { IsString, IsOptional, IsArray, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsObject, IsIn } from 'class-validator';
 
 export class RenderTaskCreateDto {
   @IsString() project_id: string;
@@ -13,7 +13,9 @@ export class RenderTaskCreateDto {
 
 export class ExportRequestDto {
   @IsString() project_id: string;
-  @IsString() format: string;  // mp4/mov/webm
-  @IsString() resolution: string;  // 720p/1080p/4k
-  @IsArray() subtitles: any[];  // [{start, end, text}]
+  // M3: 加默认值与白名单校验（对齐 Python render.py:250-254 默认 format='mp4', resolution='1080p', subtitles=[]）
+  // 原仅 @IsString 必填，前端不传时直接 400；与 Python 行为不一致
+  @IsIn(['mp4', 'mov', 'webm']) format: string = 'mp4';
+  @IsIn(['720p', '1080p', '4k']) resolution: string = '1080p';
+  @IsArray() subtitles: any[] = [];  // [{start, end, text}]
 }
