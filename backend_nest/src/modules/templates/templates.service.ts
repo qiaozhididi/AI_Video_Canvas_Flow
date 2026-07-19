@@ -55,39 +55,38 @@ export class TemplatesService {
       ownerId: userId,
       isTemplate: false,
     });
-    await this.projectRepo.save(newProject);
 
-    // 复制 nodes/edges (ID 加前缀避免冲突)
+    // 读操作放事务外，减少事务持有时间
     const [nodes, edges] = await Promise.all([
       this.dataSource.query('SELECT * FROM workflow_nodes WHERE project_id = $1', [templateId]),
       this.dataSource.query('SELECT * FROM workflow_edges WHERE project_id = $1', [templateId]),
     ]);
 
-    if (nodes.length > 0) {
-      const nodeRows = nodes.map((n: any) => ({
-        id: `clone-${newProjectId}-${n.id}`,
-        projectId: newProjectId,
-        nodeType: n.node_type,
-        label: n.label,
-        positionX: n.position_x,
-        positionY: n.position_y,
-        config: typeof n.config === 'string' ? JSON.parse(n.config) : n.config,
-      }));
-      await this.dataSource.createQueryBuilder().insert().into(WorkflowNode).values(nodeRows).execute();
-    }
+    const nodeRows = nodes.map((n: any) => ({
+      id: `clone-${newProjectId}-${n.id}`,
+      projectId: newProjectId,
+      nodeType: n.node_type,
+      label: n.label,
+      positionX: n.position_x,
+      positionY: n.position_y,
+      config: typeof n.config === 'string' ? JSON.parse(n.config) : n.config,
+    }));
+    const idMap = new Map(nodes.map((n: any) => [n.id, `clone-${newProjectId}-${n.id}`]));
+    const edgeRows = edges.map((e: any) => ({
+      id: `clone-${newProjectId}-${e.id}`,
+      projectId: newProjectId,
+      sourceNodeId: idMap.get(e.source_node_id) || e.source_node_id,
+      targetNodeId: idMap.get(e.target_node_id) || e.target_node_id,
+      sourcePort: e.source_port,
+      targetPort: e.target_port,
+    }));
 
-    if (edges.length > 0) {
-      const idMap = new Map(nodes.map((n: any) => [n.id, `clone-${newProjectId}-${n.id}`]));
-      const edgeRows = edges.map((e: any) => ({
-        id: `clone-${newProjectId}-${e.id}`,
-        projectId: newProjectId,
-        sourceNodeId: idMap.get(e.source_node_id) || e.source_node_id,
-        targetNodeId: idMap.get(e.target_node_id) || e.target_node_id,
-        sourcePort: e.source_port,
-        targetPort: e.target_port,
-      }));
-      await this.dataSource.createQueryBuilder().insert().into(WorkflowEdge).values(edgeRows).execute();
-    }
+    // B2: 单事务包裹 project + nodes + edges 三个写操作，避免失败留半克隆状态
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(Project, newProject);
+      if (nodeRows.length > 0) await manager.insert(WorkflowNode, nodeRows);
+      if (edgeRows.length > 0) await manager.insert(WorkflowEdge, edgeRows);
+    });
 
     return {
       id: newProjectId,
