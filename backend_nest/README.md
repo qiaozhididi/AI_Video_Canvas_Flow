@@ -55,7 +55,10 @@ backend_nest/
 │       ├── collaboration.gateway.ts     # Socket.IO 网关（afterInit 中间件鉴权）
 │       ├── node-lock.service.ts         # 节点编辑锁
 │       └── ws.module.ts
-├── test/                                # E2E 测试
+├── test/                                # 测试目录
+│   ├── unit/                            # 单元测试（4 suites：auth/projects/snapshots/node-lock）
+│   ├── integration/                     # 集成装配测试（boot.spec.ts，DI 容器装配验证）
+│   └── e2e/                             # 端到端测试
 ├── Dockerfile                           # 多阶段构建（builder + production）
 ├── package.json
 ├── nest-cli.json
@@ -255,6 +258,18 @@ alembic upgrade head
 | `DEFAULT_AI_MODEL_TYPE` | `llm` | 默认模型类型 |
 | `PORT` | `8000` | 服务端口 |
 
+### 业务阈值（M15 抽离到 `limits` 配置段，可通过 .env 覆盖）
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MEDIA_MAX_UPLOAD_SIZE_MB` | `100` | 单文件上传上限（MB），转字节存储 |
+| `MEDIA_COVER_MAX_SIZE_MB` | `5` | 项目封面图上限（MB），转字节存储 |
+| `INVITATION_DEFAULT_EXPIRES_HOURS` | `24` | 协作邀请默认过期时长（小时） |
+| `INVITATION_MAX_COLLABORATORS` | `10` | 单项目协作者上限（不含 owner） |
+| `SNAPSHOT_AUTO_MAX_COUNT` | `5` | auto 源快照保留上限（超出删最旧） |
+| `PAGINATION_DEFAULT_LIMIT` | `50` | list 接口默认分页 limit |
+| `PAGINATION_MAX_LIMIT` | `100` | list 接口最大分页 limit（防恶意拉全表） |
+
 ## Docker 部署
 
 ```bash
@@ -296,7 +311,7 @@ docker run -d \
 - **ValidationPipe**：`whitelist: true` 会移除无 class-validator 装饰器的 DTO 属性，DTO 字段必须加装饰器（如 `@IsArray()`）。
 - **WebSocket 鉴权**：使用 `OnGatewayInit.afterInit` + `server.use` 中间件鉴权（非 `handleConnection`），避免 async 竞态导致 `client.data.userId` 未设置。
 - **任务取消**：BullMQ 5.x 的 `discard()` 仅设置本地标志，跨实例不可见。通过 `job.getState() === 'unknown'` 检测任务被 `remove()` 后的状态，实现"终止运行中任务"语义。
-- **时间戳填充**：`manager.save(Entity, plainObject)` 传 plain object 不触发 `@CreateDateColumn`，Python schema 无 DEFAULT 时需手动填充 `createdAt/updatedAt`。
+- **时间戳填充**：entity 已加 `default: () => 'NOW()'` 声明，DB 层通过 `ALTER TABLE ... SET DEFAULT NOW()` 补齐默认值。INSERT 时 TypeORM 用 `DEFAULT` 关键字由 DB 填充 `createdAt/updatedAt`，应用层无需手动设置。
 - **协作变更不写 DB**：`node_update`/`edge_update`/`cursor_move` 仅广播，持久化依赖前端 autoSaveStore 双防抖快照。
 - **项目删除**：级联删除 workflow_nodes/edges/snapshots/render_tasks/media_assets，避免外键约束错误。
 - **进度值**：`render_tasks.progress` 为 0-100 整数，前端直接展示。
@@ -306,12 +321,22 @@ docker run -d \
 ## 测试
 
 ```bash
-# 单元测试
+# 单元测试 + 集成装配测试（一起跑，无需启动服务）
 npm test
 
-# E2E 测试
+# E2E 测试（需先启动服务）
 npm run test:e2e
 
 # watch 模式
 npm run test:watch
 ```
+
+**测试目录结构：**
+
+| 目录 | 内容 | 当前用例数 |
+|------|------|-----------|
+| `test/unit/` | 业务 service 单元测试（mock 依赖） | 4 suites / 50 tests（auth/projects/snapshots/node-lock） |
+| `test/integration/` | 集成装配测试（`boot.spec.ts`，import 完整 AppModule 验证 DI 容器装配 + M14/M15 配置加载） | 1 suite / 17 tests |
+| `test/e2e/` | 端到端 HTTP 测试（supertest，需启动服务） | 1 suite |
+
+**当前状态：** 5 suites / 68 tests 全部通过，外加 20 项端到端冒烟测试（覆盖注册/登录/项目/workflow/快照/渲染/M12 pending 验证/M3 DTO 校验/导出/级联删除）。
