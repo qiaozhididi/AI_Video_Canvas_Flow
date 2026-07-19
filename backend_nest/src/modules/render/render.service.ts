@@ -87,9 +87,9 @@ export class RenderService {
       nodeParams: dto.node_params,
     });
 
-    // 回写 celery_task_id (复用列名，存储 BullMQ job ID)
+    // M12: 仅回写 celery_task_id，status 保持 pending，由 RenderProcessor.process 真正开始执行时改为 running
+    // （原入队后立即改 running，但 BullMQ 任务可能还在队列等待消费 concurrency:5，前端显示"运行中"但实际排队，取消逻辑也会误判）
     task.celeryTaskId = jobId;
-    task.status = 'running';
     await this.taskRepo.save(task);
 
     return this.toResponse(task);
@@ -159,8 +159,8 @@ export class RenderService {
       nodeParams,
     });
 
+    // M12: 同 create，仅回写 celery_task_id，status 保持 pending 由 processor 改 running
     newTask.celeryTaskId = jobId;
-    newTask.status = 'running';
     await this.taskRepo.save(newTask);
 
     return this.toResponse(newTask);
