@@ -42,9 +42,9 @@ export class InvitationsService {
     this.validateRole(dto.role);
 
     const token = crypto.randomBytes(32).toString('base64url');
-    const expiresAt = dto.expires_in_hours
-      ? new Date(Date.now() + dto.expires_in_hours * 3600 * 1000)
-      : null;
+    // M1: 默认 24h 过期（对齐 Python invitations.py:23），避免永久邀请泄露无法失效
+    const hours = dto.expires_in_hours ?? 24;
+    const expiresAt = new Date(Date.now() + hours * 3600 * 1000);
 
     const invitation = this.invitationRepo.create({
       id: uuidv4(),
