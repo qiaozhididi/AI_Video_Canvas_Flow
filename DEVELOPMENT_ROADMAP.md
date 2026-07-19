@@ -1,6 +1,6 @@
 # AI Canvas Flow — 开发路线图与未完成功能清单
 
-> 更新时间: 2026-07-06
+> 更新时间: 2026-07-19
 
 ## 当前项目状态概览
 
@@ -21,11 +21,11 @@
 | 后端 | 项目 CRUD | ✅ 完成 | 级联删除 |
 | 后端 | 工作流 CRUD | ✅ 完成 | 7 端点全对接数据库 |
 | 后端 | 媒体资产 | ✅ 完成 | MinIO 上传/presign/下载/删除 |
-| 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery，进度实时写回 DB，支持取消，返回 node_label/project_name |
+| 后端 | 渲染任务 | ✅ 完成 | 创建触发 Celery/BullMQ，进度实时写回 DB，支持取消，返回 node_label/project_name |
 | 后端 | AI 可配置系统 | ✅ 完成 | Provider/Model CRUD + 默认配置 + LLM 调用封装 |
 | 后端 | AI 工作流生成 | ✅ 完成 | POST /ai/generate-workflow，LLM 解析描述生成节点/边 + 自动布局 |
-| 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务（文生图/图生视频/文生视频/语音），RabbitMQ 4.x 兼容 |
-| 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI + JWT 鉴权 + 房间成员管理 + 远端光标同步 |
+| 后端 | Celery 任务 | ✅ 完成 | 渲染任务 + AI 推理任务（文生图/图生视频/文生视频/语音），RabbitMQ 4.x 兼容；NestJS 版用 BullMQ + Redis 替代 |
+| 后端 | WebSocket | ✅ 完成 | Socket.IO ASGI + JWT 鉴权 + 房间成员管理 + 远端光标同步；NestJS 版用 @nestjs/platform-socket.io 实现，功能等价 |
 | 后端 | 模板市场 | ✅ 完成 | 列表/克隆/发布/取消发布 4 端点 |
 | 后端 | 快照系统 | ✅ 完成 | project_snapshots 表 + CRUD + 单事务恢复 + 5 auto 上限 |
 | 前端 | 跨 Tab 认证同步 | ✅ 完成 | AuthGuard + storage 事件 + Login 自动跳转 + 登出按钮 |
@@ -40,6 +40,12 @@
 | 后端 | 协作者权限 | ✅ 完成 | 3 端点 CRUD + WebSocket _check_edit_permission |
 | 后端 | 邀请链接 | ✅ 完成 | 3 端点（生成/查看/接受）+ token + 过期校验 |
 | 后端 | AI 字幕生成 | ✅ 完成 | POST /ai/generate-subtitles（LLM 解析文本生成时间轴分段） |
+| 后端 | NestJS 后端重构 | ✅ 完成 | Python FastAPI → NestJS 重构，API 完全兼容，82 个提交合并到 main，Python 后端备份至 `backup/python-backend` 分支 |
+| 后端 | NestJS Blocker 修复 | ✅ 完成 | 4 个 Blocker（render 状态机修正 pending/DTO 白名单校验/MinIO ensureBucket lazy once/业务阈值抽离到 configuration.ts） |
+| 后端 | NestJS Major 修复 | ✅ 完成 | 16 个 Major（越权访问 403/锁清理/参数校验/FFmpeg 配置/CORS/日志/observability 等） |
+| 后端 | DB schema 对齐 | ✅ 完成 | entity 时间戳列加 `default: () => 'NOW()'` 声明 + DB 层 `ALTER TABLE ... SET DEFAULT NOW()` 补齐 16 个时间戳列 |
+| 测试 | 单元 + 集成装配 | ✅ 通过 | 5 suites / 68 tests（auth/projects/snapshots/node-lock 单元 + boot.spec.ts 集成装配验证） |
+| 测试 | E2E 冒烟 | ✅ 通过 | 20 项端到端冒烟（注册/登录/项目/workflow/快照/渲染/M12 pending 验证/M3 DTO 校验/导出/级联删除） |
 
 ---
 
@@ -47,7 +53,7 @@
 
 | 层面 | 完成度 | 说明 |
 |------|--------|------|
-| 后端 API | **100%** | 全部核心端点已实现（含 templates/snapshots/collaboration WS 鉴权 + AI 工作流生成） |
+| 后端 API | **100%** | 全部核心端点已实现（Python 与 NestJS 双实现，NestJS 为主力）；含 templates/snapshots/collaboration WS 鉴权 + AI 工作流生成 |
 | 前端 API 客户端 | **100%** | 所有后端端点均有对应前端方法（含 AI Provider/Model + templates + snapshots + generateWorkflow） |
 | 前端 Store 对接 | **90%** | authStore/projectStore/canvasStore(间接)/autoSaveStore/collabStore 已对接；timelineStore 通过快照恢复部分对接 |
 | 前端页面对接 | **100%** | Login/Home/RenderCenter/Settings/Templates/Editor(执行工作流+预览+时间轴+AI 生成+字幕轨+协作面板+导出+邀请) 全部对接；MediaLibrary 有 Mock 降级；Settings 存储用量已对接真实 API |
