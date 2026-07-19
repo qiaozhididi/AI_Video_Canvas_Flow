@@ -299,9 +299,8 @@ docker run -d \
 | 密码哈希 | bcrypt (passlib) | bcryptjs（兼容） |
 | 错误格式 | FastAPI 默认 | FastApiCompatFilter 兼容 |
 | API 文档 | /docs (OpenAPI 自动) | 无（手动文档见本 README） |
-| 协作邀请 | ❌ 无 | ✅ invitations 模块 |
-| Token 刷新 | ❌ 无 | ✅ /auth/refresh |
-| 任务重试 | ❌ 无 | ✅ /render/:id/retry |
+| 健康检查 | ❌ 无 | ✅ GET /status（含 DB 依赖状态） |
+| 业务端点 | invitations/refresh/retry/stats/subtitles 全实现 | 同左（API 完全等价） |
 
 ## 开发注意事项
 

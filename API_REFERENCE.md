@@ -5,7 +5,7 @@
 > Content-Type: `application/json`（文件上传除外）
 
 > **后端实现兼容性**：本文档端点同时适用于 Python (FastAPI) 与 NestJS 后端，API 路径完全兼容。
-> NestJS 版相对 Python 新增的端点（如 /auth/refresh、/render/:id/retry、invitations 模块等）见文末 [第 10 章 NestJS 新增端点](#10-nestjs-新增端点)。
+> NestJS 版补充实现的端点（如 invitations 协作邀请模块、/status 健康检查等）及扩展端点的详细说明见文末 [第 10 章 NestJS 端点补充说明](#10-nestjs-新增端点)。
 
 ---
 
@@ -1123,7 +1123,8 @@ curl -X DELETE http://localhost:8000/api/v1/templates/<template_id> \
 
 ## 10. NestJS 新增端点
 
-> 本章列出的端点为 NestJS 后端（`backend_nest/`，主力服务）相对 Python 后端（`backend/`）新增的功能。Python 后端不提供这些端点。所有端点前缀仍为 `/api/v1`。
+> 本章列出 NestJS 后端（`backend_nest/`，主力服务）补充实现或扩展的端点说明。
+> 其中 invitations 协作邀请模块与 `/status` 健康检查为 NestJS 优先实现；`/auth/refresh`、`/render/:id/retry`、`/media/stats/usage` 等端点 Python 与 NestJS 均已实现，此处提供详细字段说明与 curl 示例。所有端点前缀仍为 `/api/v1`。
 
 ### 10.1 认证 — POST /auth/refresh
 
