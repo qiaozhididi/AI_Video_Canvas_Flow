@@ -51,6 +51,8 @@ export class ExportService {
     const tmpDir = path.join(os.tmpdir(), `export_${taskId}_${uuidv4()}`);
     fs.mkdirSync(tmpDir, { recursive: true });
 
+    // M10: try/catch 包裹整体逻辑，任何失败（下载或 FFmpeg）都清理 tmpDir，避免磁盘泄漏
+    try {
     // 1. 下载所有素材
     const localPaths: string[] = [];
     for (let i = 0; i < clips.length; i++) {
@@ -87,7 +89,7 @@ export class ExportService {
       .map((c, i) => ({ clip: c, path: localPaths[i] }))
       .filter(({ clip }) => clip.track_type === 'video');
 
-    return new Promise<string>((resolve, reject) => {
+    return await new Promise<string>((resolve, reject) => {
       const cmd = ffmpeg();
 
       if (videoClips.length === 0) {
@@ -129,6 +131,15 @@ export class ExportService {
         })
         .run();
     });
+    } catch (err) {
+      // M10: 任何失败（下载或 FFmpeg）都清理 tmpDir，避免磁盘泄漏（对齐 Python finally: shutil.rmtree）
+      try {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      } catch (e) {
+        this.logger.warn(`清理临时目录失败: ${(e as Error).message}`);
+      }
+      throw err;
+    }
   }
 
   /** 上传导出结果到 MinIO 并创建 MediaAsset，返回 /api/v1/media/{id}/download */
