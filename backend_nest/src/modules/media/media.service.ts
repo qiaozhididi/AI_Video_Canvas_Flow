@@ -5,6 +5,7 @@ import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { MediaAsset } from './entities/media-asset.entity';
 import { MinioService } from '../../common/utils/minio.service';
+import { ProjectAccessService } from '../../common/auth/project-access.service';
 
 @Injectable()
 export class MediaService {
@@ -13,6 +14,7 @@ export class MediaService {
     @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
     private minioService: MinioService,
     private dataSource: DataSource,
+    private projectAccess: ProjectAccessService,
   ) {}
 
   async list(userId: string, limit = 50, offset = 0) {
@@ -55,6 +57,10 @@ export class MediaService {
   }
 
   async upload(userId: string, file: Express.Multer.File, projectId?: string) {
+    // B1: 若指定 project_id，校验编辑权限，防止 IDOR（把资产挂到他人项目，被级联删除时误删）
+    if (projectId) {
+      await this.projectAccess.verifyEditAccess(userId, projectId);
+    }
     const mediaId = uuidv4();
     const ext = file.originalname.split('.').pop() || 'bin';
     const objectName = `media/${userId}/${mediaId}.${ext}`;
