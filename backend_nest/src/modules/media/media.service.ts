@@ -1,5 +1,5 @@
 // src/modules/media/media.service.ts
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -108,14 +108,14 @@ export class MediaService {
   async get(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
+    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
     return this.toResponse(media);
   }
 
   async getPresign(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
+    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
     const url = await this.minioService.getPresignedUrl(media.storageKey, 1);
     return { url, expires_in: 3600 };
   }
@@ -123,7 +123,7 @@ export class MediaService {
   async download(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
+    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
     const buffer = await this.minioService.downloadObject(media.storageKey);
     return { buffer, contentType: media.fileType, fileName: media.fileName };
   }
@@ -131,7 +131,7 @@ export class MediaService {
   async delete(userId: string, mediaId: string) {
     const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
     if (!media) throw new NotFoundException('媒体资产不存在');
-    if (media.ownerId !== userId) throw new NotFoundException('媒体资产不存在');
+    if (media.ownerId !== userId) throw new ForbiddenException('无权访问此资产');
 
     // I-25: 先删 DB 再删 MinIO（容错，对齐 Python：DB 删除不被 MinIO 失败阻止）
     await this.mediaRepo.delete({ id: mediaId });
