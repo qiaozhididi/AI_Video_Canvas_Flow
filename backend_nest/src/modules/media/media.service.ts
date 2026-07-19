@@ -1,11 +1,12 @@
 // src/modules/media/media.service.ts
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { MediaAsset } from './entities/media-asset.entity';
 import { MinioService } from '../../common/utils/minio.service';
 import { ProjectAccessService } from '../../common/auth/project-access.service';
+import { validateImageSignature } from '../../common/utils/file-signature.util';
 
 @Injectable()
 export class MediaService {
@@ -61,6 +62,30 @@ export class MediaService {
     if (projectId) {
       await this.projectAccess.verifyEditAccess(userId, projectId);
     }
+
+    // M7: 文件大小限制（100MB，防大文件撑爆 MinIO）
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      throw new BadRequestException('文件大小不能超过 100MB');
+    }
+
+    // M7: 文件类型白名单 + 图片 magic number 校验（防 mimetype 伪造上传 webshell）
+    // 攻击者可改 .php 为 .png 并伪造 Content-Type: image/png，仅校验 mimetype 无效
+    const ALLOWED_MIMETYPES = new Set([
+      'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif',
+      'video/mp4', 'audio/mpeg', 'application/pdf',
+    ]);
+    const declaredType = (file.mimetype || '').toLowerCase();
+    if (!ALLOWED_MIMETYPES.has(declaredType)) {
+      throw new BadRequestException(`不支持的文件类型: ${declaredType}`);
+    }
+    // 图片类型必须通过 magic number 校验（webshell 最常见的伪装载体）
+    if (declaredType.startsWith('image/')) {
+      if (!validateImageSignature(file.buffer, declaredType)) {
+        throw new BadRequestException('文件内容与声明类型不符（图片 magic number 校验失败）');
+      }
+    }
+
     const mediaId = uuidv4();
     const ext = file.originalname.split('.').pop() || 'bin';
     const objectName = `media/${userId}/${mediaId}.${ext}`;
