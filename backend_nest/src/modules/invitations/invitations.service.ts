@@ -116,15 +116,24 @@ export class InvitationsService {
     });
     if (existing) throw new ConflictException('已是项目协作者');
 
-    // B4: 协作者上限检查（硬约束：3 权限级 + 10 用户上限，owner 不在 collaborator 表内）
-    const collaboratorCount = await this.collaboratorRepo.count({
-      where: { projectId: invitation.projectId },
-    });
-    if (collaboratorCount >= 10) {
-      throw new ConflictException('项目协作者已达上限（10 人）');
-    }
-
+    // M6: 事务内加悲观锁防 TOCTOU race condition
+    // （B4 原先把 count 检查放在事务外，两个并发 acceptInvitation 可能都看到 count=9 通过检查，
+    //  最终插入 11 人，违反硬约束；@Unique 约束只能防同一用户重复加入，无法防跨用户超限）
+    // 对 Project 行加 pessimistic_write 锁，序列化同一 project 的并发 acceptInvitation 事务
     await this.dataSource.transaction(async (manager) => {
+      await manager.findOne(Project, {
+        where: { id: invitation.projectId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      // B4: 协作者上限检查（硬约束：3 权限级 + 10 用户上限，owner 不在 collaborator 表内）
+      const collaboratorCount = await manager.count(ProjectCollaborator, {
+        where: { projectId: invitation.projectId },
+      });
+      if (collaboratorCount >= 10) {
+        throw new ConflictException('项目协作者已达上限（10 人）');
+      }
+
       const collab = manager.create(ProjectCollaborator, {
         id: uuidv4(),
         projectId: invitation.projectId,
