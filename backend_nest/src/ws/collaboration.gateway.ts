@@ -105,6 +105,13 @@ export class CollaborationGateway implements OnGatewayInit, OnGatewayConnection,
     const projectId = payload.project_id;
     const room = `project:${projectId}`;
 
+    // B4: 协作房间 10 用户上限（硬约束）— 仅对新成员检查，已在房间的重复 join 不阻止
+    const currentMembers = this.roomMembers.get(projectId);
+    if (currentMembers && !currentMembers.has(client.id) && currentMembers.size >= 10) {
+      this.logger.warn(`[WS:JoinProject] 房间已满 project=${projectId} user=${username}`);
+      return { error: 'room_full', message: '协作房间已满（10 人）' };
+    }
+
     client.join(room);
 
     if (!this.roomMembers.has(projectId)) {

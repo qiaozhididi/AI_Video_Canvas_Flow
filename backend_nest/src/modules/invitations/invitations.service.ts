@@ -116,6 +116,14 @@ export class InvitationsService {
     });
     if (existing) throw new ConflictException('已是项目协作者');
 
+    // B4: 协作者上限检查（硬约束：3 权限级 + 10 用户上限，owner 不在 collaborator 表内）
+    const collaboratorCount = await this.collaboratorRepo.count({
+      where: { projectId: invitation.projectId },
+    });
+    if (collaboratorCount >= 10) {
+      throw new ConflictException('项目协作者已达上限（10 人）');
+    }
+
     await this.dataSource.transaction(async (manager) => {
       const collab = manager.create(ProjectCollaborator, {
         id: uuidv4(),
