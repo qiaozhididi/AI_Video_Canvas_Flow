@@ -143,6 +143,9 @@ export class ProjectsService {
     await this.projectAccess.verifyAccess(userId, projectId);
 
     const objectName = `covers/${projectId}.png`;
+    // M4: 文件不存在返回 404（原直接 downloadObject 抛 S3Error 被 filter 转 500，前端无法区分无封面与服务器错误）
+    const exists = await this.minioService.statObject(objectName);
+    if (!exists) throw new NotFoundException('封面不存在');
     const buffer = await this.minioService.downloadObject(objectName);
     return { buffer, contentType: 'image/png' };
   }

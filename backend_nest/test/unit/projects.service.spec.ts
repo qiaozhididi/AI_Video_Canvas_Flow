@@ -30,6 +30,8 @@ describe('ProjectsService', () => {
     minioService = {
       uploadFile: jest.fn(),
       downloadObject: jest.fn(),
+      // M4: downloadCover 用 statObject 检查封面存在性
+      statObject: jest.fn().mockResolvedValue(true),
     };
     dataSource = {
       query: jest.fn(),
