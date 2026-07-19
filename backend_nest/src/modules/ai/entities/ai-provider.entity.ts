@@ -12,6 +12,6 @@ export class AiProvider {
   @Column({ name: 'base_url', length: 512 }) baseUrl: string;
   @Column({ name: 'api_key', length: 512 }) apiKey: string;
   @Column({ name: 'is_active', default: true }) isActive: boolean;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
-  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
 }

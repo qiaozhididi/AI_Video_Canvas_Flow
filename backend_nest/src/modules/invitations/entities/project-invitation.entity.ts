@@ -15,5 +15,5 @@ export class ProjectInvitation {
   @Column({ name: 'expires_at', type: 'timestamp', nullable: true }) expiresAt: Date | null;
   @Column({ name: 'created_by', type: 'uuid' }) createdBy: string;
   @Column({ name: 'used_by', type: 'uuid', nullable: true }) usedBy: string | null;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
 }

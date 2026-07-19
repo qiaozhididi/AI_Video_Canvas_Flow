@@ -13,6 +13,6 @@ export class WorkflowEdge {
   @Column({ name: 'target_node_id', length: 128 }) targetNodeId: string;
   @Column({ name: 'source_port', length: 64, nullable: true }) sourcePort: string;
   @Column({ name: 'target_port', length: 64, nullable: true }) targetPort: string;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
-  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
 }

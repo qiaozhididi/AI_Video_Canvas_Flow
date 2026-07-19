@@ -12,6 +12,6 @@ export class AiModel {
   @Column({ name: 'model_type', length: 32 }) modelType: string;  // llm/image_gen/video_gen/tts
   @Column({ name: 'is_active', default: true }) isActive: boolean;
   @Column({ name: 'is_default', default: false }) isDefault: boolean;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
-  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
 }

@@ -14,6 +14,6 @@ export class MediaAsset {
   @Column({ name: 'file_size', type: 'bigint' }) fileSize: number;
   @Column({ name: 'storage_key', length: 512 }) storageKey: string;
   @Column({ name: 'thumbnail_key', length: 512, nullable: true }) thumbnailKey: string;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
-  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
 }

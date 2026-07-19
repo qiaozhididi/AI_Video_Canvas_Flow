@@ -12,6 +12,6 @@ export class WorkflowNode {
   @Column({ name: 'position_x', type: 'double precision', default: 0 }) positionX: number;
   @Column({ name: 'position_y', type: 'double precision', default: 0 }) positionY: number;
   @Column({ type: 'json', nullable: true }) config: any | null;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
-  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
 }

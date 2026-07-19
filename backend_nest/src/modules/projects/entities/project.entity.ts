@@ -13,6 +13,6 @@ export class Project {
   @Column({ name: 'is_template', default: false }) isTemplate: boolean;
   @Column({ name: 'template_category', length: 64, nullable: true }) templateCategory: string;
   @Column({ name: 'template_tags', type: 'json', nullable: true }) templateTags: any;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
-  @UpdateDateColumn({ name: 'updated_at' }) updatedAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
+  @UpdateDateColumn({ name: 'updated_at', default: () => 'NOW()' }) updatedAt: Date;
 }

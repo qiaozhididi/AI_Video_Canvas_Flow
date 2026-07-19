@@ -13,5 +13,5 @@ export class ProjectSnapshot {
   @Column({ length: 128, nullable: true }) label: string;
   @Column({ length: 100, nullable: true }) name: string;
   @Column({ name: 'snapshot_data', type: 'jsonb' }) snapshotData: any;
-  @CreateDateColumn({ name: 'created_at' }) createdAt: Date;
+  @CreateDateColumn({ name: 'created_at', default: () => 'NOW()' }) createdAt: Date;
 }
