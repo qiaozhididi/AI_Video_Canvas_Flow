@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { ProjectInvitation } from './entities/project-invitation.entity';
@@ -20,6 +21,7 @@ export class InvitationsService {
     @InjectRepository(Project) private projectRepo: Repository<Project>,
     @InjectRepository(User) private userRepo: Repository<User>,
     private dataSource: DataSource,
+    private config: ConfigService,
   ) {}
 
   // I-27: 校验 role 合法性（对齐 project_memory: 3 permission levels）
@@ -42,8 +44,8 @@ export class InvitationsService {
     this.validateRole(dto.role);
 
     const token = crypto.randomBytes(32).toString('base64url');
-    // M1: 默认 24h 过期（对齐 Python invitations.py:23），避免永久邀请泄露无法失效
-    const hours = dto.expires_in_hours ?? 24;
+    // M1+M15: 默认过期时长从配置读取（默认 24h，对齐 Python invitations.py:23），避免永久邀请泄露无法失效
+    const hours = dto.expires_in_hours ?? this.config.get<number>('limits.invitation.defaultExpiresHours')!;
     const expiresAt = new Date(Date.now() + hours * 3600 * 1000);
 
     const invitation = this.invitationRepo.create({
@@ -126,12 +128,13 @@ export class InvitationsService {
         lock: { mode: 'pessimistic_write' },
       });
 
-      // B4: 协作者上限检查（硬约束：3 权限级 + 10 用户上限，owner 不在 collaborator 表内）
+      // B4+M15: 协作者上限从配置读取（默认 10，硬约束：3 权限级 + 10 用户上限，owner 不在 collaborator 表内）
+      const maxCollaborators = this.config.get<number>('limits.invitation.maxCollaborators')!;
       const collaboratorCount = await manager.count(ProjectCollaborator, {
         where: { projectId: invitation.projectId },
       });
-      if (collaboratorCount >= 10) {
-        throw new ConflictException('项目协作者已达上限（10 人）');
+      if (collaboratorCount >= maxCollaborators) {
+        throw new ConflictException(`项目协作者已达上限（${maxCollaborators} 人）`);
       }
 
       const collab = manager.create(ProjectCollaborator, {

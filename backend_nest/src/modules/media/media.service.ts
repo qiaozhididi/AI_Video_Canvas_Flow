@@ -2,6 +2,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { MediaAsset } from './entities/media-asset.entity';
 import { MinioService } from '../../common/utils/minio.service';
@@ -16,6 +17,7 @@ export class MediaService {
     private minioService: MinioService,
     private dataSource: DataSource,
     private projectAccess: ProjectAccessService,
+    private config: ConfigService,
   ) {}
 
   async list(userId: string, limit = 50, offset = 0) {
@@ -63,10 +65,10 @@ export class MediaService {
       await this.projectAccess.verifyEditAccess(userId, projectId);
     }
 
-    // M7: 文件大小限制（100MB，防大文件撑爆 MinIO）
-    const MAX_FILE_SIZE = 100 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      throw new BadRequestException('文件大小不能超过 100MB');
+    // M7+M15: 文件大小限制从配置读取（默认 100MB，防大文件撑爆 MinIO）
+    const maxFileSize = this.config.get<number>('limits.media.maxUploadSize')!;
+    if (file.size > maxFileSize) {
+      throw new BadRequestException(`文件大小不能超过 ${Math.floor(maxFileSize / 1024 / 1024)}MB`);
     }
 
     // M7: 文件类型白名单 + 图片 magic number 校验（防 mimetype 伪造上传 webshell）

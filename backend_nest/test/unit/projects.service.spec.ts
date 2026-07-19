@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ProjectsService } from '../../src/modules/projects/projects.service';
 import { Project } from '../../src/modules/projects/entities/project.entity';
 import { MinioService } from '../../src/common/utils/minio.service';
@@ -43,6 +44,14 @@ describe('ProjectsService', () => {
       verifyOwner: jest.fn(),
     };
 
+    // M15: ConfigService mock，提供 limits.media.coverMaxSize 默认值
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'limits.media.coverMaxSize') return 5 * 1024 * 1024;
+        return undefined;
+      }),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         ProjectsService,
@@ -50,6 +59,7 @@ describe('ProjectsService', () => {
         { provide: MinioService, useValue: minioService },
         { provide: DataSource, useValue: dataSource },
         { provide: ProjectAccessService, useValue: projectAccess },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
     service = moduleRef.get<ProjectsService>(ProjectsService);

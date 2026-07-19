@@ -50,4 +50,30 @@ export default () => ({
     modelDisplayName: process.env.DEFAULT_AI_MODEL_DISPLAY_NAME || '豆包 Seed 2.1 Turbo',
     modelType: process.env.DEFAULT_AI_MODEL_TYPE || 'llm',
   },
+  // M15: 业务阈值集中抽离到配置，service 通过 ConfigService.get('limits.xxx') 读取
+  // 默认值对齐硬约束与 Python 实现，可通过 .env 覆盖
+  limits: {
+    media: {
+      // 单文件上传上限（字节），默认 100MB（对齐 media.service.ts 原 MAX_FILE_SIZE）
+      maxUploadSize: Number(process.env.MEDIA_MAX_UPLOAD_SIZE_MB || 100) * 1024 * 1024,
+      // 封面图上限（字节），默认 5MB（对齐 projects.service.ts 原 maxSize）
+      coverMaxSize: Number(process.env.MEDIA_COVER_MAX_SIZE_MB || 5) * 1024 * 1024,
+    },
+    invitation: {
+      // 默认过期时长（小时），默认 24h（对齐 invitations.service.ts 原 ?? 24）
+      defaultExpiresHours: Number(process.env.INVITATION_DEFAULT_EXPIRES_HOURS || 24),
+      // 协作者上限（不含 owner），默认 10（对齐硬约束 10-user max）
+      maxCollaborators: Number(process.env.INVITATION_MAX_COLLABORATORS || 10),
+    },
+    snapshot: {
+      // auto 源快照上限，默认 5（对齐 Python snapshots.py:91-97）
+      autoMaxCount: Number(process.env.SNAPSHOT_AUTO_MAX_COUNT || 5),
+    },
+    pagination: {
+      // list 接口默认 limit，默认 50
+      defaultLimit: Number(process.env.PAGINATION_DEFAULT_LIMIT || 50),
+      // list 接口最大 limit，默认 100（防恶意拉全表）
+      maxLimit: Number(process.env.PAGINATION_MAX_LIMIT || 100),
+    },
+  },
 });

@@ -2,6 +2,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { ProjectSnapshot } from './entities/project-snapshot.entity';
 import { SnapshotCreateDto } from './dto/snapshot.dto';
@@ -16,6 +17,7 @@ export class SnapshotsService {
     @InjectRepository(ProjectSnapshot) private snapshotRepo: Repository<ProjectSnapshot>,
     private dataSource: DataSource,
     private projectAccess: ProjectAccessService,
+    private config: ConfigService,
   ) {}
 
   async create(userId: string, projectId: string, dto: SnapshotCreateDto) {
@@ -28,10 +30,11 @@ export class SnapshotsService {
       // pg_advisory_xact_lock 基于 projectId 哈希序列化同一项目的并发快照创建
       await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
 
-      // I-26: auto 源受 5 条上限，只删 1 条最旧的（对齐 Python snapshots.py:91-97）
+      // I-26+M15: auto 源受上限保护（默认 5 条），只删 1 条最旧的（对齐 Python snapshots.py:91-97）
       if (dto.source === 'auto') {
+        const autoMaxCount = this.config.get<number>('limits.snapshot.autoMaxCount')!;
         const autoCount = await manager.count(ProjectSnapshot, { where: { projectId, source: 'auto' } });
-        if (autoCount >= 5) {
+        if (autoCount >= autoMaxCount) {
           const oldest = await manager.findOne(ProjectSnapshot, {
             where: { projectId, source: 'auto' },
             order: { createdAt: 'ASC' },

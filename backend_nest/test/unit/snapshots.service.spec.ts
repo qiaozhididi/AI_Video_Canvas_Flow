@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { SnapshotsService } from '../../src/modules/snapshots/snapshots.service';
 import { ProjectSnapshot } from '../../src/modules/snapshots/entities/project-snapshot.entity';
 import { Project } from '../../src/modules/projects/entities/project.entity';
@@ -48,12 +49,21 @@ describe('SnapshotsService', () => {
       verifyOwner: jest.fn().mockResolvedValue(undefined),
     };
 
+    // M15: ConfigService mock，提供 limits.snapshot.autoMaxCount 默认值
+    const configService = {
+      get: jest.fn((key: string) => {
+        if (key === 'limits.snapshot.autoMaxCount') return 5;
+        return undefined;
+      }),
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         SnapshotsService,
         { provide: getRepositoryToken(ProjectSnapshot), useValue: snapshotRepo },
         { provide: DataSource, useValue: dataSource },
         { provide: ProjectAccessService, useValue: projectAccess },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
     service = moduleRef.get<SnapshotsService>(SnapshotsService);

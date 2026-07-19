@@ -2,6 +2,7 @@
 import { Injectable, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { v4 as uuidv4 } from 'uuid';
 import { Project } from './entities/project.entity';
 import { ProjectCreateDto, ProjectUpdateDto } from './dto/project.dto';
@@ -16,6 +17,7 @@ export class ProjectsService {
     private minioService: MinioService,
     private dataSource: DataSource,
     private projectAccess: ProjectAccessService,
+    private config: ConfigService,
   ) {}
 
   async list(userId: string, limit = 50, offset = 0) {
@@ -116,9 +118,10 @@ export class ProjectsService {
     if (!allowedTypes.includes(file.mimetype)) {
       throw new BadRequestException('封面必须是图片格式(png/jpeg/webp/gif)');
     }
-    const maxSize = 5 * 1024 * 1024;  // 5MB
+    // M15: 封面图大小上限从配置读取（默认 5MB）
+    const maxSize = this.config.get<number>('limits.media.coverMaxSize')!;
     if (file.size > maxSize) {
-      throw new BadRequestException('封面图片大小不能超过 5MB');
+      throw new BadRequestException(`封面图片大小不能超过 ${Math.floor(maxSize / 1024 / 1024)}MB`);
     }
     // M9: magic number 校验（mimetype 由客户端 Content-Type 提供，可任意伪造；
     // 攻击者可上传 .php 改名 .png + 伪造 Content-Type: image/png 的 webshell）
