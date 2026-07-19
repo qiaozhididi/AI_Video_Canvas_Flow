@@ -7,6 +7,7 @@ import { Project } from './entities/project.entity';
 import { ProjectCreateDto, ProjectUpdateDto } from './dto/project.dto';
 import { MinioService } from '../../common/utils/minio.service';
 import { ProjectAccessService } from '../../common/auth/project-access.service';
+import { validateImageSignature } from '../../common/utils/file-signature.util';
 
 @Injectable()
 export class ProjectsService {
@@ -118,6 +119,11 @@ export class ProjectsService {
     const maxSize = 5 * 1024 * 1024;  // 5MB
     if (file.size > maxSize) {
       throw new BadRequestException('封面图片大小不能超过 5MB');
+    }
+    // M9: magic number 校验（mimetype 由客户端 Content-Type 提供，可任意伪造；
+    // 攻击者可上传 .php 改名 .png + 伪造 Content-Type: image/png 的 webshell）
+    if (!validateImageSignature(file.buffer, file.mimetype)) {
+      throw new BadRequestException('文件内容与声明类型不符（图片 magic number 校验失败）');
     }
 
     // 封面上传到 MinIO covers/{pid}.png (覆盖旧文件)

@@ -250,7 +250,8 @@ describe('ProjectsService', () => {
   describe('uploadCover', () => {
     // 构造模拟文件对象的辅助函数
     const mockFile = (overrides: any = {}) => ({
-      buffer: Buffer.from('img'),
+      // M9: 有效 PNG magic number（89 50 4E 47 0D 0A 1A 0A），让 magic number 校验通过
+      buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       mimetype: 'image/png',
       size: 1024,
       ...overrides,
@@ -309,9 +310,9 @@ describe('ProjectsService', () => {
 
       const result = await service.uploadCover('u1', 'p1', mockFile());
 
-      // 上传到 covers/{pid}.png，使用文件 mimetype
+      // 上传到 covers/{pid}.png，使用文件 mimetype（buffer 为 mockFile 提供的 PNG magic number）
       expect(minioService.uploadFile).toHaveBeenCalledWith(
-        'covers/p1.png', Buffer.from('img'), 'image/png',
+        'covers/p1.png', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), 'image/png',
       );
       // coverUrl 被更新为下载路径
       expect(project.coverUrl).toBe('/api/v1/projects/p1/cover/download');
