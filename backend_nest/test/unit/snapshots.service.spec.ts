@@ -27,8 +27,13 @@ describe('SnapshotsService', () => {
       save: jest.fn(),
       delete: jest.fn(),
     };
-    // 事务 manager mock：restore 内通过 dataSource.transaction(cb) 注入
+    // 事务 manager mock：restore 与 create（M16 后）内通过 dataSource.transaction(cb) 注入
     manager = {
+      query: jest.fn().mockResolvedValue(undefined), // M16: pg_advisory_xact_lock
+      count: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn((_entity, dto) => ({ ...dto, createdAt: new Date('2024-01-01T00:00:00Z') })),
+      save: jest.fn(),
       delete: jest.fn(),
       insert: jest.fn(),
       update: jest.fn(),
@@ -147,50 +152,52 @@ describe('SnapshotsService', () => {
 
   describe('create', () => {
     it("正常创建 manual 快照", async () => {
-      snapshotRepo.save.mockResolvedValue(makeSnapshot({ source: 'manual' }));
+      // M16: create 改为事务内执行，manager.save 替代 snapshotRepo.save
+      manager.save.mockResolvedValue(makeSnapshot({ source: 'manual' }));
       const result = await service.create('user-1', 'proj-1', {
         source: 'manual',
         label: 'v1',
         name: 'first',
         snapshot_data: { nodes: [], edges: [] },
       });
-      expect(snapshotRepo.save).toHaveBeenCalledTimes(1);
+      expect(manager.save).toHaveBeenCalledTimes(1);
+      expect(manager.query).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', ['proj-1']);
       expect(result.source).toBe('manual');
     });
 
     it("source='auto' 且已达 5 条上限时，删除最旧 1 条", async () => {
-      snapshotRepo.count.mockResolvedValue(5);
+      manager.count.mockResolvedValue(5);
       const oldest = makeSnapshot({
         id: 'oldest-snap',
         source: 'auto',
         createdAt: new Date('2023-01-01T00:00:00Z'),
       });
-      snapshotRepo.findOne.mockResolvedValue(oldest); // 用于查询最旧快照
-      snapshotRepo.save.mockResolvedValue(makeSnapshot({ source: 'auto' }));
+      manager.findOne.mockResolvedValue(oldest); // 用于查询最旧快照
+      manager.save.mockResolvedValue(makeSnapshot({ source: 'auto' }));
 
       await service.create('user-1', 'proj-1', {
         source: 'auto',
         snapshot_data: { nodes: [], edges: [] },
       });
 
-      expect(snapshotRepo.delete).toHaveBeenCalledTimes(1);
-      expect(snapshotRepo.delete).toHaveBeenCalledWith({ id: 'oldest-snap' });
+      expect(manager.delete).toHaveBeenCalledTimes(1);
+      expect(manager.delete).toHaveBeenCalledWith(ProjectSnapshot, { id: 'oldest-snap' });
     });
 
     it("source='auto' 且未达上限时，不删除", async () => {
-      snapshotRepo.count.mockResolvedValue(2);
-      snapshotRepo.save.mockResolvedValue(makeSnapshot({ source: 'auto' }));
+      manager.count.mockResolvedValue(2);
+      manager.save.mockResolvedValue(makeSnapshot({ source: 'auto' }));
 
       await service.create('user-1', 'proj-1', {
         source: 'auto',
         snapshot_data: { nodes: [], edges: [] },
       });
 
-      expect(snapshotRepo.delete).not.toHaveBeenCalled();
+      expect(manager.delete).not.toHaveBeenCalled();
     });
 
     it('应调用 projectAccess.verifyEditAccess', async () => {
-      snapshotRepo.save.mockResolvedValue(makeSnapshot());
+      manager.save.mockResolvedValue(makeSnapshot());
       await service.create('user-1', 'proj-1', {
         source: 'manual',
         snapshot_data: {},

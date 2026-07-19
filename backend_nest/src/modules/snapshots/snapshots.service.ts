@@ -22,30 +22,39 @@ export class SnapshotsService {
     // C2: 校验编辑权限，防止为他人项目创建快照（IDOR）
     await this.projectAccess.verifyEditAccess(userId, projectId);
 
-    // I-26: auto 源受 5 条上限，只删 1 条最旧的（对齐 Python snapshots.py:91-97）
-    if (dto.source === 'auto') {
-      const autoCount = await this.snapshotRepo.count({ where: { projectId, source: 'auto' } });
-      if (autoCount >= 5) {
-        const oldest = await this.snapshotRepo.findOne({
-          where: { projectId, source: 'auto' },
-          order: { createdAt: 'ASC' },
-        });
-        if (oldest) {
-          await this.snapshotRepo.delete({ id: oldest.id });
+    // M16: 事务内执行 auto 源 5 条上限检查 + 删除 + 插入，并用 advisory lock 防 TOCTOU race
+    // （原实现 count + delete + save 在事务外，并发可都看到 count=5 都删同一条最旧都插入，最终 6+ 条违反约束）
+    const snapshot = await this.dataSource.transaction(async (manager) => {
+      // pg_advisory_xact_lock 基于 projectId 哈希序列化同一项目的并发快照创建
+      await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [projectId]);
+
+      // I-26: auto 源受 5 条上限，只删 1 条最旧的（对齐 Python snapshots.py:91-97）
+      if (dto.source === 'auto') {
+        const autoCount = await manager.count(ProjectSnapshot, { where: { projectId, source: 'auto' } });
+        if (autoCount >= 5) {
+          const oldest = await manager.findOne(ProjectSnapshot, {
+            where: { projectId, source: 'auto' },
+            order: { createdAt: 'ASC' },
+          });
+          if (oldest) {
+            await manager.delete(ProjectSnapshot, { id: oldest.id });
+          }
         }
       }
-    }
 
-    const snapshot = this.snapshotRepo.create({
-      id: uuidv4(),
-      projectId,
-      ownerId: userId,
-      source: dto.source,
-      label: dto.label || undefined,
-      name: dto.name || undefined,
-      snapshotData: dto.snapshot_data,
+      const snap = manager.create(ProjectSnapshot, {
+        id: uuidv4(),
+        projectId,
+        ownerId: userId,
+        source: dto.source,
+        label: dto.label || undefined,
+        name: dto.name || undefined,
+        snapshotData: dto.snapshot_data,
+      });
+      await manager.save(snap);
+      return snap;
     });
-    await this.snapshotRepo.save(snapshot);
+
     return this.toResponse(snapshot);
   }
 
