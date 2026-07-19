@@ -4,6 +4,9 @@
 > 认证方式: Bearer Token (JWT)  
 > Content-Type: `application/json`（文件上传除外）
 
+> **后端实现兼容性**：本文档端点同时适用于 Python (FastAPI) 与 NestJS 后端，API 路径完全兼容。
+> NestJS 版相对 Python 新增的端点（如 /auth/refresh、/render/:id/retry、invitations 模块等）见文末 [第 10 章 NestJS 新增端点](#10-nestjs-新增端点)。
+
 ---
 
 ## 目录
@@ -17,6 +20,7 @@
 7. [快照](#7-快照)
 8. [模板市场](#8-模板市场)
 9. [通用错误码](#9-通用错误码)
+10. [NestJS 新增端点](#10-nestjs-新增端点)
 
 ---
 
@@ -1114,6 +1118,265 @@ curl -X DELETE http://localhost:8000/api/v1/templates/<template_id> \
 **前端错误处理策略：**
 
 所有 API 错误经 `getErrorMessage(err, scene?)` 统一处理，优先展示后端 `detail`（中文），无中文时按场景/状态码 fallback。详见前端技术文档 §9.5。
+
+---
+
+## 10. NestJS 新增端点
+
+> 本章列出的端点为 NestJS 后端（`backend_nest/`，主力服务）相对 Python 后端（`backend/`）新增的功能。Python 后端不提供这些端点。所有端点前缀仍为 `/api/v1`。
+
+### 10.1 认证 — POST /auth/refresh
+
+刷新 access_token。前端在 access_token 过期前自动调用，避免用户重新登录。
+
+**请求体：**
+
+```json
+{
+  "refresh_token": "string"
+}
+```
+
+**响应 200：**
+
+```json
+{
+  "access_token": "string",
+  "refresh_token": "string",
+  "token_type": "bearer"
+}
+```
+
+**curl 示例：**
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token": "your-refresh-token"}'
+```
+
+---
+
+### 10.2 项目封面 — POST /projects/:id/cover
+
+上传项目封面图片（multipart 上传到 MinIO）。
+
+**请求：** `multipart/form-data`，字段名 `file`
+
+**权限：** 需 editor 以上权限
+
+**响应 200：** 返回更新后的项目对象（含 `cover_url`）
+
+```bash
+curl -X POST http://localhost:8000/api/v1/projects/{project_id}/cover \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/path/to/cover.png"
+```
+
+---
+
+### 10.3 项目封面下载 — GET /projects/:id/cover/download
+
+后端代理下载项目封面文件（流式返回二进制）。
+
+**响应 200：** `Content-Type: image/*`，body 为二进制流
+
+```bash
+curl -OJ http://localhost:8000/api/v1/projects/{project_id}/cover/download \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### 10.4 媒体用量统计 — GET /media/stats/usage
+
+按文件类型分组统计当前用户的存储用量。
+
+**响应 200：**
+
+```json
+{
+  "total_count": 12,
+  "total_size": 524288000,
+  "by_type": [
+    { "file_type": "image", "count": 5, "total_size": 104857600 },
+    { "file_type": "video", "count": 3, "total_size": 419430400 }
+  ]
+}
+```
+
+```bash
+curl http://localhost:8000/api/v1/media/stats/usage \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### 10.5 渲染任务重试 — POST /render/:id/retry
+
+基于已失败/已取消的渲染任务创建新任务（重新入队 BullMQ）。
+
+**响应 201：** 返回新的渲染任务对象
+
+```bash
+curl -X POST http://localhost:8000/api/v1/render/{task_id}/retry \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### 10.6 视频导出 — POST /render/export
+
+将时间轴导出为视频文件（FFmpeg 合成 + 可选字幕烧录）。
+
+**请求体：**
+
+```json
+{
+  "project_id": "uuid",
+  "format": "mp4",         // 必填，白名单: mp4 | mov | webm
+  "resolution": "1080p",   // 必填，白名单: 720p | 1080p | 4k
+  "subtitles": []           // 可选，字幕轨数据
+}
+```
+
+**响应 200：** 返回导出任务对象（异步处理，通过轮询查询状态）
+
+```bash
+curl -X POST http://localhost:8000/api/v1/render/export \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_id": "uuid",
+    "format": "mp4",
+    "resolution": "1080p",
+    "subtitles": []
+  }'
+```
+
+---
+
+### 10.7 AI 字幕生成 — POST /ai/generate-subtitles
+
+LLM 解析文本生成时间轴分段字幕。
+
+**请求体：**
+
+```json
+{
+  "text": "待生成字幕的文本内容",
+  "model_id": "可选，指定 AI 模型 ID"
+}
+```
+
+**响应 200：**
+
+```json
+{
+  "subtitles": [
+    { "start": 0.0, "end": 2.5, "text": "第一段字幕" },
+    { "start": 2.5, "end": 5.0, "text": "第二段字幕" }
+  ]
+}
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/ai/generate-subtitles \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "待生成字幕的文本内容"}'
+```
+
+---
+
+### 10.8 协作邀请模块（6 端点）
+
+NestJS 新增的协作邀请模块，用于管理项目协作者。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/projects/:id/invitations` | 创建协作邀请（生成 token，默认 24h 过期） |
+| GET | `/invitations/:token` | 查看邀请详情（无需登录，但接受时需登录） |
+| POST | `/invitations/:token/accept` | 接受邀请加入项目（需登录） |
+| GET | `/projects/:id/collaborators` | 协作者列表 |
+| PUT | `/projects/:id/collaborators/:userId` | 更新协作者角色（editor/viewer） |
+| DELETE | `/projects/:id/collaborators/:userId` | 移除协作者 |
+
+**创建邀请请求体：**
+
+```json
+{
+  "role": "editor",              // editor | viewer
+  "expires_hours": 24            // 可选，默认 24（受 INVITATION_DEFAULT_EXPIRES_HOURS 控制）
+}
+```
+
+**创建邀请响应：**
+
+```json
+{
+  "id": "uuid",
+  "token": "随机生成的邀请 token",
+  "project_id": "uuid",
+  "role": "editor",
+  "expires_at": "2026-07-20T12:00:00Z",
+  "invite_url": "http://localhost:5173/invite/{token}"
+}
+```
+
+```bash
+# 创建邀请
+curl -X POST http://localhost:8000/api/v1/projects/{project_id}/invitations \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "editor"}'
+
+# 查看邀请
+curl http://localhost:8000/api/v1/invitations/{token}
+
+# 接受邀请
+curl -X POST http://localhost:8000/api/v1/invitations/{token}/accept \
+  -H "Authorization: Bearer $TOKEN"
+
+# 协作者列表
+curl http://localhost:8000/api/v1/projects/{project_id}/collaborators \
+  -H "Authorization: Bearer $TOKEN"
+
+# 更新角色
+curl -X PUT http://localhost:8000/api/v1/projects/{project_id}/collaborators/{user_id} \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"role": "viewer"}'
+
+# 移除协作者
+curl -X DELETE http://localhost:8000/api/v1/projects/{project_id}/collaborators/{user_id} \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### 10.9 健康检查 — GET /status
+
+NestJS 后端服务健康检查端点（含数据库依赖状态）。
+
+**无需 Token**
+
+**响应 200：**
+
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-07-19T12:00:00.000Z",
+  "uptime": 3600,
+  "dependencies": {
+    "database": "ok"
+  }
+}
+```
+
+```bash
+curl http://localhost:8000/api/v1/status
+```
 
 ---
 
