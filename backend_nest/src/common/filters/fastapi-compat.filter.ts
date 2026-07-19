@@ -1,15 +1,12 @@
 // src/common/filters/fastapi-compat.filter.ts
-import { Catch, ExceptionFilter, ArgumentsHost, HttpException, Logger } from '@nestjs/common';
-import { Request, Response } from 'express';
+import { Catch, ExceptionFilter, ArgumentsHost, HttpException } from '@nestjs/common';
+import { Response } from 'express';
 
 @Catch()
 export class FastApiCompatFilter implements ExceptionFilter {
-  private readonly logger = new Logger('Exception');
-
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
 
     let status = 500;
     let message = '服务器内部错误';
@@ -24,12 +21,10 @@ export class FastApiCompatFilter implements ExceptionFilter {
         const resObj = res as any;
         message = Array.isArray(resObj.message) ? resObj.message[0] : (resObj.message || exception.message);
       }
-    } else {
-      this.logger.error(`未处理异常: ${exception}`, (exception as Error)?.stack);
     }
 
-    this.logger.debug(`${request.method} ${request.url} → ${status} ${message}`);
-
+    // M1: 日志记录由 LoggingInterceptor 的 catchError 统一处理（含 duration + status + stack）
+    //   ExceptionFilter 专注响应转换，避免错误请求双重日志
     response.status(status).json({ detail: message });
   }
 }

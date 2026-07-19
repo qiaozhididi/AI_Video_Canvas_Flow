@@ -1,5 +1,5 @@
 // src/modules/media/media.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,6 +8,7 @@ import { MinioService } from '../../common/utils/minio.service';
 
 @Injectable()
 export class MediaService {
+  private readonly logger = new Logger(MediaService.name);
   constructor(
     @InjectRepository(MediaAsset) private mediaRepo: Repository<MediaAsset>,
     private minioService: MinioService,
@@ -106,8 +107,11 @@ export class MediaService {
     try {
       await this.minioService.deleteObject(media.storageKey);
     } catch (err) {
-      // MinIO 删除失败仅记录日志，不阻止 DB 删除
-      console.warn(`MinIO 删除失败 mediaId=${mediaId}: ${(err as Error).message}`);
+      // MinIO 删除失败仅记录日志，不阻止 DB 删除（m5: 传 stack 便于排障）
+      this.logger.warn(
+        `MinIO 删除失败 mediaId=${mediaId}: ${(err as Error).message}`,
+        (err as Error)?.stack,
+      );
     }
   }
 

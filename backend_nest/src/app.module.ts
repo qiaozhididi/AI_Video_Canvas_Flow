@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigModule } from './common/config/config.module';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './common/auth/auth.module';
+import { StatusModule } from './common/status/status.module';
 import { AuthBusinessModule } from './modules/auth/auth.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { WorkflowsModule } from './modules/workflows/workflows.module';
@@ -24,6 +25,8 @@ import { WsModule } from './ws/ws.module';
     ConfigModule,
     DatabaseModule,
     AuthModule,
+    // O1: 健康检查端点 GET /api/v1/status
+    StatusModule,
     // I3: 全局限流，每分钟 60 次/IP（敏感路由可用 @Throttle 加严）
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
     // 业务模块
