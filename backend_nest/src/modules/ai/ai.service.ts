@@ -296,6 +296,13 @@ export class AiService {
     if (count > 0) return;
 
     const defaultConfig = this.config.get('defaultAi')!;
+    // M11: apiKey 为空时跳过自动初始化（对齐 Python ai.py:360-362）
+    // 避免创建一个 apiKey 为空的 Provider，导致后续 AI 调用 401 但报错信息不友好
+    if (!defaultConfig.apiKey) {
+      this.logger.warn('DEFAULT_AI_API_KEY 未配置，跳过默认 AI 配置自动初始化');
+      return;
+    }
+
     const provider = this.providerRepo.create({
       id: uuidv4(),
       userId,
