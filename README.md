@@ -14,6 +14,7 @@ AI_Canvas_Flow/
 ```
 
 > 后端提供两个实现版本，API 接口完全兼容：
+>
 > - **NestJS 版** (`backend_nest/`) ⭐ **主力服务**：NestJS + TypeORM + BullMQ + Redis（无需 RabbitMQ，Worker 内嵌应用进程）
 > - **Python 版** (`backend/`) 兼容备份：FastAPI + SQLAlchemy + Celery + RabbitMQ（已归档至 `backup/python-backend` 分支）
 
@@ -27,7 +28,7 @@ AI_Canvas_Flow/
 - **AI 推理引擎**：文生图、图生视频、文生语音、高清放大、风格化、抠图、扩图；BullMQ/Celery 异步处理（视后端版本），进度实时写回 DB
 - **AI 可配置系统**：多 Provider/Model 管理（OpenAI 兼容格式），首次启动自动创建默认配置，API Key 加密存储
 - **撤销/重做系统**：分支式操作历史树，100 步深度，500ms 同类操作自动合并
-- **自动保存与崩溃恢复**：2 秒防抖 + 30 秒定时兜底，PostgreSQL 快照（project_snapshots 表，5 auto 上限），崩溃恢复对话框
+- **自动保存与崩溃恢复**：2 秒防抖 + 30 秒定时兜底，PostgreSQL 快照（project\_snapshots 表，5 auto 上限），崩溃恢复对话框
 - **媒体资产管理**：MinIO 上传/预览/分类/拖拽上传/分页/缩略图懒加载
 - **渲染与导出**：前端轻量预览 + 后端 Celery 重度合成，任务创建/轮询/取消/下载
 - **模板市场**：模板列表搜索/分类筛选/克隆为新项目/发布项目为模板
@@ -37,49 +38,49 @@ AI_Canvas_Flow/
 
 ### 前端
 
-| 类别 | 技术 |
-|------|------|
-| 构建工具 | Vite 6.x |
-| UI 框架 | React 18 + TypeScript 5.8 |
-| 画布引擎 | @xyflow/react (React Flow) 12.x |
-| 状态管理 | Zustand 5.x |
-| 路由 | React Router DOM 7.x |
-| 样式 | Tailwind CSS 3.4 |
-| 视频播放 | Video.js 8.x |
-| 视频处理 | @ffmpeg/ffmpeg |
-| 拖拽 | @dnd-kit |
-| 实时通信 | Socket.IO Client |
-| 图标 | Lucide React |
+| 类别    | 技术                              |
+| ----- | ------------------------------- |
+| 构建工具  | Vite 6.x                        |
+| UI 框架 | React 18 + TypeScript 5.8       |
+| 画布引擎  | @xyflow/react (React Flow) 12.x |
+| 状态管理  | Zustand 5.x                     |
+| 路由    | React Router DOM 7.x            |
+| 样式    | Tailwind CSS 3.4                |
+| 视频播放  | Video.js 8.x                    |
+| 视频处理  | @ffmpeg/ffmpeg                  |
+| 拖拽    | @dnd-kit                        |
+| 实时通信  | Socket.IO Client                |
+| 图标    | Lucide React                    |
 
 ### 后端（两个实现版本，API 兼容）
 
 **NestJS 版** (`backend_nest/`) ⭐ **主力**
 
-| 类别 | 技术 |
-|------|------|
-| Web 框架 | NestJS 10.4 (TypeScript) |
-| ORM | TypeORM 0.3 + pg |
-| 任务队列 | BullMQ 5.12 + Redis（无需 RabbitMQ，Worker 内嵌） |
-| 数据库 | PostgreSQL（复用 Python 版 schema） |
-| 对象存储 | MinIO 8.0 |
-| 实时通信 | @nestjs/platform-socket.io |
-| 认证 | @nestjs/jwt + passport-jwt |
-| 视频处理 | fluent-ffmpeg |
-| 容器化 | Docker |
+| 类别     | 技术                                         |
+| ------ | ------------------------------------------ |
+| Web 框架 | NestJS 10.4 (TypeScript)                   |
+| ORM    | TypeORM 0.3 + pg                           |
+| 任务队列   | BullMQ 5.12 + Redis（无需 RabbitMQ，Worker 内嵌） |
+| 数据库    | PostgreSQL（复用 Python 版 schema）             |
+| 对象存储   | MinIO 8.0                                  |
+| 实时通信   | @nestjs/platform-socket.io                 |
+| 认证     | @nestjs/jwt + passport-jwt                 |
+| 视频处理   | fluent-ffmpeg                              |
+| 容器化    | Docker                                     |
 
 **Python 版** (`backend/`) 兼容备份
 
-| 类别 | 技术 |
-|------|------|
-| Web 框架 | FastAPI (Python 3.12+) |
-| AI 编排 | LangChain + LangGraph |
-| 任务队列 | Celery + RabbitMQ |
-| 缓存 | Redis |
-| 数据库 | PostgreSQL + SQLAlchemy 2.0 (async) |
-| 对象存储 | MinIO |
-| 实时通信 | python-socketio |
-| 数据库迁移 | Alembic |
-| 容器化 | Docker + Docker Compose |
+| 类别     | 技术                                  |
+| ------ | ----------------------------------- |
+| Web 框架 | FastAPI (Python 3.12+)              |
+| AI 编排  | LangChain + LangGraph               |
+| 任务队列   | Celery + RabbitMQ                   |
+| 缓存     | Redis                               |
+| 数据库    | PostgreSQL + SQLAlchemy 2.0 (async) |
+| 对象存储   | MinIO                               |
+| 实时通信   | python-socketio                     |
+| 数据库迁移  | Alembic                             |
+| 容器化    | Docker + Docker Compose             |
 
 ## 快速开始
 
@@ -101,7 +102,7 @@ pnpm build
 pnpm check
 ```
 
-开发服务器运行在 http://localhost:5173
+开发服务器运行在 <http://localhost:5173>
 
 ### 后端（NestJS 版，主力）
 
@@ -118,8 +119,8 @@ cp .env.example .env
 npm run start:dev
 ```
 
-API 服务运行在 http://localhost:8000，无需 RabbitMQ（BullMQ 直接使用 Redis）。
-详细文档见 [backend_nest/README.md](backend_nest/README.md)。
+API 服务运行在 <http://localhost:8000，无需> RabbitMQ（BullMQ 直接使用 Redis）。
+详细文档见 [backend\_nest/README.md](backend_nest/README.md)。
 
 ### 后端（Python 版，兼容备份）
 
@@ -148,7 +149,7 @@ celery -A app.tasks.celery_app worker --loglevel=info --pool=solo \
 alembic upgrade head
 ```
 
-API 服务运行在 http://localhost:8000，文档地址 http://localhost:8000/docs
+API 服务运行在 <http://localhost:8000，文档地址> <http://localhost:8000/docs>
 
 ### Docker Compose（一键启动全部服务）
 
@@ -163,18 +164,27 @@ docker compose --profile nest up -d
 > NestJS 后端默认使用 `8001:8000` 端口映射，避免与 Python `api` 服务的 8000 端口冲突。
 > RabbitMQ 仅 Python Celery 需要，NestJS 使用 Redis BullMQ。
 
-## 文档
+## 项目预览
 
-| 文档 | 说明 |
-|------|------|
-| [开发路线图](DEVELOPMENT_ROADMAP.md) | 项目进度跟踪、已完成任务清单、后续开发计划 |
-| [API 参考文档](API_REFERENCE.md) | 全部 API 端点详尽文档（含 curl 示例、字段映射，Python 与 NestJS 兼容） |
-| [前端开发技术文档](docs/frontend-technical-guide.md) | 前端架构、状态管理、组件体系、开发规范 |
-| [后端开发技术文档](docs/backend-technical-guide.md) | 后端架构、API 设计、数据模型、部署方案（Python 版） |
-| [AI 视频工作流方案](docs/AI_Video_Workflow方案.md) | 系统架构全景与核心功能设计 |
-| [后端服务说明（NestJS 版）](backend_nest/README.md) | NestJS 后端项目结构、API 端点、环境变量、与 Python 版差异对比（主力） |
-| [后端服务说明（Python 版）](backend/README.md) | FastAPI 后端项目结构、API 表、数据库模型、环境变量（兼容备份） |
-| [实施计划归档](docs/superpowers/plans/) | 各功能模块的实施计划文档（已完成归档） |
+#### 首页
+
+![首页预览](assets/images/首页.png)
+
+#### 画布
+
+![画布预览](assets/images/画布.png)
+
+#### 渲染中心
+
+![渲染中心预览](assets/images/渲染中心.png)
+
+#### AI配置
+
+![AI配置预览](assets/images/AI配置.png)
+
+#### 媒体库
+
+![媒体库预览](assets/images/媒体库.png)
 
 ## License
 
