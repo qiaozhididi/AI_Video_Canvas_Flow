@@ -91,7 +91,7 @@ export default function VideoPreview({ src, poster, mediaType, currentTime, onTi
     if (playerRef.current && typeof currentTime === 'number') {
       const playerTime = playerRef.current.currentTime();
       // 仅当差异 > 0.3s 时跳转，避免 timeupdate 回调造成的微小回环
-      if (Math.abs(playerTime - currentTime) > 0.3) {
+      if (playerTime !== undefined && Math.abs(playerTime - currentTime) > 0.3) {
         playerRef.current.currentTime(currentTime);
       }
     }

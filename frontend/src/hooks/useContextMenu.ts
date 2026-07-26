@@ -28,7 +28,7 @@ export function useContextMenu() {
     });
   }, []);
 
-  const openPaneMenu = useCallback((event: React.MouseEvent) => {
+  const openPaneMenu = useCallback((event: MouseEvent | React.MouseEvent) => {
     event.preventDefault();
     setMenuState({
       visible: true,

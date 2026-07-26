@@ -5,10 +5,10 @@
  * 供 projectStore.loadProjectToCanvas 和 canvasStore.loadGeneratedWorkflow 共享。
  */
 import type { CanvasNode, CanvasEdge } from '@/types/canvas';
-import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
+import type { NodeCreateRequest, EdgeCreateRequest, NodeResponse, EdgeResponse } from '@/utils/apiClient';
 
-/** 后端 NodeCreateRequest → 前端 CanvasNode */
-export function toCanvasNode(n: NodeCreateRequest): CanvasNode {
+/** 后端 NodeCreateRequest | NodeResponse → 前端 CanvasNode */
+export function toCanvasNode(n: NodeCreateRequest | NodeResponse): CanvasNode {
   const config = (n.config || {}) as Record<string, unknown>;
   return {
     id: n.id,
@@ -27,8 +27,8 @@ export function toCanvasNode(n: NodeCreateRequest): CanvasNode {
   };
 }
 
-/** 后端 EdgeCreateRequest → 前端 CanvasEdge */
-export function toCanvasEdge(e: EdgeCreateRequest): CanvasEdge {
+/** 后端 EdgeCreateRequest | EdgeResponse → 前端 CanvasEdge */
+export function toCanvasEdge(e: EdgeCreateRequest | EdgeResponse): CanvasEdge {
   return {
     id: e.id,
     source: e.source_node_id,

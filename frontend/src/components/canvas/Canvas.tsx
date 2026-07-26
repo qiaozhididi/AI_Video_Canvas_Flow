@@ -43,7 +43,7 @@ import {
   Maximize, Palette, Scissors, Expand,
   GitBranch, Repeat, GitMerge, Film, ImageDown, Volume2,
 } from 'lucide-react';
-import { NODE_TEMPLATES, NODE_CATEGORIES, type NodeSubtype, type CanvasNodeData } from '@/types/canvas';
+import { NODE_TEMPLATES, NODE_CATEGORIES, type NodeSubtype, type CanvasNodeData, type CanvasEdge } from '@/types/canvas';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
 
@@ -154,7 +154,12 @@ export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps 
       if (nonRemoveChanges.length === 0) return;
 
       const updated = applyEdgeChanges(nonRemoveChanges, edges as Edge[]);
-      setEdges(updated);
+      // xyflow Edge 的 sourceHandle/targetHandle 允许 null，而 CanvasEdge 仅允许 undefined
+      setEdges(updated.map((e) => ({
+        ...e,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
+      })) as CanvasEdge[]);
     },
     [edges, setEdges]
   );
@@ -250,7 +255,7 @@ export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps 
   );
 
   const onPaneContextMenu = useCallback(
-    (event: React.MouseEvent) => {
+    (event: MouseEvent | React.MouseEvent) => {
       openPaneMenu(event);
     },
     [openPaneMenu],
@@ -381,7 +386,7 @@ export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps 
     const newNodesSubmenu: MenuItem[] = [];
     if (NODE_CATEGORIES) {
       const entries = Object.entries(NODE_CATEGORIES);
-      entries.forEach(([typeKey, cat], catIdx) => {
+      entries.forEach(([typeKey], catIdx) => {
         if (catIdx > 0) newNodesSubmenu.push({ separator: true });
         NODE_TEMPLATES
           .filter((t) => t.type === typeKey)

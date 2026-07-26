@@ -44,7 +44,6 @@ export default function Timeline({ onClipClick }: TimelineProps) {
     addTrack, removeTrack, toggleTrackMute, toggleTrackLock, toggleTrackVisibility,
     removeClip, moveClip, resizeClip, setZoom, updateClipText, addClip,
   } = useTimelineStore();
-  const { nodes } = useCanvasStore();
   const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
   const currentProjectId = useCollabStore((s) => s.currentProjectId);
   const timelineRef = useRef<HTMLDivElement>(null);

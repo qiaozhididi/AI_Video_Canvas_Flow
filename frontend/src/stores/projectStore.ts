@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import type { Project } from '@/types/project';
-import { createEmptyProject } from '@/types/project';
 import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
 import { useAutoSaveStore } from './autoSaveStore';
@@ -77,8 +76,8 @@ function toEdgeCreate(e: CanvasEdge) {
     id: e.id,
     source_node_id: e.source,
     target_node_id: e.target,
-    source_port: e.sourceHandle || null,
-    target_port: e.targetHandle || null,
+    source_port: e.sourceHandle || undefined,
+    target_port: e.targetHandle || undefined,
   };
 }
 

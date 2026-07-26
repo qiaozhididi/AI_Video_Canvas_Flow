@@ -81,7 +81,7 @@ export default function ExportModal({ projectId, onClose }: ExportModalProps) {
           toast.error('查询进度失败');
         }
       }, 2000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setStage('failed');
       toast.error(getErrorMessage(err, 'render_export'));
     }

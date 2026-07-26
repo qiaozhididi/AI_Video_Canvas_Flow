@@ -50,7 +50,7 @@ function getAvatarText(username: string): string {
 export default function EditorLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { projects, currentProject, setCurrentProject, saveCurrentProject, loadProjectToCanvas, loadProjects } = useProjectStore();
+  const { currentProject, setCurrentProject, saveCurrentProject, loadProjectToCanvas, loadProjects } = useProjectStore();
   const { canUndo, canRedo, undo, redo } = useHistoryStore();
   const { startAutoSave, stopAutoSave, checkRecovery, restoreSnapshot, discardRecovery, lastSavedAt, isDirty } = useAutoSaveStore();
   const onlineUsers = useCollabStore((s) => s.onlineUsers);
@@ -82,8 +82,9 @@ export default function EditorLayout() {
       } else if (result.state === 'failed') {
         toast.error(`工作流执行失败: ${result.error}`);
       }
-    } catch (err: any) {
-      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: err.message });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '未知错误';
+      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: message });
       toast.error('工作流执行出错');
     }
   };
@@ -104,8 +105,9 @@ export default function EditorLayout() {
       } else if (result.state === 'failed') {
         toast.error(`断点续执行失败: ${result.error}`);
       }
-    } catch (err: any) {
-      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: err.message });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '未知错误';
+      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: message });
       toast.error('断点续执行出错');
     }
   };
@@ -291,7 +293,7 @@ export default function EditorLayout() {
         e.preventDefault();
         saveCurrentProject()
           .then(() => toast.success('项目已保存'))
-          .catch((err: any) => toast.error(getErrorMessage(err, 'project_save')));
+          .catch((err: unknown) => toast.error(getErrorMessage(err, 'project_save')));
       }
     };
 
@@ -415,7 +417,7 @@ export default function EditorLayout() {
               try {
                 await saveCurrentProject();
                 toast.success('项目已保存');
-              } catch (err: any) {
+              } catch (err: unknown) {
                 toast.error(getErrorMessage(err, 'project_save'));
               }
             }}
@@ -454,7 +456,7 @@ export default function EditorLayout() {
                         snapshot_data: snapshotData,
                       });
                       toast.success(versionName ? `版本快照「${versionName}」已创建` : '版本快照已创建');
-                    } catch (err: any) {
+                    } catch (err: unknown) {
                       toast.error(getErrorMessage(err, 'autosave_snapshot'));
                     }
                   }}

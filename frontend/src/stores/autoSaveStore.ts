@@ -7,7 +7,7 @@ import { useTimelineStore } from './timelineStore';
 import { useProjectStore } from './projectStore';
 import { useHistoryStore } from './historyStore';
 import { toPng } from 'html-to-image';
-import { snapshotApi, projectApi, type SnapshotResponse } from '@/utils/apiClient';
+import { snapshotApi, type SnapshotResponse } from '@/utils/apiClient';
 import { getErrorMessage } from '@/utils/errorMessages';
 
 /** 截取画布预览图并上传为项目封面（不走媒体库，覆盖旧封面） */

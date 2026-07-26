@@ -14,7 +14,7 @@ import {
   Loader2, CheckCircle2, XCircle, AlertCircle, RotateCw,
 } from 'lucide-react';
 
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+const ICON_MAP: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   Type, Image, Music, Wand2, Video, Mic,
   Maximize, Palette, Scissors, Expand,
   GitBranch, Repeat, GitMerge,

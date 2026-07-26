@@ -67,7 +67,7 @@ export default function AlignmentToolbar() {
         transform: 'translateX(-50%)',
       }}
     >
-      {ALIGN_BUTTONS.map((btn, idx) => {
+      {ALIGN_BUTTONS.map((btn) => {
         const Icon = btn.icon;
         return (
           <button

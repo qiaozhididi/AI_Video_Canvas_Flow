@@ -1,5 +1,5 @@
 import { useCanvasStore } from '@/stores/canvasStore';
-import { NODE_CATEGORIES, type CanvasNodeData, type ProcessingSubtype, type ControlSubtype } from '@/types/canvas';
+import { NODE_CATEGORIES } from '@/types/canvas';
 import { X, Trash2, Play } from 'lucide-react';
 import { executeNode } from '../../utils/workflowExecutor';
 import { getErrorMessage } from '@/utils/errorMessages';
@@ -179,7 +179,7 @@ export default function PropertyPanel() {
               try {
                 setNodeStatus(selectedNode.id, 'pending', 0);
                 await executeNode(selectedNode.id);
-              } catch (err: any) {
+              } catch (err: unknown) {
                 setNodeStatus(selectedNode.id, 'failed', 0);
                 setNodeError(selectedNode.id, getErrorMessage(err, 'node_execute'));
               }
