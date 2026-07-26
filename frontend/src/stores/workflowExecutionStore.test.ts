@@ -40,4 +40,25 @@ describe('workflowExecutionStore', () => {
     expect(s.completedNodes).toBe(2);
     expect(s.isRunning).toBe(true);
   });
+
+  it('updateProgress 不传 state 时保持 isRunning', () => {
+    useWorkflowExecutionStore.getState().updateProgress({ state: 'running', totalNodes: 5 });
+    expect(useWorkflowExecutionStore.getState().isRunning).toBe(true);
+
+    useWorkflowExecutionStore.getState().updateProgress({ completedNodes: 2 });
+    expect(useWorkflowExecutionStore.getState().isRunning).toBe(true);
+    expect(useWorkflowExecutionStore.getState().completedNodes).toBe(2);
+  });
+
+  it('cancel 同步更新 UI 状态为 failed 并停止运行', () => {
+    useWorkflowExecutionStore.getState().updateProgress({ state: 'running', totalNodes: 3 });
+    expect(useWorkflowExecutionStore.getState().isRunning).toBe(true);
+
+    useWorkflowExecutionStore.getState().cancel();
+    const s = useWorkflowExecutionStore.getState();
+    expect(s.isCancelRequested()).toBe(true);
+    expect(s.state).toBe('failed');
+    expect(s.error).toBe('用户取消');
+    expect(s.isRunning).toBe(false);
+  });
 });

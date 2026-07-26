@@ -40,7 +40,13 @@ export const useWorkflowExecutionStore = create<WorkflowExecutionState>((set, ge
   markFailed: (failedNodeId, error) =>
     set({ state: 'failed', failedNodeId, error, isRunning: false }),
 
-  cancel: () => set({ _cancelRequested: true }),
+  cancel: () =>
+    set({
+      _cancelRequested: true,
+      state: 'failed',
+      error: '用户取消',
+      isRunning: false,
+    }),
 
   reset: () => set({ ...INITIAL, isRunning: false, _cancelRequested: false }),
 
