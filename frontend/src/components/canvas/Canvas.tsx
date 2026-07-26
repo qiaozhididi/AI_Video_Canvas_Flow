@@ -39,21 +39,13 @@ import {
   Copy, ClipboardPaste, Pencil, Play, Trash2, Eye,
   AlignStartVertical, AlignStartHorizontal,
   AlignCenterVertical, AlignCenterHorizontal,
-  Type, Image as ImageIcon, Music, Wand2, Video, Mic,
-  Maximize, Palette, Scissors, Expand,
-  GitBranch, Repeat, GitMerge, Film, ImageDown, Volume2,
+  Type,
 } from 'lucide-react';
+import { NODE_ICON_MAP } from '@/constants/nodeIcons';
+import { buildMediaUrl } from '@/utils/buildMediaUrl';
 import { NODE_TEMPLATES, NODE_CATEGORIES, type NodeSubtype, type CanvasNodeData, type CanvasEdge } from '@/types/canvas';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
-
-// 节点模板图标映射（与 CanvasNode.tsx 的 ICON_MAP 一致）
-const ICON_MAP_LUCIDE: Record<string, React.ComponentType<{ className?: string }>> = {
-  Type, Image: ImageIcon, Music, Wand2, Video, Mic,
-  Maximize, Palette, Scissors, Expand,
-  GitBranch, Repeat, GitMerge,
-  Film, ImageDown, Volume2,
-};
 
 // 注册自定义节点类型：canvasNode 为业务节点，default 提供锁定样式（橙色边框 + 🔒 角标）
 const nodeTypes = { canvasNode: CanvasNodeComponent, default: LockedNode };
@@ -337,17 +329,7 @@ export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps 
           label: '预览',
           onClick: () => {
             const artifact = mediaArtifacts.find((a) => a.type === 'video') || mediaArtifacts[0];
-            const isInternal = artifact.url.startsWith('/api/');
-            const isExternal = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
-            const accessToken = localStorage.getItem('access_token') || '';
-            let url: string;
-            if (isInternal) {
-              url = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${accessToken}`;
-            } else if (isExternal) {
-              url = artifact.url;
-            } else {
-              url = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${accessToken}`;
-            }
+            const url = buildMediaUrl(artifact.url);
             const mediaType = artifact.type === 'audio' ? 'video' : (artifact.type as 'image' | 'video');
             useCanvasStore.getState().requestPreview({ url, type: mediaType });
           },
@@ -400,7 +382,7 @@ export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps 
           .filter((t) => t.type === typeKey)
           .forEach((t) => {
             newNodesSubmenu.push({
-              icon: ICON_MAP_LUCIDE[t.icon] || Type,
+              icon: NODE_ICON_MAP[t.icon] || Type,
               label: t.label,
               onClick: () => handleAddNodeAtMenu(t.subtype),
             });

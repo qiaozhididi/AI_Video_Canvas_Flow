@@ -19,6 +19,8 @@ import { executeNode, isExecutable } from '@/utils/workflowExecutor';
 import { aiApi } from '@/utils/apiClient';
 import type { AiModelResponse } from '@/utils/apiClient';
 import { getErrorMessage } from '@/utils/errorMessages';
+import { buildMediaUrl } from '@/utils/buildMediaUrl';
+import { generateId } from '@/utils/id';
 
 export default function Editor() {
   // ===== Store hooks =====
@@ -497,19 +499,12 @@ function PropertyPanelWithHistory({
     // 默认时长：video/audio 5s，image 3s
     const duration = artifact.type === 'image' ? 3 : 5;
     const clip: Clip = {
-      id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      id: generateId('clip'),
       trackId: targetTrack.id,
       start: timelineCurrentTime,
       end: timelineCurrentTime + duration,
       mediaType: artifact.type as 'image' | 'video' | 'audio',
-      mediaUrl: (() => {
-        const isInt = artifact.url.startsWith('/api/');
-        const isExt = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
-        const tk = localStorage.getItem('access_token') || '';
-        if (isInt) return `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${tk}`;
-        if (isExt) return artifact.url;
-        return `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${tk}`;
-      })(),
+      mediaUrl: buildMediaUrl(artifact.url),
       label: data.label,
       color: undefined,
       nodeId: selectedNode.id,
@@ -522,7 +517,7 @@ function PropertyPanelWithHistory({
       if (subtitleTrack) {
         const subtitleText = (data.params?.text as string) || (data.params?.prompt as string) || '';
         const subtitleClip: Clip = {
-          id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: generateId('clip'),
           trackId: subtitleTrack.id,
           start: clip.start,
           end: clip.end,

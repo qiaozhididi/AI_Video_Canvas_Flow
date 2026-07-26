@@ -16,6 +16,8 @@ import { renderApi, aiApi } from '@/utils/apiClient';
 import type { CanvasNode, CanvasEdge, NodeSubtype, Artifact } from '@/types/canvas';
 import { getErrorMessage } from '@/utils/errorMessages';
 import type { RenderTaskResponse } from '@/utils/apiClient';
+import { buildMediaUrl } from '@/utils/buildMediaUrl';
+import { generateId } from '@/utils/id';
 
 // ── 节点可执行性判定 ──
 
@@ -174,7 +176,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
         if (subtitleTrack) {
           for (const seg of segments) {
             addClip(subtitleTrack.id, {
-              id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              id: generateId('clip'),
               trackId: subtitleTrack.id,
               start: seg.start,
               end: seg.end,
@@ -262,16 +264,10 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
         if (!targetTrack) continue;
 
         const duration = artifact.type === 'image' ? 3 : 5;
-        const tk = localStorage.getItem('access_token') || '';
-        const isInt = artifact.url.startsWith('/api/');
-        const isExt = artifact.url.startsWith('http://') || artifact.url.startsWith('https://');
-        let mediaUrl: string;
-        if (isInt) mediaUrl = `${artifact.url}${artifact.url.includes('?') ? '&' : '?'}token=${tk}`;
-        else if (isExt) mediaUrl = artifact.url;
-        else mediaUrl = `/api/v1/media/${artifact.url.replace(/^\//, '')}?token=${tk}`;
+        const mediaUrl = buildMediaUrl(artifact.url);
 
         addClip(targetTrack.id, {
-          id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: generateId('clip'),
           trackId: targetTrack.id,
           start: timelineData.currentTime,
           end: timelineData.currentTime + duration,
@@ -287,7 +283,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
           if (subtitleTrack) {
             const subtitleText = ((node.data.params?.text as string) || (node.data.params?.prompt as string)) ?? '';
             addClip(subtitleTrack.id, {
-              id: `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              id: generateId('clip'),
               trackId: subtitleTrack.id,
               start: timelineData.currentTime,
               end: timelineData.currentTime + duration,

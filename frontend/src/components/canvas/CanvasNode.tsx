@@ -6,20 +6,10 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { executeNode } from '@/utils/workflowExecutor';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
+import { NODE_ICON_MAP } from '@/constants/nodeIcons';
 import {
-  Type, Image, Music, Wand2, Video, Mic,
-  Maximize, Palette, Scissors, Expand,
-  GitBranch, Repeat, GitMerge,
-  Film, ImageDown, Volume2,
   Loader2, CheckCircle2, XCircle, AlertCircle, RotateCw,
 } from 'lucide-react';
-
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
-  Type, Image, Music, Wand2, Video, Mic,
-  Maximize, Palette, Scissors, Expand,
-  GitBranch, Repeat, GitMerge,
-  Film, ImageDown, Volume2,
-};
 
 const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   idle: () => null,
@@ -37,7 +27,7 @@ type CanvasNodeProps = {
 
 function CanvasNodeComponent({ data, selected, id }: CanvasNodeProps) {
   const category = NODE_CATEGORIES[data.type];
-  const IconComponent = ICON_MAP[data.subtype] || AlertCircle;
+  const IconComponent = NODE_ICON_MAP[data.subtype] || AlertCircle;
   const StatusIcon = STATUS_ICONS[data.status];
   const editingNodeId = useCanvasStore((s) => s.editingNodeId);
   const setEditingNodeId = useCanvasStore((s) => s.setEditingNodeId);
