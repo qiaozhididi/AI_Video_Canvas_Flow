@@ -50,9 +50,24 @@ function getAvatarText(username: string): string {
 export default function EditorLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { currentProject, setCurrentProject, saveCurrentProject, loadProjectToCanvas, loadProjects } = useProjectStore();
-  const { canUndo, canRedo, undo, redo } = useHistoryStore();
-  const { startAutoSave, stopAutoSave, checkRecovery, restoreSnapshot, discardRecovery, lastSavedAt, isDirty } = useAutoSaveStore();
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const setCurrentProject = useProjectStore((s) => s.setCurrentProject);
+  const saveCurrentProject = useProjectStore((s) => s.saveCurrentProject);
+  const loadProjectToCanvas = useProjectStore((s) => s.loadProjectToCanvas);
+  const loadProjects = useProjectStore((s) => s.loadProjects);
+
+  const canUndo = useHistoryStore((s) => s.canUndo);
+  const canRedo = useHistoryStore((s) => s.canRedo);
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
+
+  const startAutoSave = useAutoSaveStore((s) => s.startAutoSave);
+  const stopAutoSave = useAutoSaveStore((s) => s.stopAutoSave);
+  const checkRecovery = useAutoSaveStore((s) => s.checkRecovery);
+  const restoreSnapshot = useAutoSaveStore((s) => s.restoreSnapshot);
+  const discardRecovery = useAutoSaveStore((s) => s.discardRecovery);
+  const lastSavedAt = useAutoSaveStore((s) => s.lastSavedAt);
+  const isDirty = useAutoSaveStore((s) => s.isDirty);
   const onlineUsers = useCollabStore((s) => s.onlineUsers);
   const currentUser = useAuthStore((s) => s.user);
   // 响应式订阅：是否存在可重试的节点（失败或未执行）

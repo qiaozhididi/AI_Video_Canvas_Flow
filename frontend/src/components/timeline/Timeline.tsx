@@ -39,11 +39,22 @@ interface TimelineProps {
 }
 
 export default function Timeline({ onClipClick }: TimelineProps) {
-  const {
-    data, isPlaying, play, pause, seekTo,
-    addTrack, removeTrack, toggleTrackMute, toggleTrackLock, toggleTrackVisibility,
-    removeClip, moveClip, resizeClip, setZoom, updateClipText, addClip,
-  } = useTimelineStore();
+  const data = useTimelineStore((s) => s.data);
+  const isPlaying = useTimelineStore((s) => s.isPlaying);
+  const play = useTimelineStore((s) => s.play);
+  const pause = useTimelineStore((s) => s.pause);
+  const seekTo = useTimelineStore((s) => s.seekTo);
+  const addTrack = useTimelineStore((s) => s.addTrack);
+  const removeTrack = useTimelineStore((s) => s.removeTrack);
+  const toggleTrackMute = useTimelineStore((s) => s.toggleTrackMute);
+  const toggleTrackLock = useTimelineStore((s) => s.toggleTrackLock);
+  const toggleTrackVisibility = useTimelineStore((s) => s.toggleTrackVisibility);
+  const removeClip = useTimelineStore((s) => s.removeClip);
+  const moveClip = useTimelineStore((s) => s.moveClip);
+  const resizeClip = useTimelineStore((s) => s.resizeClip);
+  const setZoom = useTimelineStore((s) => s.setZoom);
+  const updateClipText = useTimelineStore((s) => s.updateClipText);
+  const addClip = useTimelineStore((s) => s.addClip);
   const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
   const currentProjectId = useCollabStore((s) => s.currentProjectId);
   const timelineRef = useRef<HTMLDivElement>(null);

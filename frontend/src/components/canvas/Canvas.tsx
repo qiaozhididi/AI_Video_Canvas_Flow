@@ -65,7 +65,15 @@ interface CanvasProps {
 }
 
 export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps = {}) {
-  const { nodes, edges, setNodes, setEdges, setSelectedNode, addNode, fitViewToken, selectedNodeIds, setSelectedNodeIds } = useCanvasStore();
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+  const setNodes = useCanvasStore((s) => s.setNodes);
+  const setEdges = useCanvasStore((s) => s.setEdges);
+  const setSelectedNode = useCanvasStore((s) => s.setSelectedNode);
+  const addNode = useCanvasStore((s) => s.addNode);
+  const fitViewToken = useCanvasStore((s) => s.fitViewToken);
+  const selectedNodeIds = useCanvasStore((s) => s.selectedNodeIds);
+  const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
   const pushAddNode = useHistoryStore((s) => s.pushAddNode);
   const markDirty = useAutoSaveStore((s) => s.markDirty);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
