@@ -14,6 +14,7 @@ import { getErrorMessage } from '@/utils/errorMessages';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown, Users } from 'lucide-react';
 import CollaboratorPanel from './CollaboratorPanel';
 import { CollaborationStatusBar } from './CollaborationStatusBar';
+import { ErrorBoundary } from './ErrorBoundary';
 import { executeWorkflow, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
 import ShortcutHelpModal from './canvas/ShortcutHelpModal';
@@ -545,7 +546,9 @@ export default function EditorLayout() {
 
       {/* 主内容区 - 由子路由渲染 */}
       <div className="flex-1 overflow-hidden">
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </div>
 
       {/* 崩溃恢复对话框 */}
