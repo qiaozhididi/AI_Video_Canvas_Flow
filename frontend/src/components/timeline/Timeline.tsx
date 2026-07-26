@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { useTimelineStore } from '@/stores/timelineStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useCollabStore } from '@/stores/collabStore';
@@ -58,6 +58,7 @@ export default function Timeline({ onClipClick }: TimelineProps) {
   const setSelectedNodeIds = useCanvasStore((s) => s.setSelectedNodeIds);
   const currentProjectId = useCollabStore((s) => s.currentProjectId);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const dragHandlersRef = useRef<{ move: (e: PointerEvent) => void; up: (e: PointerEvent) => void } | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -192,17 +193,32 @@ export default function Timeline({ onClipClick }: TimelineProps) {
         }
         window.removeEventListener('pointermove', handleMove);
         window.removeEventListener('pointerup', handleUp);
+        dragHandlersRef.current = null;
         setDragState(null);
         setTooltip(null);
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
       };
 
+      dragHandlersRef.current = { move: handleMove, up: handleUp };
       window.addEventListener('pointermove', handleMove);
       window.addEventListener('pointerup', handleUp);
     },
     [data.duration, findSnap, moveClip, resizeClip]
   );
+
+  // 组件卸载时清理未完成的拖拽监听器
+  useEffect(() => {
+    return () => {
+      if (dragHandlersRef.current) {
+        window.removeEventListener('pointermove', dragHandlersRef.current.move);
+        window.removeEventListener('pointerup', dragHandlersRef.current.up);
+        dragHandlersRef.current = null;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+  }, []);
 
   // 时间刻度
   const ticks = Array.from({ length: Math.ceil(data.duration) + 1 }, (_, i) => i);
