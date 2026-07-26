@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import { useShallow } from 'zustand/react/shallow';
 import { useProjectStore } from '@/stores/projectStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
 import { useHistoryStore } from '@/stores/historyStore';
@@ -7,13 +8,13 @@ import { useCollabStore } from '@/stores/collabStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useClipboardStore } from '@/stores/clipboardStore';
 import { useAuthStore } from '@/stores/authStore';
+import { useWorkflowExecutionStore } from '@/stores/workflowExecutionStore';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
 import { ArrowLeft, Save, Undo2, Redo2, Play, Square, History, Clock, Sparkles, RotateCw, ChevronDown, Users } from 'lucide-react';
 import CollaboratorPanel from './CollaboratorPanel';
 import { CollaborationStatusBar } from './CollaborationStatusBar';
-import { executeWorkflow, getExecutionStatus, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
-import type { WorkflowExecutionStatus } from '@/utils/workflowExecutor';
+import { executeWorkflow, cancelWorkflowExecution, executeNode, isExecutable, resumeWorkflow } from '@/utils/workflowExecutor';
 import AiGenerateModal from './AiGenerateModal';
 import ShortcutHelpModal from './canvas/ShortcutHelpModal';
 import type { NodeCreateRequest, EdgeCreateRequest } from '@/utils/apiClient';
@@ -76,9 +77,15 @@ export default function EditorLayout() {
   );
   const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
   const [recoveryInfo, setRecoveryInfo] = useState<{ timestamp: number; actionCount: number } | null>(null);
-  const [workflowStatus, setWorkflowStatus] = useState<WorkflowExecutionStatus>({
-    state: 'idle', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null
-  });
+  const workflowStatus = useWorkflowExecutionStore(
+    useShallow((s) => ({
+      state: s.state,
+      totalNodes: s.totalNodes,
+      completedNodes: s.completedNodes,
+      failedNodeId: s.failedNodeId,
+      error: s.error,
+    })),
+  );
   const [showAiModal, setShowAiModal] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [showSaveDropdown, setShowSaveDropdown] = useState(false);
@@ -88,41 +95,36 @@ export default function EditorLayout() {
 
   const handleExecuteWorkflow = async () => {
     if (workflowStatus.state === 'running') return;
-    setWorkflowStatus({ ...getExecutionStatus(), state: 'running' });
     try {
       const result = await executeWorkflow();
-      setWorkflowStatus(result);
       if (result.state === 'completed') {
         toast.success('工作流执行完成');
       } else if (result.state === 'failed') {
         toast.error(`工作流执行失败: ${result.error}`);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '未知错误';
-      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: message });
+      const message = err instanceof Error ? err.message : '工作流执行出错';
+      useWorkflowExecutionStore.getState().markFailed('', message);
       toast.error('工作流执行出错');
     }
   };
 
   const handleCancelWorkflow = () => {
     cancelWorkflowExecution();
-    setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: '用户取消' });
   };
 
   const handleResumeWorkflow = async () => {
     if (workflowStatus.state === 'running') return;
-    setWorkflowStatus({ ...getExecutionStatus(), state: 'running' });
     try {
       const result = await resumeWorkflow();
-      setWorkflowStatus(result);
       if (result.state === 'completed') {
         toast.success('断点续执行完成');
       } else if (result.state === 'failed') {
         toast.error(`断点续执行失败: ${result.error}`);
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : '未知错误';
-      setWorkflowStatus({ ...getExecutionStatus(), state: 'failed', error: message });
+      const message = err instanceof Error ? err.message : '断点续执行出错';
+      useWorkflowExecutionStore.getState().markFailed('', message);
       toast.error('断点续执行出错');
     }
   };

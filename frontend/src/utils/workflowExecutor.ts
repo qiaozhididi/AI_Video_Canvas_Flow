@@ -9,6 +9,7 @@
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useTimelineStore } from '@/stores/timelineStore';
+import { useWorkflowExecutionStore } from '@/stores/workflowExecutionStore';
 import type { NodeStatus } from '@/types/canvas';
 import type { TrackType } from '@/types/timeline';
 import { renderApi, aiApi } from '@/utils/apiClient';
@@ -360,22 +361,19 @@ export interface WorkflowExecutionStatus {
   error: string | null;
 }
 
-let currentExecutionStatus: WorkflowExecutionStatus = {
-  state: 'idle',
-  totalNodes: 0,
-  completedNodes: 0,
-  failedNodeId: null,
-  error: null,
-};
-
-let cancelRequested = false;
-
 export function getExecutionStatus(): WorkflowExecutionStatus {
-  return { ...currentExecutionStatus };
+  const s = useWorkflowExecutionStore.getState();
+  return {
+    state: s.state,
+    totalNodes: s.totalNodes,
+    completedNodes: s.completedNodes,
+    failedNodeId: s.failedNodeId,
+    error: s.error,
+  };
 }
 
 export function cancelWorkflowExecution(): void {
-  cancelRequested = true;
+  useWorkflowExecutionStore.getState().cancel();
 }
 
 export async function executeWorkflow(): Promise<WorkflowExecutionStatus> {
@@ -389,21 +387,15 @@ export async function executeWorkflow(): Promise<WorkflowExecutionStatus> {
     return { state: 'completed', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null };
   }
 
-  currentExecutionStatus = {
-    state: 'running',
-    totalNodes,
-    completedNodes: 0,
-    failedNodeId: null,
-    error: null,
-  };
-  cancelRequested = false;
+  const store = useWorkflowExecutionStore.getState();
+  store.reset();
+  store.updateProgress({ state: 'running', totalNodes, completedNodes: 0, failedNodeId: null, error: null });
 
   let completedNodes = 0;
 
   for (const layer of layers) {
-    if (cancelRequested) {
-      currentExecutionStatus.state = 'failed';
-      currentExecutionStatus.error = '用户取消';
+    if (useWorkflowExecutionStore.getState().isCancelRequested()) {
+      useWorkflowExecutionStore.getState().markFailed('', '用户取消');
       break;
     }
 
@@ -416,22 +408,21 @@ export async function executeWorkflow(): Promise<WorkflowExecutionStatus> {
       if (r.status === 'fulfilled') {
         completedNodes++;
       } else {
-        currentExecutionStatus.state = 'failed';
-        currentExecutionStatus.failedNodeId = layer[i];
-        currentExecutionStatus.error = r.reason?.message || '节点执行失败';
-        currentExecutionStatus.completedNodes = completedNodes;
-        return { ...currentExecutionStatus };
+        const message = r.reason instanceof Error ? r.reason.message : '节点执行失败';
+        useWorkflowExecutionStore.getState().markFailed(layer[i], message);
+        useWorkflowExecutionStore.getState().updateProgress({ completedNodes });
+        return getExecutionStatus();
       }
     }
 
-    currentExecutionStatus.completedNodes = completedNodes;
+    useWorkflowExecutionStore.getState().updateProgress({ completedNodes });
   }
 
-  if (currentExecutionStatus.state === 'running') {
-    currentExecutionStatus.state = 'completed';
+  if (useWorkflowExecutionStore.getState().state === 'running') {
+    useWorkflowExecutionStore.getState().markCompleted();
   }
 
-  return { ...currentExecutionStatus };
+  return getExecutionStatus();
 }
 
 // ── 断点续执行 ──
@@ -459,21 +450,15 @@ export async function resumeWorkflow(): Promise<WorkflowExecutionStatus> {
     return { state: 'completed', totalNodes: 0, completedNodes: 0, failedNodeId: null, error: null };
   }
 
-  currentExecutionStatus = {
-    state: 'running',
-    totalNodes,
-    completedNodes: 0,
-    failedNodeId: null,
-    error: null,
-  };
-  cancelRequested = false;
+  const store = useWorkflowExecutionStore.getState();
+  store.reset();
+  store.updateProgress({ state: 'running', totalNodes, completedNodes: 0, failedNodeId: null, error: null });
 
   let completedNodes = 0;
 
   for (const layer of pendingLayers) {
-    if (cancelRequested) {
-      currentExecutionStatus.state = 'failed';
-      currentExecutionStatus.error = '用户取消';
+    if (useWorkflowExecutionStore.getState().isCancelRequested()) {
+      useWorkflowExecutionStore.getState().markFailed('', '用户取消');
       break;
     }
 
@@ -486,20 +471,19 @@ export async function resumeWorkflow(): Promise<WorkflowExecutionStatus> {
       if (r.status === 'fulfilled') {
         completedNodes++;
       } else {
-        currentExecutionStatus.state = 'failed';
-        currentExecutionStatus.failedNodeId = layer[i];
-        currentExecutionStatus.error = r.reason?.message || '节点执行失败';
-        currentExecutionStatus.completedNodes = completedNodes;
-        return { ...currentExecutionStatus };
+        const message = r.reason instanceof Error ? r.reason.message : '节点执行失败';
+        useWorkflowExecutionStore.getState().markFailed(layer[i], message);
+        useWorkflowExecutionStore.getState().updateProgress({ completedNodes });
+        return getExecutionStatus();
       }
     }
 
-    currentExecutionStatus.completedNodes = completedNodes;
+    useWorkflowExecutionStore.getState().updateProgress({ completedNodes });
   }
 
-  if (currentExecutionStatus.state === 'running') {
-    currentExecutionStatus.state = 'completed';
+  if (useWorkflowExecutionStore.getState().state === 'running') {
+    useWorkflowExecutionStore.getState().markCompleted();
   }
 
-  return { ...currentExecutionStatus };
+  return getExecutionStatus();
 }
