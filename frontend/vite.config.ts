@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tsconfigPaths from "vite-tsconfig-paths";
 import { traeBadgePlugin } from 'vite-plugin-trae-solo-badge';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -20,6 +21,19 @@ export default defineConfig({
   },
   build: {
     sourcemap: 'hidden',
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'xyflow': ['@xyflow/react'],
+          'media': ['video.js', '@ffmpeg/ffmpeg', '@ffmpeg/util', 'html-to-image'],
+          'icons': ['lucide-react'],
+          'dnd': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+          'state': ['zustand', 'sonner', 'clsx', 'tailwind-merge'],
+        },
+      },
+    },
   },
   plugins: [
     react({
@@ -37,7 +51,13 @@ export default defineConfig({
       clickUrl: 'https://www.trae.ai/solo?showJoin=1',
       autoTheme: true,
       autoThemeTarget: '#root'
-    }), 
-    tsconfigPaths()
+    }),
+    tsconfigPaths(),
+    visualizer({
+      filename: 'dist/stats.html',
+      gzipSize: true,
+      brotliSize: true,
+      open: false,
+    }),
   ],
 })
