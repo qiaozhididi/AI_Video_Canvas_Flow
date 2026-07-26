@@ -2,7 +2,9 @@
 // 拆分后：仅负责数据加载与分发到 settings/ 下各子组件
 // 原始 Settings.tsx（1114 行）已拆分为 5 个 Section + Modal + constants
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { authApi, mediaApi, aiApi } from '@/utils/apiClient';
+import { getErrorMessage } from '@/utils/errorMessages';
 import type {
   UserResponse,
   UserUpdateRequest,
@@ -32,16 +34,25 @@ const TABS: { id: Tab; label: string }[] = [
 export default function Settings() {
   const [tab, setTab] = useState<Tab>('profile');
   const [user, setUser] = useState<UserResponse | null>(null);
+  const [userLoading, setUserLoading] = useState(true);
   const [providers, setProviders] = useState<AiProviderResponse[]>([]);
   const [models, setModels] = useState<AiModelResponse[]>([]);
+  const [aiLoading, setAiLoading] = useState(true);
   const [storageStats, setStorageStats] = useState<StorageStatsResponse | null>(null);
   const [storageUsage, setStorageUsage] = useState<StorageUsageResponse | null>(null);
   const [storageLoading, setStorageLoading] = useState(true);
 
   useEffect(() => {
-    authApi.getMe().then(setUser).catch(() => {});
-    refreshProviders();
-    refreshModels();
+    authApi
+      .getMe()
+      .then(setUser)
+      .catch((err) => toast.error(getErrorMessage(err, 'auth_update')))
+      .finally(() => setUserLoading(false));
+
+    Promise.allSettled([refreshProviders(), refreshModels()]).finally(() =>
+      setAiLoading(false),
+    );
+
     refreshStorage();
   }, []);
 
@@ -121,9 +132,14 @@ export default function Settings() {
           ))}
         </div>
 
-        {tab === 'profile' && user && (
-          <ProfileSection user={user} onUpdate={handleUserUpdate} />
-        )}
+        {tab === 'profile' &&
+          (userLoading ? (
+            <p className="text-sm text-slate-500">加载中...</p>
+          ) : user ? (
+            <ProfileSection user={user} onUpdate={handleUserUpdate} />
+          ) : (
+            <p className="text-sm text-slate-500">加载用户信息失败，请刷新页面重试</p>
+          ))}
         {tab === 'storage' && (
           <StorageSection
             stats={storageStats}
@@ -132,25 +148,31 @@ export default function Settings() {
             onRefresh={refreshStorage}
           />
         )}
-        {tab === 'ai_provider' && (
-          <AiProviderSection
-            providers={providers}
-            models={models}
-            onCreate={handleProviderCreate}
-            onUpdate={handleProviderUpdate}
-            onDelete={handleProviderDelete}
-          />
-        )}
-        {tab === 'ai_model' && (
-          <AiModelSection
-            models={models}
-            providers={providers}
-            onCreate={handleModelCreate}
-            onUpdate={handleModelUpdate}
-            onDelete={handleModelDelete}
-            onSetDefault={handleModelSetDefault}
-          />
-        )}
+        {tab === 'ai_provider' &&
+          (aiLoading ? (
+            <p className="text-sm text-slate-500">加载中...</p>
+          ) : (
+            <AiProviderSection
+              providers={providers}
+              models={models}
+              onCreate={handleProviderCreate}
+              onUpdate={handleProviderUpdate}
+              onDelete={handleProviderDelete}
+            />
+          ))}
+        {tab === 'ai_model' &&
+          (aiLoading ? (
+            <p className="text-sm text-slate-500">加载中...</p>
+          ) : (
+            <AiModelSection
+              models={models}
+              providers={providers}
+              onCreate={handleModelCreate}
+              onUpdate={handleModelUpdate}
+              onDelete={handleModelDelete}
+              onSetDefault={handleModelSetDefault}
+            />
+          ))}
       </div>
     </div>
   );

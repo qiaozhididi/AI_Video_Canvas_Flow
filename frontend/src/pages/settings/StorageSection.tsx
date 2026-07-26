@@ -1,6 +1,8 @@
 // 存储用量标签页
 // 从原 Settings.tsx StorageTab（第 979-1064 行）迁移
 // 改造为受控组件：stats / usage / loading 由父容器传入，本组件不再直接调用 API
+import { useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import type { StorageStatsResponse, StorageUsageResponse } from '@/utils/apiClient';
 
 interface StorageSectionProps {
@@ -26,7 +28,18 @@ const CATEGORY_META: Record<string, { label: string; color: string }> = {
   application: { label: '文档', color: 'text-blue-400' },
 };
 
-export function StorageSection({ stats, usage, loading }: StorageSectionProps) {
+export function StorageSection({ stats, usage, loading, onRefresh }: StorageSectionProps) {
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   if (loading) {
     return <p className="text-sm text-slate-500">加载中...</p>;
   }
@@ -46,7 +59,18 @@ export function StorageSection({ stats, usage, loading }: StorageSectionProps) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-medium text-white font-display">存储用量</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-medium text-white font-display">存储用量</h2>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="刷新存储统计"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-300 border border-canvas-border rounded-lg hover:bg-canvas-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? '刷新中...' : '刷新'}
+        </button>
+      </div>
       <div className="rounded-xl border border-canvas-border bg-canvas-panel p-4 space-y-4">
         <div>
           <div className="flex justify-between text-sm mb-1">
