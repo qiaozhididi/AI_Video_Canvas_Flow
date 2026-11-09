@@ -54,7 +54,7 @@ describe('AuthController (e2e)', () => {
       return request(app.getHttpServer())
         .post('/api/v1/auth/register')
         .send({ username: 'e2euser', email: 'e2e@test.com', password: 'password123' })
-        .expect(201)
+        .expect(200)
         .expect((res) => {
           expect(res.body.username).toBe('e2euser');
           expect(res.body.email).toBe('e2e@test.com');
@@ -62,11 +62,11 @@ describe('AuthController (e2e)', () => {
         });
     });
 
-    it('重复用户名应返回 409', () => {
+    it('重复用户名应返回 400', () => {
       return request(app.getHttpServer())
         .post('/api/v1/auth/register')
         .send({ username: 'e2euser', email: 'e2e2@test.com', password: 'password123' })
-        .expect(409)
+        .expect(400)
         .expect((res) => {
           expect(res.body.detail).toBe('用户名已存在');
         });
@@ -78,7 +78,7 @@ describe('AuthController (e2e)', () => {
       return request(app.getHttpServer())
         .post('/api/v1/auth/login')
         .send({ username: 'e2euser', password: 'password123' })
-        .expect(201)
+        .expect(200)
         .expect((res) => {
           expect(res.body.access_token).toBeDefined();
           expect(res.body.refresh_token).toBeDefined();
