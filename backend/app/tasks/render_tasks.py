@@ -514,6 +514,7 @@ def run_export_task(task_id: str):
         from app.services.media_service import get_minio_client, upload_file
         from app.config import settings
         from app.models.media_asset import MediaAsset
+        from app.models.render_task import RenderTask
 
         sf = _get_celery_session_factory()
         async with sf() as db:
