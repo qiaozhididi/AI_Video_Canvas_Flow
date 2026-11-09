@@ -99,6 +99,8 @@ npm run build && npm run start:prod
 - 健康检查: http://localhost:8000/api/v1/status
 
 > **无需独立 Worker 进程**：BullMQ 的 Processor 内嵌在应用进程中，启动后端即自动消费任务队列。与 Python 版需独立启动 Celery Worker 不同。
+>
+> **注意：两套队列不互通**——本服务用 BullMQ（Redis），Python 版用 Celery（RabbitMQ）。部署时请勿混部（如 Python API + 本服务），否则渲染任务入队后无人消费，必须整套切换。
 
 ### 4. 数据库
 

@@ -69,6 +69,8 @@ services:
   # NestJS 后端 API 服务（主力，需显式 --profile nest 启用）
   # 启动命令：docker compose --profile nest up -d
   # 端口映射 8001:8000，避免与下方 Python api 服务的 8000 端口冲突
+  # 注意：任务队列不互通——NestJS 用 BullMQ(Redis) 自产自消，Python 用 Celery(RabbitMQ)。
+  # 不要混部（如 Python api + NestJS），否则渲染任务入队后无人消费；请整套切换。
   backend-nest:
     profiles: ["nest"]
     build:
