@@ -36,7 +36,7 @@ export default function CollaboratorPanel({ projectId, isOwner, onClose }: Colla
       await collabApi.remove(projectId, userId);
       setCollaborators((prev) => prev.filter((c) => c.user_id !== userId));
       toast.success(`已移除 ${username}`);
-    } catch (err: any) {
+    } catch (err) {
       toast.error(getErrorMessage(err, 'collab_remove'));
     }
   };
@@ -48,7 +48,7 @@ export default function CollaboratorPanel({ projectId, isOwner, onClose }: Colla
         prev.map((c) => (c.user_id === userId ? { ...c, role: newRole as CollaboratorResponse['role'] } : c)),
       );
       toast.success(`已将 ${username} 设为${ROLE_CONFIG[newRole as keyof typeof ROLE_CONFIG]?.label || newRole}`);
-    } catch (err: any) {
+    } catch (err) {
       toast.error(getErrorMessage(err, 'collab_update_role'));
     }
   };

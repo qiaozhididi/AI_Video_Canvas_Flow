@@ -207,7 +207,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-    } catch (err: any) {
+    } catch (err) {
       useCanvasStore.getState().setNodeError(nodeId, getErrorMessage(err, 'node_execute'));
       throw err;
     }
@@ -302,7 +302,7 @@ export async function executeNode(nodeId: string): Promise<RenderTaskResponse> {
     }
 
     return result;
-  } catch (err: any) {
+  } catch (err) {
     useCanvasStore.getState().setNodeError(nodeId, getErrorMessage(err, 'node_execute'));
     throw err;
   }

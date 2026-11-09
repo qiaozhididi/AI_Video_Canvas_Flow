@@ -40,7 +40,7 @@ export default function InviteModal({ projectId, onClose }: InviteModalProps) {
       const link = `${window.location.origin}/invite/${res.token}`;
       setInviteLink(link);
       setStage('created');
-    } catch (err: any) {
+    } catch (err) {
       toast.error(getErrorMessage(err, 'invite_create'));
       setStage('idle');
     }

@@ -27,7 +27,7 @@ export default function AcceptInvite() {
         setInfo(data);
         setState('loaded');
       })
-      .catch((err: any) => {
+      .catch((err) => {
         setErrorMsg(getErrorMessage(err, 'invite_accept'));
         setState('error');
       });
@@ -41,7 +41,7 @@ export default function AcceptInvite() {
       setState('accepted');
       toast.success(`已加入项目「${res.project_name}」`);
       setTimeout(() => navigate(`/editor/${res.project_id}`, { replace: true }), 1000);
-    } catch (err: any) {
+    } catch (err) {
       toast.error(getErrorMessage(err, 'invite_accept'));
       setState('loaded');
     }

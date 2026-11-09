@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authApi, ApiError } from '@/utils/apiClient';
+import { authApi } from '@/utils/apiClient';
 import { getErrorMessage } from '@/utils/errorMessages';
 import type { User } from '@/types/api';
 

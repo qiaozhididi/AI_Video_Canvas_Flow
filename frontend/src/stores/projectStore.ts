@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import type { Project } from '@/types/project';
-import { createEmptyProject } from '@/types/project';
 import { useCanvasStore } from './canvasStore';
 import { useTimelineStore } from './timelineStore';
 import { useAutoSaveStore } from './autoSaveStore';

@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useHistoryStore } from '@/stores/historyStore';
 import { useAutoSaveStore } from '@/stores/autoSaveStore';
-import { useProjectStore } from '@/stores/projectStore';
 import { useTimelineStore } from '@/stores/timelineStore';
 import { useCollabStore } from '@/stores/collabStore';
 import { usePreviewContent } from '@/hooks/usePreviewContent';
@@ -28,7 +27,6 @@ export default function Editor() {
   const updateNodeData = useCanvasStore((s) => s.updateNodeData);
   const removeNode = useCanvasStore((s) => s.removeNode);
   const setNodes = useCanvasStore((s) => s.setNodes);
-  const setEdges = useCanvasStore((s) => s.setEdges);
 
   const canUndo = useHistoryStore((s) => s.canUndo);
   const canRedo = useHistoryStore((s) => s.canRedo);
@@ -36,14 +34,11 @@ export default function Editor() {
   const redo = useHistoryStore((s) => s.redo);
   const pushUpdateNodeData = useHistoryStore((s) => s.pushUpdateNodeData);
   const pushRemoveNode = useHistoryStore((s) => s.pushRemoveNode);
-  const pushMoveNode = useHistoryStore((s) => s.pushMoveNode);
   const tree = useHistoryStore((s) => s.tree);
 
   const markDirty = useAutoSaveStore((s) => s.markDirty);
   const lastSavedAt = useAutoSaveStore((s) => s.lastSavedAt);
   const isDirty = useAutoSaveStore((s) => s.isDirty);
-
-  const currentProject = useProjectStore((s) => s.currentProject);
 
   // ===== 本地状态 =====
   const [showTimeline, setShowTimeline] = useState(true);

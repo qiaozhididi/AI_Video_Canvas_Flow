@@ -381,7 +381,7 @@ export default function Canvas({ onNodeDragStart, onNodeDragStop }: CanvasProps 
     const newNodesSubmenu: MenuItem[] = [];
     if (NODE_CATEGORIES) {
       const entries = Object.entries(NODE_CATEGORIES);
-      entries.forEach(([typeKey, cat], catIdx) => {
+      entries.forEach(([typeKey], catIdx) => {
         if (catIdx > 0) newNodesSubmenu.push({ separator: true });
         NODE_TEMPLATES
           .filter((t) => t.type === typeKey)

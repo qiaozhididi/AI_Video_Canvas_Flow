@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   User, HardDrive, Save,
-  Server, Cpu, Plus, Edit2, Trash2, X, Star, Check, Search, ArrowLeft,
+  Server, Cpu, Plus, Edit2, Trash2, X, Star, Search, ArrowLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getErrorMessage } from '@/utils/errorMessages';
@@ -1011,7 +1011,6 @@ function StorageTab() {
 
   const quotaBytes = stats?.quota_bytes ?? 10 * 1024 * 1024 * 1024;
   const usedBytes = stats?.used_bytes ?? 0;
-  const fileCount = stats?.file_count ?? 0;
   const categories = usage?.categories ?? {};
   const usagePercent = Math.min((usedBytes / quotaBytes) * 100, 100);
 

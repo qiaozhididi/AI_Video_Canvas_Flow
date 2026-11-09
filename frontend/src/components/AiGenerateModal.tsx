@@ -41,7 +41,7 @@ export default function AiGenerateModal({ open, onClose, onGenerated }: AiGenera
       setDescription('');
       setError(null);
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       const msg = getErrorMessage(err, 'ai_generate');
       setError(msg);
       // 不关闭模态框,保留输入内容便于重试
