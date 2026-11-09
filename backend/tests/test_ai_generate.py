@@ -7,8 +7,9 @@
 4. 全部非法 → 抛 RuntimeError
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
 
 from app.services.ai_service import generate_workflow
 

@@ -1,10 +1,15 @@
 """协作节点锁单元测试"""
 import time
-import pytest
+
 from app.ws.collaboration import (
-    NodeLock, _node_locks, _lock_key, _get_active_lock,
-    _purge_expired_locks, _remove_locks_by_sid, _lock_to_dict,
     LOCK_TTL,
+    NodeLock,
+    _get_active_lock,
+    _lock_key,
+    _lock_to_dict,
+    _node_locks,
+    _purge_expired_locks,
+    _remove_locks_by_sid,
 )
 
 
@@ -97,7 +102,7 @@ class TestAcquireLockLogic:
 
     def test_acquire_creates_lock_when_free(self):
         """无锁时 acquire 应创建锁"""
-        from app.ws.collaboration import _node_locks, _lock_key, _get_active_lock
+        from app.ws.collaboration import _get_active_lock, _node_locks
         _node_locks.clear()
         now = time.time()
         # 模拟 acquire：直接创建锁
@@ -107,7 +112,7 @@ class TestAcquireLockLogic:
 
     def test_acquire_returns_existing_when_self_holds(self):
         """自己已持锁时 acquire 应续租并返回同一锁"""
-        from app.ws.collaboration import _node_locks, _lock_key, _get_active_lock, LOCK_TTL
+        from app.ws.collaboration import _get_active_lock, _node_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s1", "u1", "alice", now, now + 1, now)
@@ -120,7 +125,7 @@ class TestAcquireLockLogic:
 
     def test_acquire_denied_when_other_holds(self):
         """他人持锁时 acquire 应被拒绝"""
-        from app.ws.collaboration import _node_locks, _lock_key, _get_active_lock
+        from app.ws.collaboration import _get_active_lock, _node_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s_other", "u_other", "bob", now, now + 5, now)
@@ -132,7 +137,7 @@ class TestAcquireLockLogic:
 
 class TestRenewLockLogic:
     def test_renew_refreshes_expiry(self):
-        from app.ws.collaboration import _node_locks, _lock_key, LOCK_TTL
+        from app.ws.collaboration import _node_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s1", "u1", "alice", now, now + 1, now)
@@ -142,14 +147,14 @@ class TestRenewLockLogic:
         assert lock.expires_at > old_expiry
 
     def test_renew_fails_when_lock_missing(self):
-        from app.ws.collaboration import _node_locks, _lock_key
+        from app.ws.collaboration import _node_locks
         _node_locks.clear()
         assert _lock_key("p1", "n1") not in _node_locks  # 无锁，续租应失败
 
 
 class TestReleaseLockLogic:
     def test_release_removes_lock(self):
-        from app.ws.collaboration import _node_locks, _lock_key
+        from app.ws.collaboration import _node_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s1", "u1", "alice", now, now + 5, now)
@@ -161,7 +166,7 @@ class TestReleaseLockLogic:
 class TestForceReleaseLogic:
     def test_force_release_removes_any_lock(self):
         """强制解锁移除任意持锁者的锁"""
-        from app.ws.collaboration import _node_locks, _lock_key
+        from app.ws.collaboration import _node_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s_other", "u_other", "bob", now, now + 5, now)
@@ -188,7 +193,7 @@ class TestDisconnectCleanup:
 
 class TestNodeDeleteCleanup:
     def test_delete_removes_node_lock(self):
-        from app.ws.collaboration import _node_locks, _lock_key
+        from app.ws.collaboration import _node_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
@@ -202,7 +207,7 @@ class TestNodeDeleteCleanup:
 class TestJoinProjectLocksSync:
     def test_collect_project_locks_for_ack(self):
         """join_project ack 应返回当前项目的所有有效锁"""
-        from app.ws.collaboration import _node_locks, _lock_to_dict
+        from app.ws.collaboration import _lock_to_dict, _node_locks
         _node_locks.clear()
         now = time.time()
         l1 = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
@@ -227,8 +232,8 @@ class TestLockLifecycleIntegration:
     def test_acquire_renew_release_cycle(self):
         """完整生命周期：获取 → 续租 → 释放"""
         from app.ws.collaboration import (
-            _node_locks, _lock_key, _get_active_lock,
-            _purge_expired_locks, LOCK_TTL,
+            _get_active_lock,
+            _node_locks,
         )
         _node_locks.clear()
         now = time.time()
@@ -249,7 +254,7 @@ class TestLockLifecycleIntegration:
 
     def test_concurrent_acquire_second_fails(self):
         """并发场景：第二个 acquire 应看到第一个的锁"""
-        from app.ws.collaboration import _node_locks, _lock_key, _get_active_lock
+        from app.ws.collaboration import _get_active_lock, _node_locks
         _node_locks.clear()
         now = time.time()
         # A 先获取
@@ -262,7 +267,7 @@ class TestLockLifecycleIntegration:
 
     def test_ttl_expiry_releases_lock(self):
         """TTL 过期后锁应被自动清理"""
-        from app.ws.collaboration import _node_locks, _lock_key, _purge_expired_locks
+        from app.ws.collaboration import _node_locks, _purge_expired_locks
         _node_locks.clear()
         now = time.time()
         lock = NodeLock("n1", "p1", "s1", "u1", "alice", now - 10, now - 5, now - 10)
@@ -286,7 +291,7 @@ class TestLockLifecycleIntegration:
 
     def test_node_delete_clears_lock(self):
         """节点删除应清理该节点的锁"""
-        from app.ws.collaboration import _node_locks, _lock_key
+        from app.ws.collaboration import _node_locks
         _node_locks.clear()
         now = time.time()
         _node_locks[_lock_key("p1", "n1")] = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
@@ -297,7 +302,7 @@ class TestLockLifecycleIntegration:
 
     def test_join_project_returns_only_active_locks(self):
         """join_project ack 应只返回未过期的锁"""
-        from app.ws.collaboration import _node_locks, _lock_to_dict
+        from app.ws.collaboration import _lock_to_dict, _node_locks
         _node_locks.clear()
         now = time.time()
         active = NodeLock("n1", "p1", "s1", "u1", "a", now, now + 5, now)
@@ -308,8 +313,8 @@ class TestLockLifecycleIntegration:
         _node_locks[("p2", "n3")] = other_project
         # 收集 p1 的有效锁
         result = [
-            _lock_to_dict(l) for l in _node_locks.values()
-            if l.project_id == "p1" and not l.is_expired()
+            _lock_to_dict(lock) for lock in _node_locks.values()
+            if lock.project_id == "p1" and not lock.is_expired()
         ]
         assert len(result) == 1
         assert result[0]["node_id"] == "n1"
@@ -321,7 +326,10 @@ class TestNodeUpdateDeleteBroadcast:
     async def test_delete_broadcasts_lock_changed(self, monkeypatch):
         """节点删除持锁节点时应广播 lock_changed(node, null) 通知持锁者"""
         from app.ws.collaboration import (
-            _node_locks, _lock_key, node_update, NodeLock, sio,
+            NodeLock,
+            _node_locks,
+            node_update,
+            sio,
         )
         _node_locks.clear()
         now = time.time()

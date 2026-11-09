@@ -9,10 +9,9 @@
 6. Token 缺少 sub → 401
 """
 
-import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import jwt
@@ -23,7 +22,7 @@ from app.deps import get_current_user
 
 def _make_token(sub: str, secret: str = settings.SECRET_KEY, exp_minutes: int = 30) -> str:
     """辅助：创建测试用 JWT"""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=exp_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=exp_minutes)
     payload = {"sub": sub, "exp": expire}
     return jwt.encode(payload, secret, algorithm=settings.ALGORITHM)
 
@@ -99,7 +98,7 @@ async def test_expired_token_returns_401():
 @pytest.mark.asyncio
 async def test_token_missing_sub_returns_401():
     """Token 解码成功但缺少 sub 字段应返回 401"""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
+    expire = datetime.now(UTC) + timedelta(minutes=30)
     payload = {"exp": expire}  # 无 sub
     token = jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)

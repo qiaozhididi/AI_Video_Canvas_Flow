@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"   CORS: {settings.CORS_ORIGINS}")
 
     # 自动创建数据库表（仅开发模式）
-    from app.database import Base, engine, async_session_factory
+    from app.database import Base, async_session_factory, engine
     if settings.DEBUG:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -98,8 +98,9 @@ async def health_check():
 # 挂载 Socket.IO 协作服务
 # 使用 other_asgi_app 将 FastAPI 和 Socket.IO 共存于同一端口
 # Socket.IO 请求走 /socket.io/ 路径，其余走 FastAPI
-import socketio as _socketio
-from app.ws.collaboration import sio
+import socketio as _socketio  # noqa: E402
+
+from app.ws.collaboration import sio  # noqa: E402
 
 app = _socketio.ASGIApp(sio, other_asgi_app=app)
 logger.info("   Socket.IO 协作服务已挂载（/socket.io/）")

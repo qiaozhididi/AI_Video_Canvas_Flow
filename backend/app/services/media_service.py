@@ -1,7 +1,6 @@
 """MinIO 上传/预签名 URL"""
 
 from minio import Minio
-from minio.error import S3Error
 
 from app.config import settings
 

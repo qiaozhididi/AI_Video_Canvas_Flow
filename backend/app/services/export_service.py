@@ -15,10 +15,10 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.config import settings
 from app.models.media_asset import MediaAsset
 from app.models.render_task import RenderTask
-from app.services.media_service import get_minio_client, get_presigned_url
-from app.config import settings
+from app.services.media_service import get_presigned_url
 
 
 async def _download_to_temp(
@@ -106,9 +106,14 @@ async def compose_video(
                 em, es = divmod(rem2, 60)
                 ems = int((end_s % 1) * 1000)
                 f.write(f"{i}\n")
-                f.write(f"{int(sh):02d}:{int(sm):02d}:{int(ss):02d},{sms:03d} --> {int(eh):02d}:{int(em):02d}:{int(es):02d},{ems:03d}\n")
+                start_tc = f"{int(sh):02d}:{int(sm):02d}:{int(ss):02d},{sms:03d}"
+                end_tc = f"{int(eh):02d}:{int(em):02d}:{int(es):02d},{ems:03d}"
+                f.write(f"{start_tc} --> {end_tc}\n")
                 f.write(f"{sub['text']}\n\n")
-        subtitle_vf = f"subtitles={srt_path}:force_style='FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2,Alignment=2'"
+        subtitle_vf = (
+            f"subtitles={srt_path}:force_style="
+            f"'FontSize=24,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2,Alignment=2'"
+        )
 
     # 3. 构建 FFmpeg 命令
     output_ext = output_format if output_format in ('mp4', 'mov', 'webm') else 'mp4'

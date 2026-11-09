@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -69,8 +69,8 @@ async def list_render_tasks(
     tasks = result.scalars().all()
 
     # 批量查询关联的节点标签和项目名称，便于渲染中心区分不同节点的任务
-    from app.models.workflow import WorkflowNode
     from app.models.project import Project
+    from app.models.workflow import WorkflowNode
 
     node_ids = {t.node_id for t in tasks if t.node_id}
     project_ids = {t.project_id for t in tasks}
@@ -162,6 +162,7 @@ async def cancel_render_task(task_id: str, db: DBSession, user: CurrentUser):
     # 撤销 Celery 任务（通过 AsyncResult 发送 revoke 指令，不依赖远程控制）
     if task.celery_task_id:
         from celery.result import AsyncResult
+
         from app.tasks.celery_app import celery_app
         AsyncResult(task.celery_task_id, app=celery_app).revoke(terminate=True)
         logger.info(f"[Render:Cancel] revoked celery task {task.celery_task_id}")

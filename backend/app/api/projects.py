@@ -6,19 +6,23 @@ import uuid
 from fastapi import APIRouter, HTTPException, UploadFile
 from sqlalchemy import func, select
 
-from app.deps import DBSession, CurrentUser, CurrentUserWithToken
-from app.models.project import Project
-from app.models.render_task import RenderTask
-from app.models.media_asset import MediaAsset
-from app.models.workflow import WorkflowNode, WorkflowEdge
-from app.models.project_snapshot import ProjectSnapshot
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
-from app.services.media_service import upload_file
 from app.config import settings
+from app.deps import CurrentUser, CurrentUserWithToken, DBSession
+from app.models.media_asset import MediaAsset
+from app.models.project import Project
+from app.models.project_snapshot import ProjectSnapshot
+from app.models.render_task import RenderTask
+from app.models.workflow import WorkflowEdge, WorkflowNode
+from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
+from app.services.media_service import upload_file
 
 logger = logging.getLogger("app.api.projects")
 
 router = APIRouter()
+
+# 项目封面约束
+ALLOWED_COVER_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+MAX_COVER_SIZE = 5 * 1024 * 1024  # 5MB
 
 
 @router.get("/", response_model=list[ProjectResponse], summary="获取项目列表")
@@ -156,14 +160,12 @@ async def upload_cover(project_id: str, file: UploadFile, db: DBSession, current
         raise HTTPException(status_code=404, detail="项目不存在")
 
     # 校验文件类型
-    ALLOWED_COVER_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
     if file.content_type not in ALLOWED_COVER_TYPES:
         raise HTTPException(status_code=422, detail=f"不支持的文件类型: {file.content_type}，仅支持 PNG/JPEG/WebP/GIF")
 
     content = await file.read()
 
     # 校验文件大小（最大 5MB）
-    MAX_COVER_SIZE = 5 * 1024 * 1024
     if len(content) > MAX_COVER_SIZE:
         raise HTTPException(status_code=422, detail=f"封面文件过大: {len(content)} 字节，最大允许 5MB")
 
@@ -194,10 +196,11 @@ async def upload_cover(project_id: str, file: UploadFile, db: DBSession, current
 async def download_cover(project_id: str, user: CurrentUserWithToken):
     """通过后端代理下载项目封面图片"""
     storage_key = f"covers/{project_id}.png"
-    from app.services.media_service import get_presigned_url
-    from minio import Minio
     import httpx
     from fastapi.responses import StreamingResponse
+    from minio import Minio
+
+    from app.services.media_service import get_presigned_url
 
     # 先检查文件是否存在，避免 httpx 超时等待
     try:

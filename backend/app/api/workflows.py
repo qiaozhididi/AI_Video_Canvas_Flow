@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import CurrentUser, DBSession
 from app.models.project import Project
-from app.models.workflow import WorkflowNode, WorkflowEdge
+from app.models.workflow import WorkflowEdge, WorkflowNode
 from app.schemas.workflow import (
     EdgeCreate,
     EdgeResponse,

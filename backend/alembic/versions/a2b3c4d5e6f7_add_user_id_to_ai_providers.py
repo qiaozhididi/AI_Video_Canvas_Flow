@@ -4,17 +4,17 @@ Revision ID: a2b3c4d5e6f7
 Revises: b2c3d4e5f6a7
 Create Date: 2026-07-10 22:00:00.000000
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'a2b3c4d5e6f7'
-down_revision: Union[str, None] = '18e962ca68fb'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '18e962ca68fb'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # qzfrato 用户 ID（现有数据绑定到此用户）
 QZFRATO_USER_ID = 'ea148b9e-ecde-4fbc-9335-95edc4b7dec0'

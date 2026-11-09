@@ -8,15 +8,21 @@
 - TTS（call_audio_gen）：Ark 异步内容生成 API
 """
 
+import json
 import logging
+import random
+import string
+import time
 import uuid
-import httpx
+from collections import defaultdict, deque
+from datetime import datetime
 from uuid import UUID
-from datetime import datetime, timezone
+
+import httpx
 from sqlalchemy import select
 
-from app.models.ai_provider import AiProvider
 from app.models.ai_model import AiModel
+from app.models.ai_provider import AiProvider
 
 logger = logging.getLogger("app.services.ai")
 
@@ -24,7 +30,12 @@ logger = logging.getLogger("app.services.ai")
 DEFAULT_IMAGE_SIZE = "2k"
 
 
-async def _get_provider_and_model(db, model_id: str | UUID, expected_type: str | None = None, user_id: str | None = None) -> tuple[AiProvider, AiModel]:
+async def _get_provider_and_model(
+    db,
+    model_id: str | UUID,
+    expected_type: str | None = None,
+    user_id: str | None = None,
+) -> tuple[AiProvider, AiModel]:
     """根据 model_id 获取 Provider 和 Model 配置
 
     Args:
@@ -55,12 +66,14 @@ async def _get_provider_and_model(db, model_id: str | UUID, expected_type: str |
         raise ValueError(f"AI Model {model_id} 不属于当前用户")
 
     if not provider.is_active or not model.is_active:
-        raise ValueError(f"AI Provider/Model 已禁用")
+        raise ValueError("AI Provider/Model 已禁用")
 
     return provider, model
 
 
-async def call_llm(db, model_id: str | UUID, messages: list[dict], temperature: float = 0.7, user_id: str | None = None) -> str:
+async def call_llm(
+    db, model_id: str | UUID, messages: list[dict], temperature: float = 0.7, user_id: str | None = None
+) -> str:
     """调用 LLM（兼容 OpenAI Chat Completions API 格式）
 
     Args:
@@ -137,8 +150,8 @@ async def _resolve_image_url(db, image_url: str) -> str:
         return image_url
 
     try:
-        from app.services.media_service import get_presigned_url
         from app.models.media_asset import MediaAsset
+        from app.services.media_service import get_presigned_url
         asset_id = image_url.split("/api/v1/media/")[1].split("/")[0]
         asset = await db.get(MediaAsset, uuid.UUID(asset_id))
         if asset:
@@ -213,7 +226,9 @@ async def _call_image_api(
         return await _handle_image_response(db, data, owner_id)
 
 
-async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | None = None, user_id: str | None = None) -> dict:
+async def call_image_gen(
+    db, model_id: str | UUID, prompt: str, params: dict | None = None, user_id: str | None = None
+) -> dict:
     """文生图：调用兼容 OpenAI Images API 的端点
 
     Args:
@@ -229,7 +244,9 @@ async def call_image_gen(db, model_id: str | UUID, prompt: str, params: dict | N
     return await _call_image_api(db, model_id, prompt, body_extra=None, params=params, user_id=user_id)
 
 
-async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None, user_id: str | None = None) -> dict:
+async def call_img2img(
+    db, model_id: str | UUID, prompt: str, image_url: str, params: dict | None = None, user_id: str | None = None
+) -> dict:
     """图生图：调用兼容 OpenAI Images API 的端点，通过 image 参数传入参考图片
 
     火山引擎 SeedReam 使用 /images/generations + image 参数实现图生图/图改图
@@ -246,11 +263,16 @@ async def call_img2img(db, model_id: str | UUID, prompt: str, image_url: str, pa
         {"url": "/api/v1/media/{id}/download", "revised_prompt": "..."} 持久化后的图片信息
     """
     api_image = await _resolve_image_url(db, image_url)
-    logger.info(f"[AI:Img2Img] 调用, prompt={prompt[:50]}, image={'base64' if api_image.startswith('data:') else api_image[:80]}")
+    logger.info(
+        f"[AI:Img2Img] 调用, prompt={prompt[:50]}, "
+        f"image={'base64' if api_image.startswith('data:') else api_image[:80]}"
+    )
     return await _call_image_api(db, model_id, prompt, body_extra={"image": api_image}, params=params, user_id=user_id)
 
 
-async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0) -> dict:
+async def _poll_ark_task(
+    base_url: str, api_key: str, task_id: str, timeout: float = 300.0, interval: float = 5.0
+) -> dict:
     """轮询 Ark 异步任务直到完成
 
     Args:
@@ -292,7 +314,9 @@ async def _poll_ark_task(base_url: str, api_key: str, task_id: str, timeout: flo
     raise RuntimeError(f"任务 {task_id} 轮询超时({timeout}s)")
 
 
-async def _download_to_minio(db, url: str, filename: str, content_type: str, owner_id: str | None = None) -> tuple[str, str]:
+async def _download_to_minio(
+    db, url: str, filename: str, content_type: str, owner_id: str | None = None
+) -> tuple[str, str]:
     """下载外部 URL 文件到 MinIO 并创建 MediaAsset 记录
 
     Args:
@@ -305,9 +329,9 @@ async def _download_to_minio(db, url: str, filename: str, content_type: str, own
     Returns:
         (asset_id, persistent_url) persistent_url 格式为 /api/v1/media/{asset_id}/download
     """
+    from app.config import settings
     from app.models.media_asset import MediaAsset
     from app.services.media_service import upload_file
-    from app.config import settings
 
     # 下载文件
     async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
@@ -502,7 +526,14 @@ async def _call_ark_async(
     return {f"{media_type}_url": persistent_url, "remote_task_id": remote_task_id}
 
 
-async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str | None = None, params: dict | None = None, user_id: str | None = None) -> dict:
+async def call_video_gen(
+    db,
+    model_id: str | UUID,
+    prompt: str,
+    image_url: str | None = None,
+    params: dict | None = None,
+    user_id: str | None = None,
+) -> dict:
     """图生视频：调用 Ark 异步内容生成 API
 
     Args:
@@ -519,7 +550,9 @@ async def call_video_gen(db, model_id: str | UUID, prompt: str, image_url: str |
     return await _call_ark_async(db, model_id, prompt, "video", image_url=image_url, params=params, user_id=user_id)
 
 
-async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | None = None, user_id: str | None = None) -> dict:
+async def call_audio_gen(
+    db, model_id: str | UUID, text: str, params: dict | None = None, user_id: str | None = None
+) -> dict:
     """TTS：调用 Ark 异步内容生成 API
 
     Args:
@@ -533,13 +566,6 @@ async def call_audio_gen(db, model_id: str | UUID, text: str, params: dict | Non
         {"audio_url": "/api/v1/media/{id}/download", "remote_task_id": "..."}
     """
     return await _call_ark_async(db, model_id, text, "audio", params=params, user_id=user_id)
-
-
-import json
-import time
-import random
-import string
-from collections import defaultdict, deque
 
 
 # ── AI 快速生成:节点白名单(与前端 NODE_TEMPLATES 保持一致) ──
@@ -629,7 +655,8 @@ SYSTEM_PROMPT = """你是 AI 视频工作流编排助手。根据用户描述生
 
 合法节点类型(仅可使用以下 subtype):
 - 输入:text_input(文本输入), image_input(图片输入), audio_input(音频输入)
-- AI 推理:text_to_image(文生图), image_to_image(图生图), image_to_video(图生视频), text_to_speech(文生语音), text_to_video(文生视频)
+- AI 推理:text_to_image(文生图), image_to_image(图生图), image_to_video(图生视频), text_to_speech(文生语音),
+  text_to_video(文生视频)
 - 处理:upscale(高清放大), style_transfer(风格化), remove_bg(抠图), extend_image(扩图)
 - 控制:if_else(条件分支), loop(循环), merge(合并)
 - 输出:video_output(视频输出), image_output(图片输出), audio_output(音频输出)
@@ -747,7 +774,7 @@ def _compute_layout(valid_nodes: list[dict]) -> None:
     3. 第 N 层 x=N*300;同层按索引 y=index*150
     """
     # 原始 id → 节点索引
-    id_to_idx = {n["orig_id"]: i for i, n in enumerate(valid_nodes)}
+    {n["orig_id"]: i for i, n in enumerate(valid_nodes)}
 
     # 入度 + 邻接表(基于原始 id)
     in_degree = {n["orig_id"]: 0 for n in valid_nodes}
@@ -780,7 +807,7 @@ def _compute_layout(valid_nodes: list[dict]) -> None:
 
     # 环检测:若 processed < 节点数,说明有环,用 fallback(按 orig_id 顺序排列)
     if processed < len(valid_nodes):
-        logger.warning(f"[AI:Generate] 检测到环,使用 fallback 布局")
+        logger.warning("[AI:Generate] 检测到环,使用 fallback 布局")
         for i, n in enumerate(valid_nodes):
             n["position_x"] = i * 300
             n["position_y"] = 0

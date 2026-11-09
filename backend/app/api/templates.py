@@ -4,12 +4,12 @@ import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException
-from sqlalchemy import select, Text
+from sqlalchemy import Text, select
 
-from app.deps import DBSession, CurrentUser
+from app.deps import CurrentUser, DBSession
 from app.models.project import Project
-from app.models.workflow import WorkflowNode, WorkflowEdge
-from app.schemas.project import TemplateResponse, TemplatePublishRequest, ProjectResponse
+from app.models.workflow import WorkflowEdge, WorkflowNode
+from app.schemas.project import ProjectResponse, TemplatePublishRequest, TemplateResponse
 
 logger = logging.getLogger("app.api.templates")
 
@@ -51,7 +51,7 @@ async def list_templates(
     category: str | None = None,
 ):
     """获取模板列表（支持 q 搜索 name/tags，category 筛选）"""
-    stmt = select(Project).where(Project.is_template == True)
+    stmt = select(Project).where(Project.is_template)
     if category:
         stmt = stmt.where(Project.template_category == category)
     if q:
@@ -73,7 +73,7 @@ async def clone_template(template_id: str, db: DBSession, current_user: CurrentU
 
     # 查询模板
     result = await db.execute(
-        select(Project).where(Project.id == uuid.UUID(template_id), Project.is_template == True)
+        select(Project).where(Project.id == uuid.UUID(template_id), Project.is_template)
     )
     template = result.scalar_one_or_none()
     if not template:
@@ -164,7 +164,7 @@ async def unpublish_template(template_id: str, db: DBSession, current_user: Curr
     """取消模板发布（仅 owner）"""
     owner_id = uuid.UUID(current_user)
     result = await db.execute(
-        select(Project).where(Project.id == uuid.UUID(template_id), Project.is_template == True)
+        select(Project).where(Project.id == uuid.UUID(template_id), Project.is_template)
     )
     project = result.scalar_one_or_none()
     if not project or project.owner_id != owner_id:

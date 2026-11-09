@@ -96,7 +96,9 @@ async def list_collaborators(project_id: str, user: CurrentUser, db: DBSession):
 
 
 @router.put("/projects/{project_id}/collaborators/{user_id}", summary="修改协作者权限")
-async def update_collaborator_role(project_id: str, user_id: str, body: UpdateRoleRequest, user: CurrentUser, db: DBSession):
+async def update_collaborator_role(
+    project_id: str, user_id: str, body: UpdateRoleRequest, user: CurrentUser, db: DBSession
+):
     pid = uuid.UUID(project_id)
     uid = uuid.UUID(user_id)
 

@@ -5,15 +5,14 @@ import uuid
 from datetime import datetime
 
 import httpx
-
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import select
 
+from app.config import settings
 from app.deps import CurrentUser, CurrentUserWithToken, DBSession
 from app.models.media_asset import MediaAsset
-from app.services.media_service import upload_file, get_presigned_url, delete_file
-from app.config import settings
+from app.services.media_service import delete_file, get_presigned_url, upload_file
 
 logger = logging.getLogger("app.api.media")
 
@@ -37,7 +36,6 @@ async def upload_media(file: UploadFile, user: CurrentUser, db: DBSession):
     content = await file.read()
     owner_id = uuid.UUID(user)
     asset_id = uuid.uuid4()
-    from datetime import datetime
     now = datetime.utcnow()
     storage_key = f"media/{user}/{asset_id}/{file.filename}"
 

@@ -10,8 +10,8 @@ from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
 from app.models.project import Project
-from app.models.project_invitation import ProjectInvitation
 from app.models.project_collaborator import ProjectCollaborator
+from app.models.project_invitation import ProjectInvitation
 from app.models.user import User
 
 logger = logging.getLogger("app.api.invitations")

@@ -5,6 +5,7 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
+
 # 声明式基类，所有 ORM 模型继承此类
 class Base(DeclarativeBase):
     pass

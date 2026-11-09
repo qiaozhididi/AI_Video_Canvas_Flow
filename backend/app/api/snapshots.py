@@ -13,8 +13,8 @@ from app.models.project_snapshot import ProjectSnapshot
 from app.models.workflow import WorkflowEdge, WorkflowNode
 from app.schemas.snapshot import (
     SnapshotCreate,
-    SnapshotRestoreResponse,
     SnapshotResponse,
+    SnapshotRestoreResponse,
 )
 
 logger = logging.getLogger("app.api.snapshots")

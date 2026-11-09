@@ -3,17 +3,16 @@
 import logging
 import uuid
 from datetime import datetime
-
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func, update
+from sqlalchemy import func, select, update
 
-from app.deps import CurrentUser, DBSession
-from app.models.ai_provider import AiProvider
-from app.models.ai_model import AiModel
 from app.config import settings
+from app.deps import CurrentUser, DBSession
+from app.models.ai_model import AiModel
+from app.models.ai_provider import AiProvider
 
 # 合法模型类型
 MODEL_TYPES = Literal["llm", "image_gen", "video_gen", "tts"]
@@ -303,13 +302,13 @@ async def get_default_model(db: DBSession, user: CurrentUser, model_type: str | 
     """
     user_provider_ids = select(AiProvider.id).where(
         AiProvider.user_id == uuid.UUID(user),
-        AiProvider.is_active == True,
+        AiProvider.is_active,
     )
 
     # 优先查找 is_default=True 的模型
     stmt = (
         select(AiModel)
-        .where(AiModel.is_active == True, AiModel.is_default == True)
+        .where(AiModel.is_active, AiModel.is_default)
         .where(AiModel.provider_id.in_(user_provider_ids))
     )
     if model_type:
@@ -321,7 +320,7 @@ async def get_default_model(db: DBSession, user: CurrentUser, model_type: str | 
     if not model:
         stmt = (
             select(AiModel)
-            .where(AiModel.is_active == True)
+            .where(AiModel.is_active)
             .where(AiModel.provider_id.in_(user_provider_ids))
         )
         if model_type:
@@ -460,8 +459,9 @@ SUBTITLE_SYSTEM_PROMPT = """你是一个专业的字幕生成助手。根据用�
 @router.post("/generate-subtitles", summary="AI 生成字幕")
 async def generate_subtitles(body: GenerateSubtitlesRequest, db: DBSession, user: CurrentUser):
     """根据文本内容生成带时间轴的字幕分段"""
-    from app.services.ai_service import call_llm, _get_default_llm_model_id
     import json
+
+    from app.services.ai_service import _get_default_llm_model_id, call_llm
 
     model_id = await _get_default_llm_model_id(db, body.model_id, user_id=user)
     messages = [

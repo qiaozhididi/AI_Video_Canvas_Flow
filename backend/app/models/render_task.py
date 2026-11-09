@@ -1,9 +1,9 @@
 """RenderTask ORM 模型"""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,7 +25,7 @@ class RenderTask(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
     owner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     task_type: Mapped[str] = mapped_column(String(64))  # render / ai_text2img / ai_text2video / ai_img2video / ai_tts
-    status: Mapped[str] = mapped_column(String(32), default="pending")  # pending / running / completed / failed / cancelled
+    status: Mapped[str] = mapped_column(String(32), default="pending")  # pending/running/completed/failed/cancelled
     progress: Mapped[int] = mapped_column(Integer, default=0)  # 0~100 整数百分比
     celery_task_id: Mapped[str | None] = mapped_column(String(256))
     result_url: Mapped[str | None] = mapped_column(String(512))

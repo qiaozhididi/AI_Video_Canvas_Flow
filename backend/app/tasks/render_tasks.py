@@ -13,8 +13,8 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.tasks.celery_app import celery_app
 from app.config import settings
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger("app.tasks.render")
 
@@ -58,9 +58,11 @@ def _get_celery_session_factory() -> async_sessionmaker:
 
 async def _update_task(db, task_id: str, **kwargs):
     """更新渲染任务状态"""
+    from datetime import datetime
+
     from sqlalchemy import select
+
     from app.models.render_task import RenderTask
-    from datetime import datetime, timezone
 
     result = await db.execute(select(RenderTask).where(RenderTask.id == uuid.UUID(task_id)))
     task = result.scalar_one_or_none()
@@ -79,9 +81,16 @@ async def _mark_failed(task_id: str, error_message: str):
         await _update_task(db, task_id, status="failed", error_message=error_message, progress=0)
 
 
-async def _run_task(task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None, node_params: dict | None = None):
+async def _run_task(
+    task_id: str,
+    model_id: str | None,
+    prompt: str | None,
+    input_artifacts: list[dict] | None,
+    node_params: dict | None = None,
+):
     """完整的异步任务执行流程——在同一个事件循环中运行"""
     from sqlalchemy import select
+
     from app.models.render_task import RenderTask
     from app.models.workflow import WorkflowNode
 
@@ -244,7 +253,11 @@ AI_TASK_CONFIG = {
 
 
 async def _execute_ai_task(
-    task_id: str, model_id: str | None, prompt: str | None, input_artifacts: list[dict] | None = None, node_params: dict | None = None
+    task_id: str,
+    model_id: str | None,
+    prompt: str | None,
+    input_artifacts: list[dict] | None = None,
+    node_params: dict | None = None,
 ) -> dict:
     """执行 AI 推理任务：按 task_type 路由到不同的 AI 服务
 
@@ -260,6 +273,7 @@ async def _execute_ai_task(
     # 读取 task_type
     async with sf() as db:
         from sqlalchemy import select
+
         from app.models.render_task import RenderTask
         result = await db.execute(
             select(RenderTask.task_type).where(RenderTask.id == uuid.UUID(task_id))
@@ -300,7 +314,7 @@ async def _do_ai_call(
     sf = _get_celery_session_factory()
     async with sf() as db:
         from app.models.render_task import RenderTask
-        from app.services.ai_service import call_image_gen, call_img2img, call_video_gen, call_audio_gen
+        from app.services.ai_service import call_audio_gen, call_image_gen, call_img2img, call_video_gen
 
         await _update_task(db, task_id, status="running", progress=10)
 
@@ -334,17 +348,28 @@ async def _do_ai_call(
                 # 图生图/图生视频需要 image_url，无图片时跳过 AI 调用走模拟路径
                 skip_ai = config["needs_image"] and not image_url
                 if skip_ai:
-                    logger.warning(f"[AI:Img2Img] 无上游图片 URL，跳过 AI 调用走模拟")
+                    logger.warning("[AI:Img2Img] 无上游图片 URL，跳过 AI 调用走模拟")
                 else:
                     # 调用对应的 AI 服务（传入 user_id=owner_id 验证模型归属）
                     if task_type == "ai_text2img":
-                        result = await call_image_gen(db, model_id, prompt, params={"size": size, "_owner_id": owner_id}, user_id=owner_id)
+                        result = await call_image_gen(
+                            db, model_id, prompt, params={"size": size, "_owner_id": owner_id}, user_id=owner_id
+                        )
                     elif task_type == "ai_img2img":
-                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": size, "_owner_id": owner_id}, user_id=owner_id)
+                        result = await call_img2img(
+                            db, model_id, prompt, image_url,
+                            params={"size": size, "_owner_id": owner_id}, user_id=owner_id,
+                        )
                     elif task_type in ("ai_img2video", "ai_text2video"):
-                        result = await call_video_gen(db, model_id, prompt, image_url=image_url, params={**(node_params or {}), "_owner_id": owner_id}, user_id=owner_id)
+                        result = await call_video_gen(
+                            db, model_id, prompt, image_url=image_url,
+                            params={**(node_params or {}), "_owner_id": owner_id}, user_id=owner_id,
+                        )
                     elif task_type == "ai_tts":
-                        result = await call_audio_gen(db, model_id, prompt, params={**(node_params or {}), "_owner_id": owner_id}, user_id=owner_id)
+                        result = await call_audio_gen(
+                            db, model_id, prompt,
+                            params={**(node_params or {}), "_owner_id": owner_id}, user_id=owner_id,
+                        )
 
                     result_url = result.get(config["result_key"], "")
                     if config["result_key"] == "url":
@@ -360,9 +385,14 @@ async def _do_ai_call(
                 logger.warning(f"[AI:{task_type}] size={size} 不合法，回退到 2k 重试")
                 try:
                     if task_type == "ai_text2img":
-                        result = await call_image_gen(db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id}, user_id=owner_id)
+                        result = await call_image_gen(
+                            db, model_id, prompt, params={"size": "2k", "_owner_id": owner_id}, user_id=owner_id
+                        )
                     elif task_type == "ai_img2img":
-                        result = await call_img2img(db, model_id, prompt, image_url, params={"size": "2k", "_owner_id": owner_id}, user_id=owner_id)
+                        result = await call_img2img(
+                            db, model_id, prompt, image_url,
+                            params={"size": "2k", "_owner_id": owner_id}, user_id=owner_id,
+                        )
                     result_url = result.get(config["result_key"], "")
                     if config["result_key"] == "url":
                         revised_prompt = result.get("revised_prompt", "")
@@ -400,8 +430,8 @@ async def _do_ai_call(
 
 async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict:
     """LLM 文本生成"""
-    from app.services.ai_service import call_llm
     from app.models.render_task import RenderTask
+    from app.services.ai_service import call_llm
 
     sf = _get_celery_session_factory()
     async with sf() as db:
@@ -419,7 +449,10 @@ async def _do_llm(task_id: str, model_id: str | None, user_content: str) -> dict
         await _update_task(db, task_id, progress=30)
 
         try:
-            response_text = await call_llm(db, model_id, messages, user_id=owner_id) if model_id else "AI 模拟响应（未指定模型）"
+            response_text = (
+                await call_llm(db, model_id, messages, user_id=owner_id)
+                if model_id else "AI 模拟响应（未指定模型）"
+            )
         except Exception as e:
             logger.error(f"[AI:LLM] 任务 {task_id} 失败: {e}", exc_info=True)
             await _update_task(db, task_id, status="failed", error_message=str(e)[:500], progress=0)
@@ -510,11 +543,11 @@ async def _execute_render_task(
 def run_export_task(task_id: str):
     """视频导出任务：FFmpeg 混流合成"""
     async def _run():
-        from app.services.export_service import compose_video
-        from app.services.media_service import get_minio_client, upload_file
         from app.config import settings
         from app.models.media_asset import MediaAsset
         from app.models.render_task import RenderTask
+        from app.services.export_service import compose_video
+        from app.services.media_service import upload_file
 
         sf = _get_celery_session_factory()
         async with sf() as db:

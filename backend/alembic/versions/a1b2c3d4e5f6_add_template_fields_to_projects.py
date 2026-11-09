@@ -4,17 +4,18 @@ Revision ID: a1b2c3d4e5f6
 Revises: 7b66d54b0781
 Create Date: 2026-06-27 20:00:00.000000
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 # revision identifiers, used by Alembic.
 revision: str = 'a1b2c3d4e5f6'
-down_revision: Union[str, None] = '7b66d54b0781'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '7b66d54b0781'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -35,8 +36,8 @@ def upgrade() -> None:
         return
     owner_id = row[0]
 
-    import uuid as _uuid
     import json
+    import uuid as _uuid
 
     templates = [
         {
@@ -44,13 +45,42 @@ def upgrade() -> None:
             "description": "从文本描述生成图片，基础文生图工作流模板",
             "tags": ["文生图", "图像生成"],
             "nodes": [
-                {"id": "tpl-t2i-in", "node_type": "input", "label": "文本输入", "position_x": 100, "position_y": 200, "config": {"type":"input","subtype":"text_input","label":"文本输入","params":{"text":"一只可爱的猫咪"},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-t2i-gen", "node_type": "ai_inference", "label": "文生图", "position_x": 400, "position_y": 200, "config": {"type":"ai_inference","subtype":"text_to_image","label":"文生图","params":{"prompt":"一只可爱的猫咪","size":"2k"},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-t2i-out", "node_type": "output", "label": "图片输出", "position_x": 700, "position_y": 200, "config": {"type":"output","subtype":"image_output","label":"图片输出","params":{},"status":"idle","progress":0,"outputArtifacts":[]}},
+                {
+                    "id": "tpl-t2i-in", "node_type": "input", "label": "文本输入",
+                    "position_x": 100, "position_y": 200,
+                    "config": {
+                        "type": "input", "subtype": "text_input", "label": "文本输入",
+                        "params": {"text": "一只可爱的猫咪"},
+                        "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-t2i-gen", "node_type": "ai_inference", "label": "文生图",
+                    "position_x": 400, "position_y": 200,
+                    "config": {
+                        "type": "ai_inference", "subtype": "text_to_image", "label": "文生图",
+                        "params": {"prompt": "一只可爱的猫咪", "size": "2k"},
+                        "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-t2i-out", "node_type": "output", "label": "图片输出",
+                    "position_x": 700, "position_y": 200,
+                    "config": {
+                        "type": "output", "subtype": "image_output", "label": "图片输出",
+                        "params": {}, "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
             ],
             "edges": [
-                {"id": "tpl-t2i-e1", "source_node_id": "tpl-t2i-in", "target_node_id": "tpl-t2i-gen", "source_port": "out", "target_port": "in"},
-                {"id": "tpl-t2i-e2", "source_node_id": "tpl-t2i-gen", "target_node_id": "tpl-t2i-out", "source_port": "out", "target_port": "in"},
+                {
+                    "id": "tpl-t2i-e1", "source_node_id": "tpl-t2i-in", "target_node_id": "tpl-t2i-gen",
+                    "source_port": "out", "target_port": "in",
+                },
+                {
+                    "id": "tpl-t2i-e2", "source_node_id": "tpl-t2i-gen", "target_node_id": "tpl-t2i-out",
+                    "source_port": "out", "target_port": "in",
+                },
             ],
         },
         {
@@ -58,13 +88,41 @@ def upgrade() -> None:
             "description": "从图片生成视频片段，基础图生视频工作流模板",
             "tags": ["图生视频", "视频生成"],
             "nodes": [
-                {"id": "tpl-i2v-in", "node_type": "input", "label": "图片输入", "position_x": 100, "position_y": 200, "config": {"type":"input","subtype":"image_input","label":"图片输入","params":{"url":""},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-i2v-gen", "node_type": "ai_inference", "label": "图生视频", "position_x": 400, "position_y": 200, "config": {"type":"ai_inference","subtype":"image_to_video","label":"图生视频","params":{"prompt":"","duration":5},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-i2v-out", "node_type": "output", "label": "视频输出", "position_x": 700, "position_y": 200, "config": {"type":"output","subtype":"video_output","label":"视频输出","params":{},"status":"idle","progress":0,"outputArtifacts":[]}},
+                {
+                    "id": "tpl-i2v-in", "node_type": "input", "label": "图片输入",
+                    "position_x": 100, "position_y": 200,
+                    "config": {
+                        "type": "input", "subtype": "image_input", "label": "图片输入",
+                        "params": {"url": ""}, "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-i2v-gen", "node_type": "ai_inference", "label": "图生视频",
+                    "position_x": 400, "position_y": 200,
+                    "config": {
+                        "type": "ai_inference", "subtype": "image_to_video", "label": "图生视频",
+                        "params": {"prompt": "", "duration": 5},
+                        "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-i2v-out", "node_type": "output", "label": "视频输出",
+                    "position_x": 700, "position_y": 200,
+                    "config": {
+                        "type": "output", "subtype": "video_output", "label": "视频输出",
+                        "params": {}, "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
             ],
             "edges": [
-                {"id": "tpl-i2v-e1", "source_node_id": "tpl-i2v-in", "target_node_id": "tpl-i2v-gen", "source_port": "out", "target_port": "in"},
-                {"id": "tpl-i2v-e2", "source_node_id": "tpl-i2v-gen", "target_node_id": "tpl-i2v-out", "source_port": "out", "target_port": "in"},
+                {
+                    "id": "tpl-i2v-e1", "source_node_id": "tpl-i2v-in", "target_node_id": "tpl-i2v-gen",
+                    "source_port": "out", "target_port": "in",
+                },
+                {
+                    "id": "tpl-i2v-e2", "source_node_id": "tpl-i2v-gen", "target_node_id": "tpl-i2v-out",
+                    "source_port": "out", "target_port": "in",
+                },
             ],
         },
         {
@@ -72,15 +130,55 @@ def upgrade() -> None:
             "description": "先文生图再图生视频的完整工作流模板",
             "tags": ["文生图", "图生视频", "全流程"],
             "nodes": [
-                {"id": "tpl-full-in", "node_type": "input", "label": "文本输入", "position_x": 100, "position_y": 200, "config": {"type":"input","subtype":"text_input","label":"文本输入","params":{"text":"一只可爱的猫咪"},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-full-t2i", "node_type": "ai_inference", "label": "文生图", "position_x": 400, "position_y": 200, "config": {"type":"ai_inference","subtype":"text_to_image","label":"文生图","params":{"prompt":"一只可爱的猫咪","size":"2k"},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-full-i2v", "node_type": "ai_inference", "label": "图生视频", "position_x": 700, "position_y": 200, "config": {"type":"ai_inference","subtype":"image_to_video","label":"图生视频","params":{"prompt":"","duration":5},"status":"idle","progress":0,"outputArtifacts":[]}},
-                {"id": "tpl-full-out", "node_type": "output", "label": "视频输出", "position_x": 1000, "position_y": 200, "config": {"type":"output","subtype":"video_output","label":"视频输出","params":{},"status":"idle","progress":0,"outputArtifacts":[]}},
+                {
+                    "id": "tpl-full-in", "node_type": "input", "label": "文本输入",
+                    "position_x": 100, "position_y": 200,
+                    "config": {
+                        "type": "input", "subtype": "text_input", "label": "文本输入",
+                        "params": {"text": "一只可爱的猫咪"},
+                        "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-full-t2i", "node_type": "ai_inference", "label": "文生图",
+                    "position_x": 400, "position_y": 200,
+                    "config": {
+                        "type": "ai_inference", "subtype": "text_to_image", "label": "文生图",
+                        "params": {"prompt": "一只可爱的猫咪", "size": "2k"},
+                        "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-full-i2v", "node_type": "ai_inference", "label": "图生视频",
+                    "position_x": 700, "position_y": 200,
+                    "config": {
+                        "type": "ai_inference", "subtype": "image_to_video", "label": "图生视频",
+                        "params": {"prompt": "", "duration": 5},
+                        "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
+                {
+                    "id": "tpl-full-out", "node_type": "output", "label": "视频输出",
+                    "position_x": 1000, "position_y": 200,
+                    "config": {
+                        "type": "output", "subtype": "video_output", "label": "视频输出",
+                        "params": {}, "status": "idle", "progress": 0, "outputArtifacts": [],
+                    },
+                },
             ],
             "edges": [
-                {"id": "tpl-full-e1", "source_node_id": "tpl-full-in", "target_node_id": "tpl-full-t2i", "source_port": "out", "target_port": "in"},
-                {"id": "tpl-full-e2", "source_node_id": "tpl-full-t2i", "target_node_id": "tpl-full-i2v", "source_port": "out", "target_port": "in"},
-                {"id": "tpl-full-e3", "source_node_id": "tpl-full-i2v", "target_node_id": "tpl-full-out", "source_port": "out", "target_port": "in"},
+                {
+                    "id": "tpl-full-e1", "source_node_id": "tpl-full-in", "target_node_id": "tpl-full-t2i",
+                    "source_port": "out", "target_port": "in",
+                },
+                {
+                    "id": "tpl-full-e2", "source_node_id": "tpl-full-t2i", "target_node_id": "tpl-full-i2v",
+                    "source_port": "out", "target_port": "in",
+                },
+                {
+                    "id": "tpl-full-e3", "source_node_id": "tpl-full-i2v", "target_node_id": "tpl-full-out",
+                    "source_port": "out", "target_port": "in",
+                },
             ],
         },
     ]
@@ -89,7 +187,8 @@ def upgrade() -> None:
         project_id = _uuid.uuid4()
         # 插入 project（is_template=True）
         bind.execute(sa.text(
-            "INSERT INTO projects (id, name, description, cover_url, owner_id, is_template, template_category, template_tags, created_at, updated_at) "
+            "INSERT INTO projects (id, name, description, cover_url, owner_id, is_template, "
+            "template_category, template_tags, created_at, updated_at) "
             "VALUES (:id, :name, :description, NULL, :owner_id, TRUE, :category, CAST(:tags AS JSONB), NOW(), NOW())"
         ), {
             "id": project_id,
@@ -103,7 +202,8 @@ def upgrade() -> None:
         # 插入 nodes
         for node in tpl["nodes"]:
             bind.execute(sa.text(
-                "INSERT INTO workflow_nodes (id, project_id, node_type, label, position_x, position_y, config, created_at, updated_at) "
+                "INSERT INTO workflow_nodes (id, project_id, node_type, label, position_x, position_y, "
+                "config, created_at, updated_at) "
                 "VALUES (:id, :project_id, :node_type, :label, :px, :py, CAST(:config AS JSONB), NOW(), NOW())"
             ), {
                 "id": node["id"],
@@ -118,7 +218,8 @@ def upgrade() -> None:
         # 插入 edges
         for edge in tpl["edges"]:
             bind.execute(sa.text(
-                "INSERT INTO workflow_edges (id, project_id, source_node_id, target_node_id, source_port, target_port, created_at, updated_at) "
+                "INSERT INTO workflow_edges (id, project_id, source_node_id, target_node_id, source_port, "
+                "target_port, created_at, updated_at) "
                 "VALUES (:id, :project_id, :source, :target, :sp, :tp, NOW(), NOW())"
             ), {
                 "id": edge["id"],

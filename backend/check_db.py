@@ -1,5 +1,7 @@
 """数据库验证脚本 — 查询各表行数和最新数据"""
-import asyncio, asyncpg
+import asyncio
+
+import asyncpg
 
 DB_URL = "postgresql://postgres:QWE123asd..@192.168.10.76:5432/ai_canvas_flow"
 
@@ -22,12 +24,16 @@ async def check(label=""):
         print(f"  [project] {r['id']} | {r['name']} | owner={r['owner_id']}")
 
     # 最新媒体
-    rows = await conn.fetch("SELECT id, file_name, owner_id, file_size FROM media_assets ORDER BY created_at DESC LIMIT 3")
+    rows = await conn.fetch(
+        "SELECT id, file_name, owner_id, file_size FROM media_assets ORDER BY created_at DESC LIMIT 3"
+    )
     for r in rows:
         print(f"  [media] {r['id']} | {r['file_name']} | owner={r['owner_id']} | size={r['file_size']}")
 
     # 最新渲染
-    rows = await conn.fetch("SELECT id, project_id, status, task_type FROM render_tasks ORDER BY created_at DESC LIMIT 3")
+    rows = await conn.fetch(
+        "SELECT id, project_id, status, task_type FROM render_tasks ORDER BY created_at DESC LIMIT 3"
+    )
     for r in rows:
         print(f"  [render] {r['id']} | project={r['project_id']} | status={r['status']} | type={r['task_type']}")
 

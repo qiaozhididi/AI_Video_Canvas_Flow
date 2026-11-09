@@ -1,19 +1,18 @@
 """认证路由：登录/注册/Token"""
 
 import logging
-from datetime import datetime, timedelta, timezone
-
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException
 from jose import jwt
 from jose.exceptions import JWTError
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.config import settings
-from app.deps import DBSession, CurrentUser
+from app.deps import CurrentUser, DBSession
 from app.models.user import User
 
 logger = logging.getLogger("app.api.auth")
@@ -58,7 +57,7 @@ class UserUpdateRequest(BaseModel):
 
 def _create_token(user_id: str, expires_minutes: int) -> str:
     """创建 JWT Token"""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+    expire = datetime.now(UTC) + timedelta(minutes=expires_minutes)
     payload = {"sub": user_id, "exp": expire}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 

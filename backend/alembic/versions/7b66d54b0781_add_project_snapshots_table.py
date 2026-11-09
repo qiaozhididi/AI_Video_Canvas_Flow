@@ -4,17 +4,18 @@ Revision ID: 7b66d54b0781
 Revises: 19c11929fcbb
 Create Date: 2026-06-27 16:01:32.524117
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 # revision identifiers, used by Alembic.
 revision: str = '7b66d54b0781'
-down_revision: Union[str, None] = '19c11929fcbb'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = '19c11929fcbb'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -32,7 +33,12 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index('ix_project_snapshots_owner_id', 'project_snapshots', ['owner_id'], unique=False)
-    op.create_index('ix_project_snapshots_project_source_created', 'project_snapshots', ['project_id', 'source', sa.text('created_at DESC')], unique=False)
+    op.create_index(
+        'ix_project_snapshots_project_source_created',
+        'project_snapshots',
+        ['project_id', 'source', sa.text('created_at DESC')],
+        unique=False,
+    )
     # ### end Alembic commands ###
 
 

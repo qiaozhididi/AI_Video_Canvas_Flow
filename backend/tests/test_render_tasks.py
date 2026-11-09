@@ -7,14 +7,12 @@
 4. _extract_text_from_artifacts 边界场景（空/None/混合）
 """
 
-import pytest
 
 from app.tasks.render_tasks import (
-    _extract_text_from_artifacts,
-    _extract_image_url,
     AI_TASK_CONFIG,
+    _extract_image_url,
+    _extract_text_from_artifacts,
 )
-
 
 # ── _extract_text_from_artifacts ──
 
