@@ -11,8 +11,8 @@
     "start:prod": "node dist/main.js",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:integration": "jest test/integration --testPathIgnorePatterns=/node_modules/",
-    "test:e2e": "jest --config ./test/e2e/jest-e2e.json"
+    "test:integration": "jest test/integration --testPathIgnorePatterns=/node_modules/ --forceExit",
+    "test:e2e": "jest --config ./test/e2e/jest-e2e.json --forceExit"
   },
   "dependencies": {
     "@nestjs/bullmq": "^10.2.0",
