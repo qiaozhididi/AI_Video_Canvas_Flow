@@ -72,8 +72,31 @@ jobs:
         run: pytest tests -q
 
   backend-nest:
-    name: Backend NestJS (test / build)
+    name: Backend NestJS (test / e2e / build)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_canvas_flow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         working-directory: backend_nest
@@ -90,9 +113,17 @@ jobs:
         run: npm ci
 
       - name: Unit tests
-        # 集成测试 test/integration/** 需要真实 DB/Redis，默认排除；
-        # 本地启动 docker-compose 后可运行 npm run test:integration
+        # 集成/ e2e 在后续步骤单独运行，此处仅单元测试
         run: npm test
+
+      - name: Integration tests (DI 装配验证)
+        # boot.spec.ts 仅 compile AppModule 验证依赖图，不触发真实 DB/Redis 连接
+        run: npm run test:integration
+
+      - name: E2E tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_canvas_flow_test
+        run: npm run test:e2e
 
       - name: Build
         run: npm run build
