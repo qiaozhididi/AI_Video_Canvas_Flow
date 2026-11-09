@@ -117,7 +117,9 @@ jobs:
         run: npm test
 
       - name: Integration tests (DI 装配验证)
-        # boot.spec.ts 仅 compile AppModule 验证依赖图，不触发真实 DB/Redis 连接
+        # AppModule 装配时 TypeORM 会真实连接 DB，指向服务容器中的测试库
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/ai_canvas_flow_test
         run: npm run test:integration
 
       - name: E2E tests
