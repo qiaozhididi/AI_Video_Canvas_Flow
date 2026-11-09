@@ -11,6 +11,7 @@
     "start:prod": "node dist/main.js",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:integration": "jest --testPathIgnorePatterns=/node_modules/ test/integration",
     "test:e2e": "jest --config ./test/e2e/jest-e2e.json"
   },
   "dependencies": {
@@ -78,6 +79,11 @@
     ],
     "coverageDirectory": "./coverage",
     "testEnvironment": "node",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/",
+      "/test/integration/"
+    ],
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/src/$1"
     }
